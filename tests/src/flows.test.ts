@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ADMIN, AUTH, BASE_URL, Session, serviceAdmin, waitForStack } from './client.js';
+import {
+  ADMIN,
+  AUTH,
+  BASE_URL,
+  errorMessage,
+  Session,
+  serviceAdmin,
+  waitForStack,
+} from './client.js';
 import {
   createUser,
   ensureFixtureTemplate,
@@ -201,7 +209,7 @@ describe('email templates', () => {
     );
 
     expect(refused.status).toBe(400);
-    expect(String((refused.body as { message?: string }).message)).toMatch(/notDeclared/);
+    expect(errorMessage(refused.body)).toMatch(/notDeclared/);
   });
 
   it('publishes a correct document and keeps its placeholders for send time', async () => {
@@ -280,7 +288,7 @@ describe('service boundaries', () => {
       const response = await anonymous.fetch(path, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ json: {} }),
+        body: JSON.stringify({}),
       });
       expect(response.status).toBe(404);
     }

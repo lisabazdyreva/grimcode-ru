@@ -56,7 +56,7 @@ export function AdministratorsPage() {
   const [offset, setOffset] = React.useState(0);
 
   const list = useAsync<Page<Administrator>>(
-    () => api.listAdministrators({ limit: LIMIT, offset }),
+    () => api.listAdministrators.query({ limit: LIMIT, offset }),
     [offset],
   );
 
@@ -162,7 +162,7 @@ function EnabledSwitch({
       onCheckedChange={(enabled) => {
         setBusy(true);
         api
-          .updateAdministrator({ userId: administrator.userId, enabled })
+          .updateAdministrator.mutate({ userId: administrator.userId, enabled })
           .then(() => {
             toast.success(enabled ? 'Администратор включён' : 'Администратор отключён');
             onChanged();
@@ -203,14 +203,14 @@ function AddAdministrator({ onAdded }: { onAdded: () => void }) {
   }, [query]);
 
   const candidates = useAsync<{ users: Candidate[] }>(
-    () => (search === '' ? Promise.resolve({ users: [] }) : api.searchUsers({ query: search })),
+    () => (search === '' ? Promise.resolve({ users: [] }) : api.searchUsers.query({ query: search })),
     [search],
   );
 
   const submit = () => {
     setBusy(true);
     api
-      .addAdministrator({ email, role, grants })
+      .addAdministrator.mutate({ email, role, grants })
       .then(() => {
         toast.success(`${email} теперь может открыть админку`);
         setOpen(false);
@@ -344,7 +344,7 @@ function EditAdministrator({
   const submit = () => {
     setBusy(true);
     api
-      .updateAdministrator({ userId: administrator.userId, role, grants })
+      .updateAdministrator.mutate({ userId: administrator.userId, role, grants })
       .then(() => {
         toast.success('Доступ обновлён');
         setOpen(false);

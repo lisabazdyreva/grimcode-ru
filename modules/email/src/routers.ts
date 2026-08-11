@@ -1,12 +1,14 @@
-import { ORPCError } from '@orpc/client';
-import { implement } from '@orpc/server';
+import { EDITOR_FORMAT, emailAdminContract, emailInternalContract } from '@template/contracts';
 import {
-  EDITOR_FORMAT,
-  emailAdminContract,
-  emailInternalContract,
-  type AdminContext,
-} from '@template/contracts';
-import { isCsrfValid, type Logger } from '@template/shared';
+  contractCoverage,
+  fromContract,
+  requireCsrf,
+  verifiedAdmin,
+  type AdminAwareContext,
+  type Logger,
+  type RpcContext,
+} from '@template/shared';
+import { initTRPC, TRPCError } from '@trpc/server';
 
 import { sendTemplate, UnknownTemplateError } from './delivery.js';
 import type { EmailRepository, TemplateRow, VersionRow } from './repository.js';
@@ -19,18 +21,16 @@ import {
 } from './render.js';
 import type { Transport } from './transport.js';
 
-export interface InternalContext {
+export interface InternalContext extends RpcContext {
   repo: EmailRepository;
   transport: Transport;
   logger: Logger;
 }
 
-export interface AdminRpcContext {
+export interface AdminRpcContext extends AdminAwareContext {
   repo: EmailRepository;
   transport: Transport;
   logger: Logger;
-  request: Request;
-  admin: AdminContext | null;
 }
 
 function toTemplate(row: TemplateRow) {
@@ -62,321 +62,357 @@ function toVersion(row: VersionRow) {
   };
 }
 
-const internalOs = implement(emailInternalContract).$context<InternalContext>();
-
-export const internalRouter = internalOs.router({
-  send: internalOs.send.handler(async ({ input, context }) => {
-    try {
-      const result = await sendTemplate(input, context);
-      return { ok: true as const, ...result };
-    } catch (error) {
-      if (error instanceof UnknownTemplateError) {
-        throw new ORPCError('NOT_FOUND', { message: error.message });
-      }
-      throw error;
-    }
-  }),
-});
-
-const adminOs = implement(emailAdminContract).$context<AdminRpcContext>();
-
-function requireAdmin(context: AdminRpcContext): AdminContext {
-  if (!context.admin) throw new ORPCError('FORBIDDEN', { message: 'Контекст администратора отсутствует' });
-  return context.admin;
-}
-
-function requireMutation(context: AdminRpcContext): AdminContext {
-  const admin = requireAdmin(context);
-  if (!isCsrfValid(context.request.headers, 'email')) {
-    throw new ORPCError('FORBIDDEN', { message: 'CSRF-токен отсутствует или неверен' });
-  }
-  return admin;
-}
-
 async function loadVersion(repo: EmailRepository, id: string): Promise<VersionRow> {
   const row = await repo.findVersion(id);
-  if (!row) throw new ORPCError('NOT_FOUND', { message: 'Версия шаблона не найдена' });
+  if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Версия шаблона не найдена' });
   return row;
 }
 
 function renderFailure(error: unknown): never {
   if (error instanceof TemplateRenderError) {
-    throw new ORPCError('BAD_REQUEST', { message: error.message });
+    throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
   }
   throw error;
 }
 
-export const adminRouter = adminOs.router({
-  listTemplates: adminOs.listTemplates.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const { rows, total } = await context.repo.listTemplates(input.query, input.limit, input.offset);
-    return { items: rows.map(toTemplate), total, limit: input.limit, offset: input.offset };
-  }),
+// --- internal surface -------------------------------------------------------------------------
 
-  getTemplate: adminOs.getTemplate.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const template = await context.repo.findTemplateById(input.id);
-    if (!template) throw new ORPCError('NOT_FOUND', { message: 'Шаблон не найден' });
+const internalT = initTRPC.context<InternalContext>().create();
 
-    const versions = await context.repo.listVersions(template.id);
-    return {
-      template: toTemplate(template),
-      // The list omits the editor document; it is fetched per version when the editor opens.
-      versions: versions.map((row) => {
-        const { editorDocument: _editorDocument, ...rest } = toVersion(row);
-        return rest;
-      }),
-    };
-  }),
+export const internalRouter = internalT.router({
+  send: fromContract(emailInternalContract.send, internalT.procedure).mutation(
+    async ({ input, ctx }) => {
+      try {
+        const result = await sendTemplate(input, ctx);
+        return { ok: true as const, ...result };
+      } catch (error) {
+        if (error instanceof UnknownTemplateError) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: error.message });
+        }
+        throw error;
+      }
+    },
+  ),
+});
 
-  createTemplate: adminOs.createTemplate.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    if (await context.repo.findTemplateByKey(input.key)) {
-      throw new ORPCError('CONFLICT', { message: 'Шаблон с таким ключом уже есть' });
-    }
+const internalCoverage: 'ok' = contractCoverage(emailInternalContract, internalRouter);
+void internalCoverage;
 
-    const row = await context.repo.createTemplate(
-      input.key,
-      input.name,
-      input.description,
-      input.variables,
-    );
-    await context.repo.audit({
-      action: 'template.created',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-      details: { key: input.key },
-    });
+// --- admin surface ----------------------------------------------------------------------------
 
-    return { ok: true as const, template: toTemplate(row) };
-  }),
+const adminT = initTRPC.context<AdminRpcContext>().create();
 
-  updateTemplate: adminOs.updateTemplate.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    const row = await context.repo.updateTemplate(input.id, input);
-    await context.repo.audit({
-      action: 'template.updated',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-      details: { key: row.key },
-    });
-    return { ok: true as const, template: toTemplate(row) };
-  }),
+/**
+ * The two builders every admin surface in this template is made of.
+ *
+ * Email is where the difference earns its keep: fourteen procedures, eight of which change
+ * something. Said by hand as the first line of each body, a forgotten line left a procedure open
+ * with nothing to catch it — not the types, not the tests, not the boundary check. Now it is which
+ * builder the procedure is written on, and one written on neither does not exist.
+ */
+const adminProcedure = adminT.procedure.use(({ ctx, next }) =>
+  next({ ctx: { admin: verifiedAdmin(ctx) } }),
+);
 
-  getVersion: adminOs.getVersion.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    return { version: toVersion(await loadVersion(context.repo, input.id)) };
-  }),
+const adminMutation = adminProcedure.use(({ ctx, next }) => {
+  requireCsrf(ctx, 'email');
+  return next();
+});
 
-  createDraft: adminOs.createDraft.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    const template = await context.repo.findTemplateById(input.templateId);
-    if (!template) throw new ORPCError('NOT_FOUND', { message: 'Шаблон не найден' });
+export const adminRouter = adminT.router({
+  listTemplates: fromContract(emailAdminContract.listTemplates, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const { rows, total } = await ctx.repo.listTemplates(input.query, input.limit, input.offset);
+      return { items: rows.map(toTemplate), total, limit: input.limit, offset: input.offset };
+    },
+  ),
 
-    const row = await context.repo.createDraft(template.id, {
-      subject: template.name,
-      document: { type: 'doc', content: [] },
-    });
-    await context.repo.audit({
-      action: 'version.draft.created',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-      details: { templateKey: template.key, version: row.version },
-    });
+  getTemplate: fromContract(emailAdminContract.getTemplate, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const template = await ctx.repo.findTemplateById(input.id);
+      if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Шаблон не найден' });
 
-    return { ok: true as const, version: toVersion(row) };
-  }),
+      const versions = await ctx.repo.listVersions(template.id);
+      return {
+        template: toTemplate(template),
+        // The list omits the editor document; it is fetched per version when the editor opens.
+        versions: versions.map((row) => {
+          const { editorDocument: _editorDocument, ...rest } = toVersion(row);
+          return rest;
+        }),
+      };
+    },
+  ),
 
-  saveDraft: adminOs.saveDraft.handler(async ({ input, context }) => {
-    requireMutation(context);
-    try {
-      const row = await context.repo.saveDraft(input.id, input.subject, input.editorDocument);
-      return { ok: true as const, version: toVersion(row) };
-    } catch (error) {
-      throw new ORPCError('BAD_REQUEST', {
-        message: error instanceof Error ? error.message : 'Draft could not be saved',
+  createTemplate: fromContract(emailAdminContract.createTemplate, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      if (await ctx.repo.findTemplateByKey(input.key)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Шаблон с таким ключом уже есть' });
+      }
+
+      const row = await ctx.repo.createTemplate(
+        input.key,
+        input.name,
+        input.description,
+        input.variables,
+      );
+      await ctx.repo.audit({
+        action: 'template.created',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+        details: { key: input.key },
       });
-    }
-  }),
+
+      return { ok: true as const, template: toTemplate(row) };
+    },
+  ),
+
+  updateTemplate: fromContract(emailAdminContract.updateTemplate, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      const row = await ctx.repo.updateTemplate(input.id, input);
+      await ctx.repo.audit({
+        action: 'template.updated',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+        details: { key: row.key },
+      });
+      return { ok: true as const, template: toTemplate(row) };
+    },
+  ),
+
+  getVersion: fromContract(emailAdminContract.getVersion, adminProcedure).query(
+    async ({ input, ctx }) => ({ version: toVersion(await loadVersion(ctx.repo, input.id)) }),
+  ),
+
+  createDraft: fromContract(emailAdminContract.createDraft, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      const template = await ctx.repo.findTemplateById(input.templateId);
+      if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Шаблон не найден' });
+
+      const row = await ctx.repo.createDraft(template.id, {
+        subject: template.name,
+        document: { type: 'doc', content: [] },
+      });
+      await ctx.repo.audit({
+        action: 'version.draft.created',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+        details: { templateKey: template.key, version: row.version },
+      });
+
+      return { ok: true as const, version: toVersion(row) };
+    },
+  ),
+
+  saveDraft: fromContract(emailAdminContract.saveDraft, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      try {
+        const row = await ctx.repo.saveDraft(input.id, input.subject, input.editorDocument);
+        return { ok: true as const, version: toVersion(row) };
+      } catch (error) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: error instanceof Error ? error.message : 'Draft could not be saved',
+        });
+      }
+    },
+  ),
 
   /**
    * Publishing is where the server takes over: it validates the document's variables, renders it,
    * sanitizes the HTML and derives the plain text from that HTML. Runtime delivery then only ever
    * sends this stored result.
    */
-  publishDraft: adminOs.publishDraft.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    const draft = await loadVersion(context.repo, input.id);
+  publishDraft: fromContract(emailAdminContract.publishDraft, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      const draft = await loadVersion(ctx.repo, input.id);
 
-    const template = await context.repo.findTemplateById(draft.template_id);
-    if (!template) throw new ORPCError('NOT_FOUND', { message: 'Шаблон не найден' });
+      const template = await ctx.repo.findTemplateById(draft.template_id);
+      if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Шаблон не найден' });
 
-    let compiled;
-    try {
-      assertDeclaredVariables(draft.editor_document, template.variables ?? []);
-      compiled = await renderMessage(draft.editor_document, draft.subject);
-    } catch (error) {
-      renderFailure(error);
-    }
+      let compiled;
+      try {
+        assertDeclaredVariables(draft.editor_document, template.variables ?? []);
+        compiled = await renderMessage(draft.editor_document, draft.subject);
+      } catch (error) {
+        renderFailure(error);
+      }
 
-    const row = await context.repo.publish(draft.id, {
-      html: compiled.html,
-      text: compiled.text,
-    });
+      const row = await ctx.repo.publish(draft.id, {
+        html: compiled.html,
+        text: compiled.text,
+      });
 
-    await context.repo.audit({
-      action: 'version.published',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-      details: { templateKey: template.key, version: row.version },
-    });
+      await ctx.repo.audit({
+        action: 'version.published',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+        details: { templateKey: template.key, version: row.version },
+      });
 
-    return { ok: true as const, version: toVersion(row) };
-  }),
+      return { ok: true as const, version: toVersion(row) };
+    },
+  ),
 
-  previewVersion: adminOs.previewVersion.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const version = await loadVersion(context.repo, input.id);
+  previewVersion: fromContract(emailAdminContract.previewVersion, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const version = await loadVersion(ctx.repo, input.id);
 
-    try {
-      return await renderMessage(
-        version.editor_document,
-        version.subject,
-        input.variables as Record<string, VariableValue>,
+      try {
+        return await renderMessage(
+          version.editor_document,
+          version.subject,
+          input.variables as Record<string, VariableValue>,
+        );
+      } catch (error) {
+        renderFailure(error);
+      }
+    },
+  ),
+
+  testSend: fromContract(emailAdminContract.testSend, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      const version = await loadVersion(ctx.repo, input.id);
+      const template = await ctx.repo.findTemplateById(version.template_id);
+      if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Шаблон не найден' });
+
+      let rendered;
+      try {
+        rendered = await renderMessage(
+          version.editor_document,
+          version.subject,
+          input.variables as Record<string, VariableValue>,
+        );
+      } catch (error) {
+        renderFailure(error);
+      }
+
+      // A test send is a real send: it goes through the transport and is recorded in the log with
+      // the exact content that left the system.
+      const dedupeKey = `test:${version.id}:${input.to}:${Date.now()}`;
+      const { row } = await ctx.repo.openDelivery({
+        dedupeKey,
+        templateKey: template.key,
+        templateVersionId: version.id,
+        recipientEmail: input.to,
+        subject: rendered.subject,
+        html: redactOneTimeTokens(rendered.html),
+        text: redactOneTimeTokens(rendered.text),
+        transport: ctx.transport.name,
+      });
+
+      try {
+        const result = await ctx.transport.send({ dedupeKey, to: input.to, ...rendered });
+        await ctx.repo.markSent(row.id, result);
+      } catch (error) {
+        await ctx.repo.markFailed(row.id, error instanceof Error ? error.message : String(error));
+      }
+
+      await ctx.repo.audit({
+        action: 'version.test-sent',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+        details: { templateKey: template.key, to: input.to },
+      });
+
+      return { ok: true as const, deliveryId: row.id };
+    },
+  ),
+
+  listDeliveries: fromContract(emailAdminContract.listDeliveries, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const { rows, total } = await ctx.repo.listDeliveries(
+        { query: input.query, status: input.status },
+        input.limit,
+        input.offset,
       );
-    } catch (error) {
-      renderFailure(error);
-    }
-  }),
 
-  testSend: adminOs.testSend.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    const version = await loadVersion(context.repo, input.id);
-    const template = await context.repo.findTemplateById(version.template_id);
-    if (!template) throw new ORPCError('NOT_FOUND', { message: 'Шаблон не найден' });
-
-    let rendered;
-    try {
-      rendered = await renderMessage(
-        version.editor_document,
-        version.subject,
-        input.variables as Record<string, VariableValue>,
-      );
-    } catch (error) {
-      renderFailure(error);
-    }
-
-    // A test send is a real send: it goes through the transport and is recorded in the log with
-    // the exact content that left the system.
-    const dedupeKey = `test:${version.id}:${input.to}:${Date.now()}`;
-    const { row } = await context.repo.openDelivery({
-      dedupeKey,
-      templateKey: template.key,
-      templateVersionId: version.id,
-      recipientEmail: input.to,
-      subject: rendered.subject,
-      html: redactOneTimeTokens(rendered.html),
-      text: redactOneTimeTokens(rendered.text),
-      transport: context.transport.name,
-    });
-
-    try {
-      const result = await context.transport.send({ dedupeKey, to: input.to, ...rendered });
-      await context.repo.markSent(row.id, result);
-    } catch (error) {
-      await context.repo.markFailed(row.id, error instanceof Error ? error.message : String(error));
-    }
-
-    await context.repo.audit({
-      action: 'version.test-sent',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-      details: { templateKey: template.key, to: input.to },
-    });
-
-    return { ok: true as const, deliveryId: row.id };
-  }),
-
-  listDeliveries: adminOs.listDeliveries.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const { rows, total } = await context.repo.listDeliveries(
-      { query: input.query, status: input.status },
-      input.limit,
-      input.offset,
-    );
-
-    return {
-      // The list never carries message bodies; they are fetched one at a time.
-      items: rows.map((row) => ({
-        id: row.id,
-        templateKey: row.template_key,
-        templateVersionId: row.template_version_id,
-            recipientEmail: row.recipient_email,
-        subject: row.subject,
-        transport: row.transport,
-        status: row.status,
-        providerMessageId: row.provider_message_id,
-        providerStatus: row.provider_status,
-        error: row.error,
-        createdAt: row.created_at.toISOString(),
-        sentAt: row.sent_at?.toISOString() ?? null,
-      })),
-      total,
-      limit: input.limit,
-      offset: input.offset,
-    };
-  }),
+      return {
+        // The list never carries message bodies; they are fetched one at a time.
+        items: rows.map((row) => ({
+          id: row.id,
+          templateKey: row.template_key,
+          templateVersionId: row.template_version_id,
+          recipientEmail: row.recipient_email,
+          subject: row.subject,
+          transport: row.transport,
+          status: row.status,
+          providerMessageId: row.provider_message_id,
+          providerStatus: row.provider_status,
+          error: row.error,
+          createdAt: row.created_at.toISOString(),
+          sentAt: row.sent_at?.toISOString() ?? null,
+        })),
+        total,
+        limit: input.limit,
+        offset: input.offset,
+      };
+    },
+  ),
 
   /** The immutable snapshot of one actually sent message, body included. */
-  getDelivery: adminOs.getDelivery.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const row = await context.repo.findDelivery(input.id);
-    if (!row) throw new ORPCError('NOT_FOUND', { message: 'Отправка не найдена' });
+  getDelivery: fromContract(emailAdminContract.getDelivery, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const row = await ctx.repo.findDelivery(input.id);
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Отправка не найдена' });
 
-    return {
-      delivery: {
-        id: row.id,
-        templateKey: row.template_key,
-        templateVersionId: row.template_version_id,
-            recipientEmail: row.recipient_email,
-        subject: row.subject,
-        html: row.html,
-        text: row.text,
-        transport: row.transport,
-        status: row.status,
-        providerMessageId: row.provider_message_id,
-        providerStatus: row.provider_status,
-        error: row.error,
-        createdAt: row.created_at.toISOString(),
-        sentAt: row.sent_at?.toISOString() ?? null,
-      },
-    };
-  }),
+      return {
+        delivery: {
+          id: row.id,
+          templateKey: row.template_key,
+          templateVersionId: row.template_version_id,
+          recipientEmail: row.recipient_email,
+          subject: row.subject,
+          html: row.html,
+          text: row.text,
+          transport: row.transport,
+          status: row.status,
+          providerMessageId: row.provider_message_id,
+          providerStatus: row.provider_status,
+          error: row.error,
+          createdAt: row.created_at.toISOString(),
+          sentAt: row.sent_at?.toISOString() ?? null,
+        },
+      };
+    },
+  ),
 
-  uploadImage: adminOs.uploadImage.handler(async ({ input, context }) => {
-    requireMutation(context);
+  uploadImage: fromContract(emailAdminContract.uploadImage, adminMutation).mutation(
+    ({ input }) => {
+      const bytes = Buffer.from(input.data, 'base64');
+      if (bytes.length > 2_000_000) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Изображение не больше 2 МБ' });
+      }
 
-    const bytes = Buffer.from(input.data, 'base64');
-    if (bytes.length > 2_000_000) {
-      throw new ORPCError('BAD_REQUEST', { message: 'Изображение не больше 2 МБ' });
-    }
+      // The template stores images inline in the document, so nothing has to be hosted or served,
+      // and a published message never depends on an asset that might later disappear.
+      return {
+        ok: true as const,
+        url: `data:${input.contentType};base64,${bytes.toString('base64')}`,
+      };
+    },
+  ),
 
-    // The template stores images inline in the document, so nothing has to be hosted or served,
-    // and a published message never depends on an asset that might later disappear.
-    return { ok: true as const, url: `data:${input.contentType};base64,${bytes.toString('base64')}` };
-  }),
-
-  reindexSeedTemplates: adminOs.reindexSeedTemplates.handler(async ({ context }) => {
-    const admin = requireMutation(context);
-    const created = await context.repo.ensureSeedTemplates((document, subject) =>
+  reindexSeedTemplates: fromContract(
+    emailAdminContract.reindexSeedTemplates,
+    adminMutation,
+  ).mutation(async ({ ctx }) => {
+    const created = await ctx.repo.ensureSeedTemplates((document, subject) =>
       renderMessage(document, subject).then(({ html, text }) => ({ html, text })),
     );
-    await context.repo.audit({
+    await ctx.repo.audit({
       action: 'seed.reindexed',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
+      actorUserId: ctx.admin.userId,
+      actorRole: ctx.admin.role,
       details: { created },
     });
     return { ok: true as const };
   }),
 });
+
+const adminCoverage: 'ok' = contractCoverage(emailAdminContract, adminRouter);
+void adminCoverage;
+
+/** The browser client and Notifications are typed from these, and from nothing else. */
+export type EmailInternalRouter = typeof internalRouter;
+export type EmailAdminRouter = typeof adminRouter;

@@ -79,7 +79,7 @@ export function DeliveriesPage() {
 
   const list = useAsync<Page<DeliveryRow>>(
     () =>
-      api.listDeliveries({
+      api.listDeliveries.query({
         query: search === '' ? undefined : search,
         status: status === ANY ? undefined : (status as DeliveryRow['status']),
         limit: LIMIT,
@@ -192,7 +192,7 @@ export function DeliveriesPage() {
 }
 
 function DeliveryDialog({ id, onClose }: { id: string; onClose: () => void }) {
-  const state = useAsync<{ delivery: Delivery }>(() => api.getDelivery({ id }), [id]);
+  const state = useAsync<{ delivery: Delivery }>(() => api.getDelivery.query({ id }), [id]);
   const delivery = state.data?.delivery;
 
   return (

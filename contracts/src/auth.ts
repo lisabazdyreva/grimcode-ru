@@ -1,4 +1,3 @@
-import { oc } from '@orpc/contract';
 import { z } from 'zod';
 
 import {
@@ -48,56 +47,59 @@ export const authAuditEntrySchema = z.object({
   createdAt: isoDateTimeSchema,
 });
 
-const passwordSchema = z
-  .string()
-  .min(12, 'Password must contain at least 12 characters')
-  .max(200);
+const passwordSchema = z.string().min(12, 'Password must contain at least 12 characters').max(200);
 
 /**
  * Public Auth surface. Reachable through Gateway as `/service/auth/rpc`.
  * Gateway performs no authorization here: securing these endpoints is Auth's own responsibility.
  */
 export const authPublicContract = {
-  register: oc.input(z.object({ email: emailSchema, password: passwordSchema })).output(
-    z.object({ ok: z.literal(true), identity: identitySchema }),
-  ),
+  register: {
+    input: z.object({ email: emailSchema, password: passwordSchema }),
+    output: z.object({ ok: z.literal(true), identity: identitySchema }),
+  },
 
-  login: oc
-    .input(z.object({ email: emailSchema, password: z.string().min(1).max(200) }))
-    .output(z.object({ ok: z.literal(true), identity: identitySchema })),
+  login: {
+    input: z.object({ email: emailSchema, password: z.string().min(1).max(200) }),
+    output: z.object({ ok: z.literal(true), identity: identitySchema }),
+  },
 
   /** Server-side logout: the session row is invalidated before the cookie is cleared. */
-  logout: oc.input(z.object({})).output(okSchema),
+  logout: { input: z.object({}), output: okSchema },
 
-  currentSession: oc
-    .input(z.object({}))
-    .output(z.object({ identity: identitySchema.nullable() })),
+  currentSession: {
+    input: z.object({}),
+    output: z.object({ identity: identitySchema.nullable() }),
+  },
 
-  listOwnSessions: oc
-    .input(z.object({}))
-    .output(z.object({ sessions: z.array(sessionSummarySchema) })),
+  listOwnSessions: {
+    input: z.object({}),
+    output: z.object({ sessions: z.array(sessionSummarySchema) }),
+  },
 
   /** Revokes every session of the caller, including the current one. */
-  revokeOwnSessions: oc.input(z.object({})).output(okSchema),
+  revokeOwnSessions: { input: z.object({}), output: okSchema },
 
   /** Always answers `ok` so that the flow never reveals whether the email exists. */
-  requestPasswordReset: oc.input(z.object({ email: emailSchema })).output(okSchema),
+  requestPasswordReset: { input: z.object({ email: emailSchema }), output: okSchema },
 
-  resetPassword: oc
-    .input(z.object({ token: z.string().min(20).max(200), password: passwordSchema }))
-    .output(okSchema),
+  resetPassword: {
+    input: z.object({ token: z.string().min(20).max(200), password: passwordSchema }),
+    output: okSchema,
+  },
 
-  changePassword: oc
-    .input(z.object({ currentPassword: z.string().min(1).max(200), password: passwordSchema }))
-    .output(okSchema),
+  changePassword: {
+    input: z.object({ currentPassword: z.string().min(1).max(200), password: passwordSchema }),
+    output: okSchema,
+  },
 
-  verifyEmail: oc.input(z.object({ token: z.string().min(20).max(200) })).output(okSchema),
+  verifyEmail: { input: z.object({ token: z.string().min(20).max(200) }), output: okSchema },
 
-  resendOwnVerification: oc.input(z.object({})).output(okSchema),
+  resendOwnVerification: { input: z.object({}), output: okSchema },
 
-  requestEmailChange: oc.input(z.object({ email: emailSchema })).output(okSchema),
+  requestEmailChange: { input: z.object({ email: emailSchema }), output: okSchema },
 
-  confirmEmailChange: oc.input(z.object({ token: z.string().min(20).max(200) })).output(okSchema),
+  confirmEmailChange: { input: z.object({ token: z.string().min(20).max(200) }), output: okSchema },
 };
 
 /**
@@ -105,9 +107,10 @@ export const authPublicContract = {
  * so it stays reachable exclusively from inside the Docker network.
  */
 export const authInternalContract = {
-  resolveSession: oc
-    .input(z.object({ sessionToken: z.string().min(1).max(400) }))
-    .output(z.object({ identity: identitySchema.nullable() })),
+  resolveSession: {
+    input: z.object({ sessionToken: z.string().min(1).max(400) }),
+    output: z.object({ identity: identitySchema.nullable() }),
+  },
 
   /**
    * Invalidates one session, named by the token the browser holds.
@@ -120,17 +123,19 @@ export const authInternalContract = {
    * The caller clears the cookie itself — the answer carries no header, only the fact that the row
    * is gone. Doing it in the other order, or not at all, leaves a session that still works.
    */
-  revokeSessionByToken: oc
-    .input(z.object({ sessionToken: z.string().min(1).max(400) }))
-    .output(okSchema),
+  revokeSessionByToken: {
+    input: z.object({ sessionToken: z.string().min(1).max(400) }),
+    output: okSchema,
+  },
 
   /**
    * Earliest registered identity in a deterministic order. Admin uses it to bootstrap the very
    * first owner; ownership follows registration order, not who opened the admin panel first.
    */
-  getFirstIdentity: oc
-    .input(z.object({}))
-    .output(z.object({ identity: identitySchema.nullable() })),
+  getFirstIdentity: {
+    input: z.object({}),
+    output: z.object({ identity: identitySchema.nullable() }),
+  },
 
   /**
    * Several identities at once.
@@ -138,9 +143,10 @@ export const authInternalContract = {
    * Users needs the address for a page of profiles; asking one at a time would be a request per
    * row. Unknown ids are simply absent from the answer.
    */
-  getIdentitiesByIds: oc
-    .input(z.object({ ids: z.array(idSchema).max(200) }))
-    .output(z.object({ identities: z.array(identitySchema) })),
+  getIdentitiesByIds: {
+    input: z.object({ ids: z.array(idSchema).max(200) }),
+    output: z.object({ identities: z.array(identitySchema) }),
+  },
 
   /**
    * Identities matching a fragment of an address.
@@ -148,13 +154,18 @@ export const authInternalContract = {
    * Admin needs it to let an owner pick a person instead of typing an address exactly right. It is
    * internal: the search itself is not something a client may reach.
    */
-  searchIdentities: oc
-    .input(z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(20).default(10) }))
-    .output(z.object({ identities: z.array(identitySchema) })),
+  searchIdentities: {
+    input: z.object({
+      query: z.string().min(1).max(200),
+      limit: z.number().int().min(1).max(20).default(10),
+    }),
+    output: z.object({ identities: z.array(identitySchema) }),
+  },
 
-  getIdentityByEmail: oc
-    .input(z.object({ email: emailSchema }))
-    .output(z.object({ identity: identitySchema.nullable() })),
+  getIdentityByEmail: {
+    input: z.object({ email: emailSchema }),
+    output: z.object({ identity: identitySchema.nullable() }),
+  },
 };
 
 /**
@@ -162,25 +173,27 @@ export const authInternalContract = {
  * verified the session, the admin role and the grant on Auth.
  */
 export const authAdminContract = {
-  listIdentities: oc.input(paginationInputSchema).output(pageOf(adminIdentitySchema)),
+  listIdentities: { input: paginationInputSchema, output: pageOf(adminIdentitySchema) },
 
-  getIdentity: oc
-    .input(z.object({ id: idSchema }))
-    .output(z.object({ identity: adminIdentitySchema })),
+  getIdentity: {
+    input: z.object({ id: idSchema }),
+    output: z.object({ identity: adminIdentitySchema }),
+  },
 
   /** Sends the ordinary time-limited one-time recovery link. The token is never shown to admins. */
-  sendRecovery: oc.input(z.object({ id: idSchema })).output(okSchema),
+  sendRecovery: { input: z.object({ id: idSchema }), output: okSchema },
 
-  resendVerification: oc.input(z.object({ id: idSchema })).output(okSchema),
+  resendVerification: { input: z.object({ id: idSchema }), output: okSchema },
 
-  revokeSessions: oc.input(z.object({ id: idSchema })).output(okSchema),
+  revokeSessions: { input: z.object({ id: idSchema }), output: okSchema },
 
   /** Owner-only. An owner can never block their own identity. */
-  setBlocked: oc
-    .input(z.object({ id: idSchema, blocked: z.boolean() }))
-    .output(z.object({ ok: z.literal(true), identity: adminIdentitySchema })),
+  setBlocked: {
+    input: z.object({ id: idSchema, blocked: z.boolean() }),
+    output: z.object({ ok: z.literal(true), identity: adminIdentitySchema }),
+  },
 
-  listAudit: oc.input(paginationInputSchema).output(pageOf(authAuditEntrySchema)),
+  listAudit: { input: paginationInputSchema, output: pageOf(authAuditEntrySchema) },
 };
 
 export const authContract = {

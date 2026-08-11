@@ -34,6 +34,23 @@ the very first registered user is when it bootstraps the first owner.
 | `/admin/embed/service/auth/rpc` | through Gateway's admin route | administrators with a grant on Auth |
 | `/internal/rpc` | never routed by Gateway; in-process only | other modules |
 
+### What a neighbour may see of this module
+
+A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
+crosses through one named door: `@template/auth/contract` resolves to
+[`src/contract.ts`](src/contract.ts), which re-exports the three router types and nothing else,
+while `@template/auth` still resolves to `createApp` alone.
+
+Auth has more callers than any other module — Admin, Users in two separate places, and the
+application's own browser bundle — and holds the password hashes, the session rows and the one-time
+tokens. All three live behind `repository.ts`, which no specifier reaches; what crosses the boundary
+is the shape of the questions and nothing else.
+
+The two admin builders here check the CSRF token under the scope `'auth'`, not `'panel'`: every
+admin surface issues its own cookie, so a token minted for the shell is refused here on purpose.
+The public surface has no CSRF token at all and is not meant to — it is the application's own
+surface, and the session cookie's `SameSite=Lax` is what guards it.
+
 ### Public flows
 
 `register`, `login`, `logout`, `currentSession`, `listOwnSessions`, `revokeOwnSessions`,
@@ -51,7 +68,7 @@ Security properties worth keeping when the template is extended:
 - **Changing a password ends every session**, including one an attacker may be holding.
 - **Logout is a server-side operation.** The session row is invalidated first and the HttpOnly
   cookie is cleared afterwards. Deleting the cookie alone would leave a usable session behind.
-- Public procedures are JSON-only oRPC calls on a `SameSite=Lax` cookie, so a cross-site form
+- Public procedures are JSON-only RPC calls on a `SameSite=Lax` cookie, so a cross-site form
   cannot invoke them.
 
 ### Internal surface

@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   createServiceApp,
   mountCsrfEndpoint,
-  mountRpc,
   mountSpa,
+  mountTrpc,
   readAdminContext,
   type FetchLike,
   type Logger,
@@ -30,14 +30,17 @@ export function createApp(deps: UsersDeps): ServiceApp {
   const repo = new UsersRepository(deps.pool);
   const app = createServiceApp('users', deps.logger);
 
-  mountRpc(app, '/service/users/rpc', publicRouter, async ({ request, hono }) => ({
+  mountTrpc(app, '/service/users/rpc', publicRouter, async ({ request, resHeaders, hono }) => ({
     repo,
+    request,
+    resHeaders,
     identity: await resolveIdentity(request, hono.get('requestId'), deps.callAuth),
   }));
 
-  mountRpc(app, '/admin/embed/service/users/rpc', adminRouter, ({ request }) => ({
+  mountTrpc(app, '/admin/embed/service/users/rpc', adminRouter, ({ request, resHeaders }) => ({
     repo,
     request,
+    resHeaders,
     callAuth: deps.callAuth,
     admin: readAdminContext(request.headers),
   }));

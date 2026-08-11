@@ -102,6 +102,34 @@ in the Auth database, which Admin may never read or reference.
 `services/:id` to that service's admin, `database` to the database browser. See
 [the admin panel](../../docs/admin-panel.md).
 
+### Who may do what, and where that is written
+
+The panel's procedures are built on four builders rather than four guard calls, and the choice of
+builder **is** the rule:
+
+| Builder | Verifies | Used by |
+| --- | --- | --- |
+| `adminProcedure` | a verified administrator context | `session` |
+| `adminMutation` | that, plus the panel's CSRF token | `logout` |
+| `ownerProcedure` | that, plus the owner role | `listAdministrators`, `searchUsers`, `listAudit` |
+| `ownerMutation` | all three | `addAdministrator`, `updateAdministrator` |
+
+Two axes and not one — administrator against owner, read against change — which is why this module
+has four while the others have at most two. The owner half stays here and is not lifted into
+`shared`: no other module has an owner-only surface.
+
+### What a neighbour may see of this module
+
+A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
+crosses through one named door: `@template/admin/contract` resolves to
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types and nothing else, while
+`@template/admin` still resolves to `createApp` alone. It matters more here than anywhere else —
+this module *is* the registry of who may do what, and the rights, the last-owner rule and the audit
+log all live behind `repository.ts`, which no specifier reaches.
+
+Three callers use that door: Gateway for `authorize` on every `/admin/**` request, the composer for
+`isActiveOwner`, and the panel's own browser bundle for the surface above.
+
 ## Environment
 
 | Variable | Purpose |

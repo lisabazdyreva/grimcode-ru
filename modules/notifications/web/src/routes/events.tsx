@@ -54,7 +54,7 @@ export function EventsPage() {
 
   const list = useAsync<Page<Event>>(
     () =>
-      api.listEvents({
+      api.listEvents.query({
         type: type === ANY ? undefined : (type as Event['type']),
         status: status === ANY ? undefined : (status as Event['status']),
         limit: LIMIT,
@@ -162,7 +162,7 @@ export function EventsPage() {
  * opens it, it has usually been routed.
  */
 function EventDialog({ id, onClose }: { id: string; onClose: () => void }) {
-  const state = useAsync<{ event: Event }>(() => api.getEvent({ id }), [id]);
+  const state = useAsync<{ event: Event }>(() => api.getEvent.query({ id }), [id]);
   const event = state.data?.event;
 
   if (!event) {

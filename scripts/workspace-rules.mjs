@@ -44,7 +44,7 @@ export const AREA_RULES = [
   { area: 'composition', mayUse: EVERY_PACKAGE },
   { area: 'contracts', mayUse: [] },
   { area: 'shared', mayUse: ['@template/contracts'] },
-  { area: 'modules/*', mayUse: ['@template/contracts', '@template/shared'] },
+  { area: 'modules/*', mayUse: ['@template/contracts', '@template/shared'], neighbourSubpath: true },
   // The acceptance suite talks to the running stack over HTTP and imports no module. It reaches
   // for `shared` in exactly one place: proving that a module's credentials are refused a
   // neighbour's database, which never becomes an HTTP response anywhere.
@@ -53,28 +53,36 @@ export const AREA_RULES = [
   { area: '.', mayUse: [] },
 ];
 
-/** Whether a rule allows reaching for a workspace package. */
-export function allows(rule, packageName) {
-  return rule.mayUse === EVERY_PACKAGE || rule.mayUse.includes(packageName);
+/**
+ * The one subpath a module may reach for in a neighbour, and nothing else of it.
+ *
+ * This is the price of tRPC, not a loosening of the module boundary: a tRPC client is typed from
+ * the server's router, so six modules of seven have to see a type that lives in another module.
+ * The door is one named export key — `@template/<neighbour>/contract` — and it is deliberately
+ * narrow: `@template/auth` alone still resolves to `createApp`, and `dist/repository.js` resolves
+ * to nothing.
+ */
+export const NEIGHBOUR_SUBPATH = 'contract';
+
+/** Whether a rule allows reaching for a workspace package, by the specifier as written. */
+export function allows(rule, packageName, specifier = packageName) {
+  if (rule.mayUse === EVERY_PACKAGE || rule.mayUse.includes(packageName)) return true;
+  return rule.neighbourSubpath === true && specifier === `${packageName}/${NEIGHBOUR_SUBPATH}`;
 }
 
 /** How to name a rule's allowance when reporting a violation. */
 export function describeAllowance(rule) {
   if (rule.mayUse === EVERY_PACKAGE) return 'every workspace package';
-  return rule.mayUse.length > 0 ? rule.mayUse.join(', ') : 'no workspace package';
+  const named = rule.mayUse.length > 0 ? rule.mayUse.join(', ') : 'no workspace package';
+  return rule.neighbourSubpath === true
+    ? `${named}, and a neighbour only as @template/<name>/${NEIGHBOUR_SUBPATH}`
+    : named;
 }
 
 /**
- * Packages that open a door out of the process. Only `shared` may declare one.
- *
- * The list has exactly one entry today, and it is written out one by one on purpose: this is not a
- * class a check can recognise. Reading it as "third-party runtime packages" would be wrong in both
- * directions — `@orpc/*`, `hono`, `react` and `zod` stay inside the process and are not on it, and
- * a mail client added tomorrow would have to be added here by hand. There is no mail client in the
- * repository today: `modules/email` talks to Unisender with a plain `fetch`.
- *
- * `@types/pg` is deliberately absent. Types are erased at build time and open nothing; five modules
- * declare it because `shared` hands out `pg.Pool` as a type, and removing it breaks the typecheck.
+ * Packages that open a door out of the process; only `shared` may declare one. Written out one by
+ * one because this is not a class a check can recognise, and a mail client added tomorrow would have
+ * to be added by hand. `@types/pg` is absent: types are erased at build time and open nothing.
  */
 export const OUTSIDE_PROCESS_PACKAGES = ['pg'];
 
@@ -82,10 +90,8 @@ export const OUTSIDE_PROCESS_PACKAGES = ['pg'];
 export const OUTSIDE_PROCESS_HOME = 'shared';
 
 /**
- * The compartment a repository-relative path belongs to, with the rule that governs it.
- *
- * `dir` is the compartment root — `modules/admin`, `shared`, `.` — and is what tells two modules
- * apart under the same `modules/*` rule.
+ * The compartment a repository-relative path belongs to, with the rule that governs it. `dir` is
+ * what tells two modules apart under the same `modules/*` rule.
  */
 export function compartmentOf(relative) {
   const segments = relative.split('/');

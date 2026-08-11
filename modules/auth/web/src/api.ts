@@ -1,25 +1,25 @@
-import { createORPCClient } from '@orpc/client';
-import { RPCLink } from '@orpc/client/fetch';
-import type { ContractRouterClient } from '@orpc/contract';
-import type { authContract } from '@template/contracts';
+import { createTRPCClient, httpLink } from '@trpc/client';
+
+import type { AuthAdminRouter } from '@template/auth/contract';
 
 /**
- * Client for this service's own admin API.
+ * Client for this module's own admin API.
  *
  * The call goes through Gateway, which has already checked the session, the admin role and the
- * grant on Auth. Operations that change something also carry a CSRF token this service issued.
+ * grant on Auth. Operations that change something also carry a CSRF token this module issued —
+ * under its own scope, so a token minted for the shell is refused here.
+ *
+ * The token goes with exactly what changes something, because the link knows the operation's type.
  */
 const BASE = '/admin/embed/service/auth';
 
-const MUTATIONS = new Set(['sendRecovery', 'resendVerification', 'revokeSessions', 'setBlocked']);
-
-const link = new RPCLink({
+const link = httpLink({
   url: `${window.location.origin}${BASE}/rpc`,
-  fetch: (request, init) => fetch(request, { ...init, credentials: 'same-origin' }),
-  headers: async (_options, path) => {
-    if (!MUTATIONS.has(path.join('.'))) return {};
-    return { 'x-csrf-token': await csrfToken() };
-  },
+  // Queries travel as POST too: bodies stay out of URLs, and out of the caches a GET invites.
+  methodOverride: 'POST',
+  fetch: (input, init) => fetch(input, { ...init, credentials: 'same-origin' }),
+  headers: async (options) =>
+    options.op.type === 'mutation' ? { 'x-csrf-token': await csrfToken() } : {},
 });
 
 let cached: Promise<string> | null = null;
@@ -32,6 +32,7 @@ async function csrfToken(): Promise<string> {
     })
     .then((body) => body.token)
     .catch((error: unknown) => {
+      // A failed fetch must not poison every later mutation.
       cached = null;
       throw error;
     });
@@ -39,7 +40,7 @@ async function csrfToken(): Promise<string> {
   return cached;
 }
 
-export const api: ContractRouterClient<(typeof authContract)['admin']> = createORPCClient(link);
+export const api = createTRPCClient<AuthAdminRouter>({ links: [link] });
 
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

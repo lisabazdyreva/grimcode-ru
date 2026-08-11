@@ -74,7 +74,14 @@ for (const { name, dir, manifest } of packages) {
 
   for (const section of SECTIONS) {
     for (const dependency of Object.keys(manifest[section] ?? {})) {
-      if (workspaceNames.has(dependency) && dependency !== name && !allows(rule, dependency)) {
+      // A manifest cannot say "only this subpath", so declaring a neighbour is allowed wherever
+      // the subpath is — and `check-boundaries.mjs` is what holds the other half of the rule, that
+      // the only thing imported from it is `/contract`.
+      const declarable =
+        allows(rule, dependency) ||
+        (rule.neighbourSubpath === true && workspaceNames.has(dependency));
+
+      if (workspaceNames.has(dependency) && dependency !== name && !declarable) {
         problems.push(
           `${dir} declares "${dependency}" in ${section}; ` +
             `${rule.area} may use ${describeAllowance(rule)}`,

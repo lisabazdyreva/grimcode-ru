@@ -1,4 +1,6 @@
+import { initTRPC } from '@trpc/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { hashPassword, safeEqual, verifyPassword } from './crypto.js';
 import { serviceDatabaseName, serviceDatabaseUrl } from './env.js';
@@ -17,7 +19,13 @@ import {
 } from './http/cookies.js';
 import { createRateLimiter } from './rate-limit.js';
 import { CSRF_HEADER, isCsrfValid, requiresCsrfCheck } from './http/csrf.js';
+import { createServiceApp } from './http/service-app.js';
+import type { Logger } from './logger.js';
 import { applyTheme, normalizeServicePath } from './theme.js';
+import type { RpcContext } from './trpc/builders.js';
+import { createTrpcClient } from './trpc/client.js';
+import { fromContract } from './trpc/contract.js';
+import { mountTrpc } from './trpc/mount.js';
 
 describe('cookies', () => {
   it('parses a cookie header', () => {
@@ -300,5 +308,57 @@ describe('rate limiting', () => {
 
     // The most recent key is still counted, which is the one that matters.
     expect(limiter.attempt('key-999')).toBe(false);
+  });
+});
+
+/**
+ * The in-process tRPC client. The deadline is the reason it exists: `app.fetch` ignores an abort
+ * signal, and nothing above would notice until something hung.
+ */
+describe('calling a neighbour in this process over tRPC', () => {
+  const silent: Logger = {
+    debug: () => undefined,
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+    child: () => silent,
+  };
+
+  const t = initTRPC.context<RpcContext>().create();
+
+  /** A module with one procedure, mounted exactly as a real one is, and a client aimed at it. */
+  function callNeighbour(answer: () => Promise<{ pong: string }>, timeoutMs?: number) {
+    const router = t.router({
+      ping: fromContract(
+        { input: z.object({ say: z.string() }), output: z.object({ pong: z.string() }) },
+        t.procedure,
+      ).query(answer),
+    });
+
+    const app = createServiceApp('email', silent);
+    mountTrpc(app, '/internal/rpc', router, ({ request, resHeaders }) => ({ request, resHeaders }));
+
+    return createTrpcClient<typeof router>({
+      url: 'http://email:3006/internal/rpc',
+      fetch: (request) => app.fetch(request),
+      timeoutMs,
+    });
+  }
+
+  it('reaches it without a network and answers through the contract', async () => {
+    const client = callNeighbour(() => Promise.resolve({ pong: 'pong' }));
+
+    expect(await client.ping.query({ say: 'hi' })).toEqual({ pong: 'pong' });
+  });
+
+  it('stops waiting when the neighbour hangs, which no signal would do here', async () => {
+    const client = callNeighbour(
+      () => new Promise((resolve) => setTimeout(() => resolve({ pong: 'late' }), 1_000)),
+      50,
+    );
+
+    const started = Date.now();
+    await expect(client.ping.query({ say: 'hi' })).rejects.toThrow(/did not answer within 50 ms/);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 });

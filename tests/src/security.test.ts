@@ -1,6 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ADMIN, AUTH, BASE_URL, Session, serviceAdmin, USERS, waitForStack } from './client.js';
+import {
+  ADMIN,
+  AUTH,
+  BASE_URL,
+  errorMessage,
+  Session,
+  serviceAdmin,
+  USERS,
+  waitForStack,
+} from './client.js';
 import {
   createUser,
   PASSWORD,
@@ -82,11 +91,11 @@ describe('sessions', () => {
     const response = await fetch(`${process.env.ACCEPTANCE_BASE_URL}/service/auth/rpc/currentSession`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ json: {} }),
+      body: JSON.stringify({}),
     });
 
-    const body = (await response.json()) as { json: { identity: unknown } };
-    expect(body.json.identity).toBeNull();
+    const body = (await response.json()) as { result: { data: { identity: unknown } } };
+    expect(body.result.data.identity).toBeNull();
     expect(stolen.hasSession).toBe(false);
   });
 
@@ -123,11 +132,36 @@ describe('sessions', () => {
     const response = await fetch(`${BASE_URL}/service/auth/rpc/currentSession`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ json: {} }),
+      body: JSON.stringify({}),
     });
 
-    const body = (await response.json()) as { json: { identity: unknown } };
-    expect(body.json.identity).toBeNull();
+    const body = (await response.json()) as { result: { data: { identity: unknown } } };
+    expect(body.result.data.identity).toBeNull();
+  });
+
+  /**
+   * And signing out of the panel needs the token, like every other change. Nothing else can see the
+   * difference — the call succeeds either way — which is why the check has to exist.
+   */
+  it('cannot be ended by a forged panel logout', async () => {
+    const admin = await createUser('csrflogout');
+    await restore.remember(admin.userId);
+    await owner.call(
+      ADMIN,
+      'addAdministrator',
+      { email: admin.email, role: 'admin', grants: [] },
+      { csrf: true },
+    );
+
+    admin.session.forgetCsrf();
+    const refused = await admin.session.rpc(ADMIN, 'logout');
+
+    expect(refused.status).toBe(403);
+    expect(errorMessage(refused.body)).toMatch(/csrf/i);
+
+    // Refused means nothing happened: the session still opens the panel.
+    expect(admin.session.hasSession).toBe(true);
+    await admin.session.call(ADMIN, 'session');
   });
 });
 

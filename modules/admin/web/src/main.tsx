@@ -42,8 +42,8 @@ function Shell() {
   const logout = React.useCallback(() => {
     // Logout is a server-side operation: Auth invalidates the session and the server clears the
     // HttpOnly cookie. Dropping the cookie in the browser alone would leave the session usable.
-    api
-      .logout({})
+    api.logout
+      .mutate({})
       .then(() => window.location.assign('/'))
       .catch((error: unknown) =>
         toast.error(error instanceof Error ? error.message : String(error)),

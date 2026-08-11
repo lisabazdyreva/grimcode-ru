@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   createServiceApp,
   mountCsrfEndpoint,
-  mountRpc,
   mountSpa,
+  mountTrpc,
   readAdminContext,
   type FetchLike,
   type Logger,
@@ -33,13 +33,15 @@ export function createApp(deps: AdminDeps): ServiceApp {
    * The single authorization method Gateway calls on every `/admin/**` request. It is mounted on
    * the internal path only, which Gateway never routes to, so no browser can reach it.
    */
-  mountRpc(app, '/internal/rpc', internalRouter, ({ hono }) => ({
+  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
     repo,
     auth: createAuthClient(hono.get('requestId'), deps.callAuth),
     logger: hono.get('logger'),
+    request,
+    resHeaders,
   }));
 
-  mountRpc(app, '/admin/rpc', adminRouter, ({ request, resHeaders, hono }) => ({
+  mountTrpc(app, '/admin/rpc', adminRouter, ({ request, resHeaders, hono }) => ({
     repo,
     auth: createAuthClient(hono.get('requestId'), deps.callAuth),
     request,

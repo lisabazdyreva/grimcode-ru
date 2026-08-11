@@ -1,4 +1,3 @@
-import { oc } from '@orpc/contract';
 import { z } from 'zod';
 
 import {
@@ -38,21 +37,27 @@ export const adminUserProfileSchema = userProfileSchema.extend({
 
 export const usersPublicContract = {
   /** Profile of the caller. Requires a valid user session, verified through Auth. */
-  getOwnProfile: oc.input(z.object({})).output(z.object({ profile: userProfileSchema })),
+  getOwnProfile: {
+    input: z.object({}),
+    output: z.object({ profile: userProfileSchema }),
+  },
 
-  updateOwnProfile: oc
-    .input(z.object({ displayName: z.string().min(1).max(120).nullable() }))
-    .output(z.object({ ok: z.literal(true), profile: userProfileSchema })),
-
+  updateOwnProfile: {
+    input: z.object({ displayName: z.string().min(1).max(120).nullable() }),
+    output: z.object({ ok: z.literal(true), profile: userProfileSchema }),
+  },
 };
 
 export const usersAdminContract = {
-  listProfiles: oc.input(paginationInputSchema).output(pageOf(adminUserProfileSchema)),
+  listProfiles: {
+    input: paginationInputSchema,
+    output: pageOf(adminUserProfileSchema),
+  },
 
-  getProfile: oc
-    .input(z.object({ id: idSchema }))
-    .output(z.object({ profile: adminUserProfileSchema })),
-
+  getProfile: {
+    input: z.object({ id: idSchema }),
+    output: z.object({ profile: adminUserProfileSchema }),
+  },
 };
 
 export const usersContract = {

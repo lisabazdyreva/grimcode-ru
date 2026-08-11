@@ -1,98 +1,118 @@
-import { ORPCError } from '@orpc/client';
-import { implement } from '@orpc/server';
+import type { AuthInternalRouter } from '@template/auth/contract';
+import { adminContract, type AdminRole } from '@template/contracts';
 import {
-  adminContract,
-  type AdminContext,
-  type AdminRole,
-} from '@template/contracts';
-import {
-  createRpcClient,
+  contractCoverage,
+  createTrpcClient,
   expiredSessionCookie,
+  fromContract,
   internalServiceUrl,
-  isCsrfValid,
   parseCookies,
   REQUEST_ID_HEADER,
+  requireCsrf,
   sessionCookieName,
+  verifiedAdmin,
+  type AdminAwareContext,
   type FetchLike,
   type Logger,
+  type RpcContext,
 } from '@template/shared';
+import { initTRPC, TRPCError } from '@trpc/server';
 
 import { authorize, canOpenDatabase, visibleServices, type AuthClient } from './authorization.js';
 import { toAdministrator, type AdminRepository } from './repository.js';
 
-export interface InternalContext {
+export interface InternalContext extends RpcContext {
   repo: AdminRepository;
   auth: AuthClient;
   logger: Logger;
 }
 
-export interface AdminRpcContext {
+export interface AdminRpcContext extends AdminAwareContext {
   repo: AdminRepository;
   auth: AuthClient;
-  request: Request;
-  /** Headers this call adds to the response, used to forward Auth's cookie-clearing header. */
-  resHeaders: Headers;
   requestId: string;
-  admin: AdminContext | null;
 }
 
-const internalOs = implement(adminContract.internal).$context<InternalContext>();
+// --- internal surface -----------------------------------------------------------------------
 
-export const internalRouter = internalOs.router({
-  isActiveOwner: internalOs.isActiveOwner.handler(async ({ input, context }) => {
-    const row = await context.repo.findByUserId(input.userId);
+const internalT = initTRPC.context<InternalContext>().create();
 
-    return { activeOwner: row?.role === 'owner' && row.enabled };
-  }),
+export const internalRouter = internalT.router({
+  isActiveOwner: fromContract(adminContract.internal.isActiveOwner, internalT.procedure).query(
+    async ({ input, ctx }) => {
+      const row = await ctx.repo.findByUserId(input.userId);
 
-  authorize: internalOs.authorize.handler(({ input, context }) => authorize(input, context)),
+      return { activeOwner: row?.role === 'owner' && row.enabled };
+    },
+  ),
+
+  /**
+   * A query, because from Gateway's side this is a question asked on every `/admin/**` request,
+   * including plain page loads. It can write once — the very first call bootstraps the owner from
+   * Auth's first account when the registry is still empty — and that is the exception the registry
+   * exists to make, not a reason to call every authorization check a mutation.
+   */
+  authorize: fromContract(adminContract.internal.authorize, internalT.procedure).query(
+    ({ input, ctx }) => authorize(input, ctx),
+  ),
 });
 
-const adminOs = implement(adminContract.admin).$context<AdminRpcContext>();
+const internalCoverage: 'ok' = contractCoverage(adminContract.internal, internalRouter);
+void internalCoverage;
 
-function requireAdmin(context: AdminRpcContext): AdminContext {
-  if (!context.admin) throw new ORPCError('FORBIDDEN', { message: 'Контекст администратора отсутствует' });
-  return context.admin;
-}
+// --- panel surface --------------------------------------------------------------------------
 
-/** Owner-only mutations are protected by both the verified context and a CSRF token. */
-/** Reading the registry is owner-only too, but it changes nothing and needs no token. */
-function requireOwner(context: AdminRpcContext): AdminContext {
-  const admin = requireAdmin(context);
-  if (admin.role !== 'owner') {
-    throw new ORPCError('FORBIDDEN', { message: 'Управлять администраторами может только владелец' });
-  }
-  return admin;
-}
+const adminT = initTRPC.context<AdminRpcContext>().create();
 
-function requireOwnerMutation(context: AdminRpcContext): AdminContext {
-  const admin = requireAdmin(context);
-  if (admin.role !== 'owner') {
-    throw new ORPCError('FORBIDDEN', { message: 'Управлять администраторами может только владелец' });
+/**
+ * Four builders, because this surface has two axes and not one.
+ *
+ * Everywhere else a procedure is either an admin read or an admin change; the panel adds a second
+ * question — administrator or owner — and the two multiply. The owner half is Admin's alone. What
+ * they buy is that the answer is in the declaration and not in the first line of nine bodies.
+ */
+const adminProcedure = adminT.procedure.use(({ ctx, next }) =>
+  next({ ctx: { admin: verifiedAdmin(ctx) } }),
+);
+
+const adminMutation = adminProcedure.use(({ ctx, next }) => {
+  requireCsrf(ctx, 'panel');
+  return next();
+});
+
+/**
+ * One owner rule and one sentence for it — three wordings of one condition is how a rule starts
+ * being edited in one place only.
+ */
+const ownerProcedure = adminProcedure.use(({ ctx, next }) => {
+  if (ctx.admin.role !== 'owner') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Доступно только владельцу' });
   }
-  if (!isCsrfValid(context.request.headers, 'panel')) {
-    throw new ORPCError('FORBIDDEN', { message: 'CSRF-токен отсутствует или неверен' });
-  }
-  return admin;
-}
+  return next();
+});
+
+const ownerMutation = ownerProcedure.use(({ ctx, next }) => {
+  requireCsrf(ctx, 'panel');
+  return next();
+});
 
 function lastOwnerGuard(userId: string) {
   return (next: { role: AdminRole; enabled: boolean }, activeOwners: number): void => {
     const staysActiveOwner = next.role === 'owner' && next.enabled;
     if (!staysActiveOwner && activeOwners === 0) {
-      throw new ORPCError('CONFLICT', {
+      throw new TRPCError({
+        code: 'CONFLICT',
         message: 'Последнего активного владельца нельзя понизить или отключить',
-        data: { userId },
+        cause: { userId },
       });
     }
   };
 }
 
-export const adminRouter = adminOs.router({
-  session: adminOs.session.handler(async ({ context }) => {
-    const admin = requireAdmin(context);
-    const row = await context.repo.findByUserId(admin.userId);
-    if (!row) throw new ORPCError('FORBIDDEN', { message: 'Не администратор' });
+export const adminRouter = adminT.router({
+  session: fromContract(adminContract.admin.session, adminProcedure).query(async ({ ctx }) => {
+    const row = await ctx.repo.findByUserId(ctx.admin.userId);
+    if (!row) throw new TRPCError({ code: 'FORBIDDEN', message: 'Не администратор' });
 
     return {
       userId: row.user_id,
@@ -104,82 +124,84 @@ export const adminRouter = adminOs.router({
     };
   }),
 
-  listAdministrators: adminOs.listAdministrators.handler(async ({ input, context }) => {
-    const admin = requireAdmin(context);
-    if (admin.role !== 'owner') {
-      throw new ORPCError('FORBIDDEN', { message: 'Список администраторов видит только владелец' });
-    }
-
-    const { rows, total } = await context.repo.list(input.query, input.limit, input.offset);
-    return {
-      items: rows.map(toAdministrator),
-      total,
-      limit: input.limit,
-      offset: input.offset,
-    };
-  }),
+  listAdministrators: fromContract(adminContract.admin.listAdministrators, ownerProcedure).query(
+    async ({ input, ctx }) => {
+      const { rows, total } = await ctx.repo.list(input.query, input.limit, input.offset);
+      return {
+        items: rows.map(toAdministrator),
+        total,
+        limit: input.limit,
+        offset: input.offset,
+      };
+    },
+  ),
 
   /** Adds an already registered user by email. Product users from Users are never listed here. */
-  searchUsers: adminOs.searchUsers.handler(async ({ input, context }) => {
-    requireOwner(context);
-
-    const { identities } = await context.auth.searchIdentities({ query: input.query, limit: 10 });
-
-    // Whether each one is already an administrator, so the interface can say so before the owner
-    // tries and is refused.
-    const users = await Promise.all(
-      identities.map(async (identity) => ({
-        userId: identity.id,
-        email: identity.email,
-        isAdministrator: (await context.repo.findByUserId(identity.id)) !== null,
-      })),
-    );
-
-    return { users };
-  }),
-
-  addAdministrator: adminOs.addAdministrator.handler(async ({ input, context }) => {
-    const admin = requireOwnerMutation(context);
-
-    const { identity } = await context.auth.getIdentityByEmail({ email: input.email });
-    if (!identity) {
-      throw new ORPCError('NOT_FOUND', {
-        message: 'С таким адресом никто не зарегистрирован — сначала нужен аккаунт',
+  searchUsers: fromContract(adminContract.admin.searchUsers, ownerProcedure).query(
+    async ({ input, ctx }) => {
+      const { identities } = await ctx.auth.searchIdentities.query({
+        query: input.query,
+        limit: 10,
       });
-    }
 
-    if (await context.repo.findByUserId(identity.id)) {
-      throw new ORPCError('CONFLICT', { message: 'Этот человек уже администратор' });
-    }
+      // Whether each one is already an administrator, so the interface can say so before the owner
+      // tries and is refused.
+      const users = await Promise.all(
+        identities.map(async (identity) => ({
+          userId: identity.id,
+          email: identity.email,
+          isAdministrator: (await ctx.repo.findByUserId(identity.id)) !== null,
+        })),
+      );
 
-    const row = await context.repo.add(identity.id, identity.email, input.role, input.grants);
-    await context.repo.audit({
-      action: 'administrator.added',
-      actorUserId: admin.userId,
-      subjectUserId: identity.id,
-      details: { role: input.role, grants: input.grants },
-    });
+      return { users };
+    },
+  ),
 
-    return { ok: true as const, administrator: toAdministrator(row) };
-  }),
+  addAdministrator: fromContract(adminContract.admin.addAdministrator, ownerMutation).mutation(
+    async ({ input, ctx }) => {
+      const { identity } = await ctx.auth.getIdentityByEmail.query({ email: input.email });
+      if (!identity) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'С таким адресом никто не зарегистрирован — сначала нужен аккаунт',
+        });
+      }
 
-  updateAdministrator: adminOs.updateAdministrator.handler(async ({ input, context }) => {
-    const admin = requireOwnerMutation(context);
+      if (await ctx.repo.findByUserId(identity.id)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Этот человек уже администратор' });
+      }
 
-    const existing = await context.repo.findByUserId(input.userId);
-    if (!existing) throw new ORPCError('NOT_FOUND', { message: 'Администратор не найден' });
+      const row = await ctx.repo.add(identity.id, identity.email, input.role, input.grants);
+      await ctx.repo.audit({
+        action: 'administrator.added',
+        actorUserId: ctx.admin.userId,
+        subjectUserId: identity.id,
+        details: { role: input.role, grants: input.grants },
+      });
+
+      return { ok: true as const, administrator: toAdministrator(row) };
+    },
+  ),
+
+  updateAdministrator: fromContract(
+    adminContract.admin.updateAdministrator,
+    ownerMutation,
+  ).mutation(async ({ input, ctx }) => {
+    const existing = await ctx.repo.findByUserId(input.userId);
+    if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Администратор не найден' });
 
     // The last-owner rule is enforced inside the transaction, so two simultaneous requests cannot
     // both believe another owner remains.
-    const row = await context.repo.update(
+    const row = await ctx.repo.update(
       input.userId,
       { role: input.role, enabled: input.enabled, grants: input.grants },
       lastOwnerGuard(input.userId),
     );
 
-    await context.repo.audit({
+    await ctx.repo.audit({
       action: 'administrator.updated',
-      actorUserId: admin.userId,
+      actorUserId: ctx.admin.userId,
       subjectUserId: input.userId,
       details: {
         role: input.role ?? null,
@@ -191,27 +213,24 @@ export const adminRouter = adminOs.router({
     return { ok: true as const, administrator: toAdministrator(row) };
   }),
 
-  listAudit: adminOs.listAudit.handler(async ({ input, context }) => {
-    const admin = requireAdmin(context);
-    if (admin.role !== 'owner') {
-      throw new ORPCError('FORBIDDEN', { message: 'Журнал доступен только владельцу' });
-    }
-
-    const { rows, total } = await context.repo.listAudit(input.query, input.limit, input.offset);
-    return {
-      items: rows.map((row) => ({
-        id: String(row.id),
-        action: String(row.action),
-        actorUserId: (row.actor_user_id as string | null) ?? null,
-        subjectUserId: (row.subject_user_id as string | null) ?? null,
-        details: (row.details as Record<string, unknown>) ?? {},
-        createdAt: (row.created_at as Date).toISOString(),
-      })),
-      total,
-      limit: input.limit,
-      offset: input.offset,
-    };
-  }),
+  listAudit: fromContract(adminContract.admin.listAudit, ownerProcedure).query(
+    async ({ input, ctx }) => {
+      const { rows, total } = await ctx.repo.listAudit(input.query, input.limit, input.offset);
+      return {
+        items: rows.map((row) => ({
+          id: String(row.id),
+          action: String(row.action),
+          actorUserId: (row.actor_user_id as string | null) ?? null,
+          subjectUserId: (row.subject_user_id as string | null) ?? null,
+          details: (row.details as Record<string, unknown>) ?? {},
+          createdAt: (row.created_at as Date).toISOString(),
+        })),
+        total,
+        limit: input.limit,
+        offset: input.offset,
+      };
+    },
+  ),
 
   /**
    * Logout is a server-side Auth operation.
@@ -221,29 +240,37 @@ export const adminRouter = adminOs.router({
    * whole of it: clearing the cookie without invalidating the row leaves a session that still
    * works, so a failure of the call must reach the caller instead of being turned into a clean
    * sign-out — which is what an exception here does.
+   *
+   * It is an `adminMutation` and not an `adminProcedure`, and that closes something that was left
+   * open: the panel's browser client already listed `logout` among its mutations and sent a CSRF
+   * token with it, while the handler asked only for an administrator and ignored the token. A token
+   * that is sent and not checked is not a defence. Now the builder checks it, and the link attaches
+   * it because it knows the operation changes something.
    */
-  logout: adminOs.logout.handler(async ({ context }) => {
-    requireAdmin(context);
-
-    const token = parseCookies(context.request.headers.get('cookie'))[sessionCookieName()];
+  logout: fromContract(adminContract.admin.logout, adminMutation).mutation(async ({ ctx }) => {
+    const token = parseCookies(ctx.request.headers.get('cookie'))[sessionCookieName()];
     if (!token) return { ok: true as const };
 
-    await context.auth.revokeSessionByToken({ sessionToken: token });
-    context.resHeaders.append('set-cookie', expiredSessionCookie());
+    await ctx.auth.revokeSessionByToken.mutate({ sessionToken: token });
+    ctx.resHeaders.append('set-cookie', expiredSessionCookie());
 
     return { ok: true as const };
   }),
 });
 
+const adminCoverage: 'ok' = contractCoverage(adminContract.admin, adminRouter);
+void adminCoverage;
+
+/** The panel's browser client, Gateway and the composer are typed from these, and nothing else. */
+export type AdminInternalRouter = typeof internalRouter;
+export type AdminPanelRouter = typeof adminRouter;
+
 /**
- * Typed client for Auth's internal surface, used by authorization and the administrator list.
- *
- * `callAuth` is who answers — the network when Auth is a separate service, Auth's own app when it
- * shares this process. Either way the call goes through the contract, which is what keeps the two
- * honest about the shape of what crosses between them.
+ * Typed client for Auth's internal surface. `callAuth` is who answers — the network, or Auth's own
+ * app when it shares this process; either way the call goes through the contract.
  */
 export function createAuthClient(requestId: string, callAuth: FetchLike): AuthClient {
-  return createRpcClient<AuthClient>({
+  return createTrpcClient<AuthInternalRouter>({
     url: `${internalServiceUrl('auth')}/internal/rpc`,
     headers: { [REQUEST_ID_HEADER]: requestId },
     fetch: callAuth,

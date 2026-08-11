@@ -1,35 +1,27 @@
-import { createORPCClient } from '@orpc/client';
-import { RPCLink } from '@orpc/client/fetch';
-import type { ContractRouterClient } from '@orpc/contract';
-import type { emailContract } from '@template/contracts';
+import { createTRPCClient, httpLink } from '@trpc/client';
+
+import type { EmailAdminRouter } from '@template/email/contract';
 
 /**
- * Client for this service's own admin API.
+ * Client for this module's own admin API.
  *
  * The call goes through Gateway, which has already checked the session, the admin role and the
- * grant on Email. Operations that change something also carry a CSRF token this service issued.
+ * grant on Email. Operations that change something also carry a CSRF token this module issued.
+ *
+ * The type comes through this module's own `./contract` export, which resolves to declarations and
+ * nothing else, so the server's code cannot follow it into the browser bundle.
  */
 const BASE = '/admin/embed/service/email';
 
-// `previewVersion` renders without storing anything, so it needs no token.
-const MUTATIONS = new Set([
-  'createTemplate',
-  'updateTemplate',
-  'createDraft',
-  'saveDraft',
-  'publishDraft',
-  'testSend',
-  'uploadImage',
-  'reindexSeedTemplates',
-]);
-
-const link = new RPCLink({
+const link = httpLink({
   url: `${window.location.origin}${BASE}/rpc`,
-  fetch: (request, init) => fetch(request, { ...init, credentials: 'same-origin' }),
-  headers: async (_options, path) => {
-    if (!MUTATIONS.has(path.join('.'))) return {};
-    return { 'x-csrf-token': await csrfToken() };
-  },
+  // Queries travel as POST too: bodies stay out of URLs, and out of the caches a GET invites.
+  methodOverride: 'POST',
+  fetch: (input, init) => fetch(input, { ...init, credentials: 'same-origin' }),
+  // The token is attached to exactly what changes something: the link knows the operation's type,
+  // so `previewVersion` travels without one because it is a query — it renders and stores nothing.
+  headers: async (options) =>
+    options.op.type === 'mutation' ? { 'x-csrf-token': await csrfToken() } : {},
 });
 
 let cached: Promise<string> | null = null;
@@ -42,6 +34,7 @@ async function csrfToken(): Promise<string> {
     })
     .then((body) => body.token)
     .catch((error: unknown) => {
+      // A failed fetch must not poison every later mutation.
       cached = null;
       throw error;
     });
@@ -49,7 +42,7 @@ async function csrfToken(): Promise<string> {
   return cached;
 }
 
-export const api: ContractRouterClient<(typeof emailContract)['admin']> = createORPCClient(link);
+export const api = createTRPCClient<EmailAdminRouter>({ links: [link] });
 
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

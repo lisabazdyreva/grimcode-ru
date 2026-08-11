@@ -7,7 +7,7 @@ import { routeRequest } from './router.js';
 
 /**
  * The Admin call itself is stubbed here: these tests are about Gateway's own routing, allowlists
- * and header handling. The real oRPC round-trip is covered by the integration checks.
+ * and header handling. The real round-trip to Admin is covered by the acceptance checks.
  */
 const stub = vi.hoisted(() => ({
   authorize: null as unknown as (request: Request, target: unknown) => Promise<unknown>,

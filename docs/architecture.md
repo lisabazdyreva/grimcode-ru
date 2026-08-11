@@ -132,9 +132,22 @@ to it.
 
 ## Contracts, not conventions
 
-Modules talk over oRPC contracts with Zod schemas, kept in `contracts/`. A contract is the only thing
-two modules share; neither imports the other's code, and `scripts/check-boundaries.mjs` refuses a
-build where one does — type-only imports included.
+Modules talk over tRPC, and what they agree on is a set of Zod schemas kept in `contracts/`, paired
+as `{ input, output }`. That package depends on nothing but `zod`: a contract that imported the RPC
+library would tie every module to that library's lifetime.
+
+A module still may not import a neighbour's code — `scripts/check-boundaries.mjs` refuses a build
+where one does — with a single exception it names explicitly: `@template/<neighbour>/contract`, and
+that specifier only. The exception exists because a tRPC client is typed from the server's router,
+so the type has to cross the boundary; the door is one `exports` key per module, resolving to a file
+that re-exports router types and nothing else. `@template/auth` alone still resolves to `createApp`,
+and `dist/repository.js` resolves to nothing at all.
+
+That door is a projection of the implementation, not an agreement, and it is not what keeps a
+router honest. Two things do: `fromContract` builds every procedure with the contract's own
+`.input()` and `.output()` baked in, and `contractCoverage` refuses to compile a router that
+implements the wrong set — a missing procedure, an extra one, or the right name carrying another's
+schemas.
 
 They kept talking that way after moving into one process, and that was a decision rather than
 inertia. A direct method call would be faster and would hide the two things that only ever show up
@@ -145,7 +158,7 @@ TCP hop, and nothing else: the composer hands each module's client the neighbour
 One thing had to be rebuilt by hand. Over the network a client's `AbortSignal` bounds the wait; in
 one process it is ignored, and a handler that hangs never returns at all — measured, a 1500 ms
 handler under a 200 ms limit came back after 1512 ms with no error. So the deadline lives in
-`createRpcClient` now. It buys exactly one thing: the caller stops waiting. The handler runs to its
+`createTrpcClient` now. It buys exactly one thing: the caller stops waiting. The handler runs to its
 end regardless.
 
 Each contract is split by who may call it:

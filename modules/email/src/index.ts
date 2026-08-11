@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   createServiceApp,
   mountCsrfEndpoint,
-  mountRpc,
   mountSpa,
+  mountTrpc,
   readAdminContext,
   type Logger,
   type Pool,
@@ -49,19 +49,27 @@ export function createApp(deps: EmailDeps): ServiceApp {
   const transport = createTransport(deps.logger);
   const app = createServiceApp('email', deps.logger);
 
-  mountRpc(app, '/internal/rpc', internalRouter, ({ hono }) => ({
-    repo,
-    transport,
-    logger: hono.get('logger'),
-  }));
-
-  mountRpc(app, '/admin/embed/service/email/rpc', adminRouter, ({ request, hono }) => ({
+  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
     repo,
     transport,
     logger: hono.get('logger'),
     request,
-    admin: readAdminContext(request.headers),
+    resHeaders,
   }));
+
+  mountTrpc(
+    app,
+    '/admin/embed/service/email/rpc',
+    adminRouter,
+    ({ request, resHeaders, hono }) => ({
+      repo,
+      transport,
+      logger: hono.get('logger'),
+      request,
+      resHeaders,
+      admin: readAdminContext(request.headers),
+    }),
+  );
 
   mountCsrfEndpoint(app, '/admin/embed/service/email/csrf', 'email');
 

@@ -62,11 +62,19 @@ class FakeRepo {
     [...this.rows.values()].find((row) => row.bootstrap) ?? null;
 }
 
+/**
+ * Auth, answering from memory.
+ *
+ * The procedures are nested under `query` because that is the shape a tRPC client has: the
+ * operation's kind is part of the call and not only of the server. It reads as one word of noise
+ * per line, and it buys the thing this whole stub exists for — if a procedure here ever stopped
+ * matching Auth's router, the type would say so rather than the test quietly passing.
+ */
 function fakeAuth(options: { session?: Identity | null; first?: Identity | null }): AuthClient {
   return {
-    resolveSession: async () => ({ identity: options.session ?? null }),
-    getFirstIdentity: async () => ({ identity: options.first ?? null }),
-    getIdentityByEmail: async () => ({ identity: null }),
+    resolveSession: { query: async () => ({ identity: options.session ?? null }) },
+    getFirstIdentity: { query: async () => ({ identity: options.first ?? null }) },
+    getIdentityByEmail: { query: async () => ({ identity: null }) },
   } as unknown as AuthClient;
 }
 

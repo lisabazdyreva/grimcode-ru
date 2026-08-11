@@ -45,7 +45,8 @@ export function ProfilesPage() {
   }, [query]);
 
   const list = useAsync<Page<Profile>>(
-    () => api.listProfiles({ query: search === '' ? undefined : search, limit: LIMIT, offset }),
+    () =>
+      api.listProfiles.query({ query: search === '' ? undefined : search, limit: LIMIT, offset }),
     [search, offset],
   );
 
@@ -132,7 +133,7 @@ export function ProfilesPage() {
  * stale answer.
  */
 function ProfileDialog({ id, onClose }: { id: string; onClose: () => void }) {
-  const state = useAsync<{ profile: Profile }>(() => api.getProfile({ id }), [id]);
+  const state = useAsync<{ profile: Profile }>(() => api.getProfile.query({ id }), [id]);
   const profile = state.data?.profile;
 
   return (

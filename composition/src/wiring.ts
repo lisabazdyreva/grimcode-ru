@@ -1,6 +1,5 @@
-import type { adminInternalContract, ContractRouterClient } from '@template/contracts';
-
 import { createApp as createAdminApp, migrations as adminMigrations } from '@template/admin';
+import type { AdminInternalRouter } from '@template/admin/contract';
 import { createApp as createAppApp } from '@template/app';
 import {
   createApp as createAuthApp,
@@ -16,7 +15,7 @@ import {
 import {
   createLogger,
   createPool,
-  createRpcClient,
+  createTrpcClient,
   internalServiceUrl,
   publicSiteUrl,
   serviceDatabaseName,
@@ -114,11 +113,11 @@ export async function compose(): Promise<Composition> {
   const moduleLogger = (name: ModuleName) => logger.child({ module: name });
 
   const isActiveOwner: IsActiveOwner = async (userId) => {
-    const admin = createRpcClient<ContractRouterClient<typeof adminInternalContract>>({
+    const admin = createTrpcClient<AdminInternalRouter>({
       url: `${internalServiceUrl('admin')}/internal/rpc`,
       fetch: call('admin'),
     });
-    return (await admin.isActiveOwner({ userId })).activeOwner;
+    return (await admin.isActiveOwner.query({ userId })).activeOwner;
   };
 
   apps.email = createEmailApp({ logger: moduleLogger('email'), pool: pools.email });

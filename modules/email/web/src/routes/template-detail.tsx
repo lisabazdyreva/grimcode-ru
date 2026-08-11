@@ -46,12 +46,15 @@ export function TemplateDetailPage() {
   const { templateId } = useParams({ from: '/templates/$templateId' });
   const [busy, setBusy] = React.useState(false);
 
-  const detail = useAsync<TemplateDetail>(() => api.getTemplate({ id: templateId }), [templateId]);
+  const detail = useAsync<TemplateDetail>(
+    () => api.getTemplate.query({ id: templateId }),
+    [templateId],
+  );
 
   const createDraft = async () => {
     setBusy(true);
     try {
-      const result = await api.createDraft({ templateId });
+      const result = await api.createDraft.mutate({ templateId });
       toast.success(`Черновик v${result.version.version} создан`);
       detail.reload();
     } catch (error) {

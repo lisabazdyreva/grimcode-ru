@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   createServiceApp,
   mountCsrfEndpoint,
-  mountRpc,
   mountSpa,
+  mountTrpc,
   readAdminContext,
   type FetchLike,
   type Logger,
@@ -30,17 +30,26 @@ export function createApp(deps: NotificationsDeps): ServiceApp {
   const app = createServiceApp('notifications', deps.logger);
 
   // Notifications has no public surface: only other modules emit events, over the internal path.
-  mountRpc(app, '/internal/rpc', internalRouter, ({ hono }) => ({
+  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
     repo,
     logger: hono.get('logger'),
     requestId: hono.get('requestId'),
     callEmail: deps.callEmail,
+    request,
+    resHeaders,
   }));
 
-  mountRpc(app, '/admin/embed/service/notifications/rpc', adminRouter, ({ request }) => ({
-    repo,
-    admin: readAdminContext(request.headers),
-  }));
+  mountTrpc(
+    app,
+    '/admin/embed/service/notifications/rpc',
+    adminRouter,
+    ({ request, resHeaders }) => ({
+      repo,
+      request,
+      resHeaders,
+      admin: readAdminContext(request.headers),
+    }),
+  );
 
   mountCsrfEndpoint(app, '/admin/embed/service/notifications/csrf', 'notifications');
 

@@ -46,6 +46,25 @@ up in the service admin instead of disappearing into a log line.
 Notifications has **no public surface**: it is deliberately absent from Gateway's public
 allowlist, so no browser can emit an event.
 
+### What Auth may see of this module
+
+A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
+crosses through one named door and no other: `@template/notifications/contract` resolves to
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types and nothing else, while
+`@template/notifications` still resolves to `createApp` alone. The repository and the routing to
+Email are reachable by no specifier at all.
+
+That door is not an agreement about behaviour: it decides which files are visible, not what ends up
+in the type. What keeps the type honest is the `.output()` schema every procedure is built with and
+the `contractCoverage` line beside each router, which refuses to compile when the router and the
+contract disagree.
+
+The admin surface issues a CSRF cookie like every other, and no call currently carries a token —
+because nothing on it changes anything. An event is a record of what happened, and a log that can
+be edited is not a record. The browser client no longer keeps a list of which procedures are
+mutations; the link reads the operation's own type, so the day a mutation is added here the token
+travels with it without anyone remembering to add a name to a list.
+
 ## Data
 
 Database `<PROJECT_SLUG>_notifications`, single `events` table, opened as the role of the same

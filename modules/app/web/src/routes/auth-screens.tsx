@@ -60,7 +60,7 @@ export function LoginScreen() {
     event.preventDefault();
     setBusy(true);
     try {
-      await auth.login({ email, password });
+      await auth.login.mutate({ email, password });
       await refresh();
       // A full navigation, so the protected part starts from a clean state with the new cookie.
       window.location.assign(returnPathOrHome(search.next));
@@ -125,7 +125,7 @@ export function RegisterScreen() {
     event.preventDefault();
     setBusy(true);
     try {
-      await auth.register({ email, password });
+      await auth.register.mutate({ email, password });
       await refresh();
       window.location.assign('/app/');
     } catch (error) {
@@ -186,7 +186,7 @@ export function RequestResetScreen() {
     event.preventDefault();
     setBusy(true);
     try {
-      await auth.requestPasswordReset({ email });
+      await auth.requestPasswordReset.mutate({ email });
     } finally {
       // The same answer either way: whether an address is registered is not something this screen
       // is willing to reveal.
@@ -253,7 +253,7 @@ export function ResetPasswordScreen() {
     event.preventDefault();
     setBusy(true);
     try {
-      await auth.resetPassword({ token, password });
+      await auth.resetPassword.mutate({ token, password });
       toast.success('Пароль изменён. Все остальные сессии завершены.');
       void navigate({ to: '/login', search: { next: undefined } });
     } catch (error) {
@@ -325,8 +325,8 @@ export function ConfirmEmailChangeScreen() {
       return;
     }
 
-    auth
-      .confirmEmailChange({ token })
+    auth.confirmEmailChange
+      .mutate({ token })
       .then(() => refresh())
       .then(() => setState('done'))
       .catch((error: unknown) => {
@@ -392,8 +392,8 @@ export function VerifyEmailScreen() {
       return;
     }
 
-    auth
-      .verifyEmail({ token })
+    auth.verifyEmail
+      .mutate({ token })
       .then(() => refresh())
       .then(() => setState('done'))
       .catch((error: unknown) => {

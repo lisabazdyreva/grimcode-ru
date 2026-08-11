@@ -110,13 +110,16 @@ export class Session {
     const response = await this.fetch(`${prefix}/rpc/${procedure}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ json: input }),
+      body: JSON.stringify(input),
     });
 
     const text = await response.text();
-    const parsed = text === '' ? null : (JSON.parse(text) as { json?: unknown });
+    const parsed = text === '' ? null : (JSON.parse(text) as Record<string, unknown>);
 
-    return { status: response.status, body: (parsed?.json ?? parsed) as T };
+    // An answer is `{ result: { data } }` on success and `{ error: … }` on refusal. The error
+    // shape is kept whole so that `errorCode` and `errorMessage` can read it.
+    const result = parsed?.result as { data?: unknown } | undefined;
+    return { status: response.status, body: (result ? result.data : parsed) as T };
   }
 
   /** An RPC that is expected to succeed; anything else fails the test where it happened. */
@@ -145,9 +148,21 @@ export function serviceAdmin(service: string): string {
   return `/admin/embed/service/${service}`;
 }
 
-/** oRPC reports a refusal in the body; the code is what these tests assert on. */
+/**
+ * The code of a refusal.
+ *
+ * The string code is at `body.error.data.code`. At `body.error.code` there is a **number** —
+ * `-32003` and friends — and reading that one instead compiles, never throws, and makes every
+ * `expect(errorCode(...)).toBe('FORBIDDEN')` in this suite silently false: the checks would stop
+ * checking without a single red run. Hence the explicit path.
+ */
 export function errorCode(body: unknown): string | undefined {
-  return (body as { code?: string } | null)?.code;
+  return (body as { error?: { data?: { code?: string } } } | null)?.error?.data?.code;
+}
+
+/** The text of a refusal, from the same envelope. */
+export function errorMessage(body: unknown): string {
+  return String((body as { error?: { message?: string } } | null)?.error?.message);
 }
 
 export async function waitForStack(attempts = 30): Promise<void> {

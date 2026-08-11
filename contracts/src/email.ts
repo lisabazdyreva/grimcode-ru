@@ -1,4 +1,3 @@
-import { oc } from '@orpc/contract';
 import { z } from 'zod';
 
 import {
@@ -85,113 +84,114 @@ export const emailInternalContract = {
    * Runtime delivery. Sends the published version of the template, stores the
    * immutable snapshot of the produced message and hands it to the configured transport.
    */
-  send: oc
-    .input(
-      z.object({
-        templateKey: z.string().min(1).max(80),
-        to: emailSchema,
-        variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
-        dedupeKey: z.string().min(1).max(200),
-      }),
-    )
-    .output(
-      z.object({
-        ok: z.literal(true),
-        deliveryId: idSchema,
-        deduplicated: z.boolean(),
-        status: deliveryStatusSchema,
-      }),
-    ),
+  send: {
+    input: z.object({
+      templateKey: z.string().min(1).max(80),
+      to: emailSchema,
+      variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+      dedupeKey: z.string().min(1).max(200),
+    }),
+    output: z.object({
+      ok: z.literal(true),
+      deliveryId: idSchema,
+      deduplicated: z.boolean(),
+      status: deliveryStatusSchema,
+    }),
+  },
 };
 
 export const emailAdminContract = {
-  listTemplates: oc.input(paginationInputSchema).output(pageOf(templateSchema)),
+  listTemplates: { input: paginationInputSchema, output: pageOf(templateSchema) },
 
-  getTemplate: oc.input(z.object({ id: idSchema })).output(
-    z.object({
+  getTemplate: {
+    input: z.object({ id: idSchema }),
+    output: z.object({
       template: templateSchema,
       versions: z.array(templateVersionSchema.omit({ editorDocument: true })),
     }),
-  ),
+  },
 
-  createTemplate: oc
-    .input(templateSchema.pick({ key: true, name: true, description: true, variables: true }))
-    .output(z.object({ ok: z.literal(true), template: templateSchema })),
+  createTemplate: {
+    input: templateSchema.pick({ key: true, name: true, description: true, variables: true }),
+    output: z.object({ ok: z.literal(true), template: templateSchema }),
+  },
 
-  updateTemplate: oc
-    .input(
-      z.object({
-        id: idSchema,
-        name: z.string().min(1).max(160).optional(),
-        description: z.string().max(1000).nullable().optional(),
-        variables: z.array(z.string()).optional(),
-      }),
-    )
-    .output(z.object({ ok: z.literal(true), template: templateSchema })),
+  updateTemplate: {
+    input: z.object({
+      id: idSchema,
+      name: z.string().min(1).max(160).optional(),
+      description: z.string().max(1000).nullable().optional(),
+      variables: z.array(z.string()).optional(),
+    }),
+    output: z.object({ ok: z.literal(true), template: templateSchema }),
+  },
 
-  getVersion: oc
-    .input(z.object({ id: idSchema }))
-    .output(z.object({ version: templateVersionSchema })),
+  getVersion: {
+    input: z.object({ id: idSchema }),
+    output: z.object({ version: templateVersionSchema }),
+  },
 
   /** Creates a new draft, copying the latest version when one exists. */
-  createDraft: oc
-    .input(z.object({ templateId: idSchema }))
-    .output(z.object({ ok: z.literal(true), version: templateVersionSchema })),
+  createDraft: {
+    input: z.object({ templateId: idSchema }),
+    output: z.object({ ok: z.literal(true), version: templateVersionSchema }),
+  },
 
-  saveDraft: oc
-    .input(
-      z.object({
-        id: idSchema,
-        subject: z.string().min(1).max(300),
-        editorDocument: editorDocumentSchema,
-      }),
-    )
-    .output(z.object({ ok: z.literal(true), version: templateVersionSchema })),
+  saveDraft: {
+    input: z.object({
+      id: idSchema,
+      subject: z.string().min(1).max(300),
+      editorDocument: editorDocumentSchema,
+    }),
+    output: z.object({ ok: z.literal(true), version: templateVersionSchema }),
+  },
 
   /** Compiles, validates and sanitizes the document, then publishes the resulting HTML and text. */
-  publishDraft: oc
-    .input(z.object({ id: idSchema }))
-    .output(z.object({ ok: z.literal(true), version: templateVersionSchema })),
+  publishDraft: {
+    input: z.object({ id: idSchema }),
+    output: z.object({ ok: z.literal(true), version: templateVersionSchema }),
+  },
 
   /** Server-side render of a draft or published version, shown in a sandboxed iframe. */
-  previewVersion: oc
-    .input(
-      z.object({
-        id: idSchema,
-        variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
-      }),
-    )
-    .output(z.object({ subject: z.string(), html: z.string(), text: z.string() })),
+  previewVersion: {
+    input: z.object({
+      id: idSchema,
+      variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    }),
+    output: z.object({ subject: z.string(), html: z.string(), text: z.string() }),
+  },
 
-  testSend: oc
-    .input(
-      z.object({
-        id: idSchema,
-        to: emailSchema,
-        variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
-      }),
-    )
-    .output(z.object({ ok: z.literal(true), deliveryId: idSchema })),
+  testSend: {
+    input: z.object({
+      id: idSchema,
+      to: emailSchema,
+      variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    }),
+    output: z.object({ ok: z.literal(true), deliveryId: idSchema }),
+  },
 
-  listDeliveries: oc
-    .input(paginationInputSchema.extend({ status: deliveryStatusSchema.optional() }))
-    .output(pageOf(deliveryListItemSchema)),
+  listDeliveries: {
+    input: paginationInputSchema.extend({ status: deliveryStatusSchema.optional() }),
+    output: pageOf(deliveryListItemSchema),
+  },
 
   /** Full immutable snapshot of one actually sent message. */
-  getDelivery: oc.input(z.object({ id: idSchema })).output(z.object({ delivery: deliverySchema })),
+  getDelivery: {
+    input: z.object({ id: idSchema }),
+    output: z.object({ delivery: deliverySchema }),
+  },
 
-  uploadImage: oc
-    .input(
-      z.object({
-        fileName: z.string().min(1).max(200),
-        contentType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
-        /** Base64 payload, size-limited by the service. */
-        data: z.string().min(1),
-      }),
-    )
-    .output(z.object({ ok: z.literal(true), url: z.string() })),
+  uploadImage: {
+    input: z.object({
+      fileName: z.string().min(1).max(200),
+      contentType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+      /** Base64 payload, size-limited by the service. */
+      data: z.string().min(1),
+    }),
+    output: z.object({ ok: z.literal(true), url: z.string() }),
+  },
 
-  reindexSeedTemplates: oc.input(z.object({})).output(okSchema),
+  reindexSeedTemplates: { input: z.object({}), output: okSchema },
 };
 
 export const emailContract = {

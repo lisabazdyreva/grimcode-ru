@@ -20,7 +20,7 @@ import { useSession } from '@/session';
  */
 export function DashboardScreen() {
   const { identity } = useSession();
-  const profile = useAsync<{ profile: UserProfile }>(() => users.getOwnProfile({}), []);
+  const profile = useAsync<{ profile: UserProfile }>(() => users.getOwnProfile.query({}), []);
 
 
   return (

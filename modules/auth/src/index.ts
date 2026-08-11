@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import {
   createServiceApp,
   mountCsrfEndpoint,
-  mountRpc,
   mountSpa,
+  mountTrpc,
   readAdminContext,
   type FetchLike,
   type Logger,
@@ -47,7 +47,7 @@ export function createApp(deps: AuthDeps): ServiceApp {
   const notifier = (logger: Logger, requestIdOf: () => string) =>
     new Notifier(logger, requestIdOf, deps.callNotifications);
 
-  mountRpc(app, '/service/auth/rpc', publicRouter, ({ request, resHeaders, hono }) => ({
+  mountTrpc(app, '/service/auth/rpc', publicRouter, ({ request, resHeaders, hono }) => ({
     repo,
     notifier: notifier(hono.get('logger'), () => hono.get('requestId')),
     logger: hono.get('logger'),
@@ -55,13 +55,18 @@ export function createApp(deps: AuthDeps): ServiceApp {
     resHeaders,
   }));
 
-  mountRpc(app, '/internal/rpc', internalRouter, () => ({ repo }));
+  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders }) => ({
+    repo,
+    request,
+    resHeaders,
+  }));
 
-  mountRpc(app, '/admin/embed/service/auth/rpc', adminRouter, ({ request, hono }) => ({
+  mountTrpc(app, '/admin/embed/service/auth/rpc', adminRouter, ({ request, resHeaders, hono }) => ({
     repo,
     notifier: notifier(hono.get('logger'), () => hono.get('requestId')),
     logger: hono.get('logger'),
     request,
+    resHeaders,
     // Written by Gateway only after Admin allowed the request; a client can never forge it.
     admin: readAdminContext(request.headers),
     isActiveOwner: deps.isActiveOwner,

@@ -44,7 +44,7 @@ export function TemplatesPage() {
   }, [query]);
 
   const list = useAsync<Page<Template>>(
-    () => api.listTemplates({ query: search === '' ? undefined : search, limit: LIMIT, offset }),
+    () => api.listTemplates.query({ query: search === '' ? undefined : search, limit: LIMIT, offset }),
     [search, offset],
   );
 

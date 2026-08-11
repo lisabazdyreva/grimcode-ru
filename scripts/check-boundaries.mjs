@@ -123,7 +123,7 @@ function inspect(file) {
     const target = workspacePackageOf(specifier);
 
     if (target) {
-      if (target === ownName || allows(rule, target)) return;
+      if (target === ownName || allows(rule, target, specifier)) return;
       importProblems.push(
         `${at(node)} ${kind} of "${specifier}": ${rule.area} may use ${describeAllowance(rule)}`,
       );

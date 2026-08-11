@@ -2,7 +2,7 @@ import { serviceDatabaseName, serviceDatabaseUrl } from '@template/shared';
 import { createAdminPool } from '@template/shared/admin';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ADMIN, errorCode, Session, serviceAdmin, waitForStack } from './client.js';
+import { ADMIN, errorCode, errorMessage, Session, serviceAdmin, waitForStack } from './client.js';
 import { createUser, RegistryRestore, resolveOwner, type TestUser } from './fixtures.js';
 
 /**
@@ -239,7 +239,7 @@ describe('the owner-only registry', () => {
     });
 
     expect(result.status).toBe(403);
-    expect(String((result.body as { message?: string }).message)).toMatch(/csrf/i);
+    expect(errorMessage(result.body)).toMatch(/csrf/i);
   });
 });
 
@@ -275,11 +275,11 @@ describe('public routing', () => {
         'x-template-admin-role': 'owner',
         'x-template-admin-grants': 'auth,users,notifications,email,adminer',
       },
-      body: JSON.stringify({ json: {} }),
+      body: JSON.stringify({}),
     });
 
-    const body = (await response.json()) as { json: { identity: unknown } };
-    expect(body.json.identity).toBeNull();
+    const body = (await response.json()) as { result: { data: { identity: unknown } } };
+    expect(body.result.data.identity).toBeNull();
   });
 });
 

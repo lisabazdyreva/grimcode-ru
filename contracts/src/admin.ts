@@ -1,4 +1,3 @@
-import { oc } from '@orpc/contract';
 import { z } from 'zod';
 
 import {
@@ -71,11 +70,6 @@ export type AuthorizationResult = z.infer<typeof authorizationResultSchema>;
  */
 export const adminInternalContract = {
   /**
-   * Resolves the current user through Auth, bootstraps the first owner when the registry is still
-   * empty and answers with a decision. Gateway computes nothing, caches nothing and keeps no copy
-   * of the rights, so a changed grant takes effect on the next request.
-   */
-  /**
    * Whether this account is one of the owners the project still has.
    *
    * Auth asks before blocking someone: blocking removes every session and every token, so blocking
@@ -83,20 +77,24 @@ export const adminInternalContract = {
    * rule exists to prevent. Ownership is Admin's fact, blocking is Auth's, and neither can see the
    * whole rule alone.
    */
-  /** Whether this identity currently holds owner rights, which Auth refuses to block. */
-  isActiveOwner: oc
-    .input(z.object({ userId: idSchema }))
-    .output(z.object({ activeOwner: z.boolean() })),
+  isActiveOwner: {
+    input: z.object({ userId: idSchema }),
+    output: z.object({ activeOwner: z.boolean() }),
+  },
 
-  authorize: oc
-    .input(
-      z.object({
-        sessionToken: z.string().min(1).max(400).nullable(),
-        /** What is being opened; Gateway works it out from the URL. */
-        target: adminTargetSchema,
-      }),
-    )
-    .output(authorizationResultSchema),
+  /**
+   * Resolves the current user through Auth, bootstraps the first owner when the registry is still
+   * empty and answers with a decision. Gateway computes nothing, caches nothing and keeps no copy
+   * of the rights, so a changed grant takes effect on the next request.
+   */
+  authorize: {
+    input: z.object({
+      sessionToken: z.string().min(1).max(400).nullable(),
+      /** What is being opened; Gateway works it out from the URL. */
+      target: adminTargetSchema,
+    }),
+    output: authorizationResultSchema,
+  },
 };
 
 /**
@@ -107,8 +105,9 @@ export const adminContract = {
 
   admin: {
     /** Current administrator plus the admin services their role and grants allow. */
-    session: oc.input(z.object({})).output(
-      z.object({
+    session: {
+      input: z.object({}),
+      output: z.object({
         userId: idSchema,
         email: emailSchema,
         role: adminRoleSchema,
@@ -116,10 +115,10 @@ export const adminContract = {
         /** Whether this administrator may open the panel's database browser. Owners only. */
         database: z.boolean(),
       }),
-    ),
+    },
 
     /** Owner-only registry of administrators. Product users from Users are never listed here. */
-    listAdministrators: oc.input(paginationInputSchema).output(pageOf(administratorSchema)),
+    listAdministrators: { input: paginationInputSchema, output: pageOf(administratorSchema) },
 
     /**
      * People who could be made administrators, matched by address. Owner-only.
@@ -127,47 +126,44 @@ export const adminContract = {
      * Being an administrator starts from an account that already exists, so this is how an owner
      * finds that account instead of having to know the address by heart.
      */
-    searchUsers: oc
-      .input(z.object({ query: z.string().min(1).max(200) }))
-      .output(
-        z.object({
-          users: z.array(
-            z.object({
-              userId: idSchema,
-              email: emailSchema,
-              /** Already in the registry, so adding them again would be refused. */
-              isAdministrator: z.boolean(),
-            }),
-          ),
-        }),
-      ),
+    searchUsers: {
+      input: z.object({ query: z.string().min(1).max(200) }),
+      output: z.object({
+        users: z.array(
+          z.object({
+            userId: idSchema,
+            email: emailSchema,
+            /** Already in the registry, so adding them again would be refused. */
+            isAdministrator: z.boolean(),
+          }),
+        ),
+      }),
+    },
 
     /** Adds an already registered user by email. Owner-only. */
-    addAdministrator: oc
-      .input(
-        z.object({
-          email: emailSchema,
-          role: adminRoleSchema,
-          grants: z.array(assignableServiceIdSchema).default([]),
-        }),
-      )
-      .output(z.object({ ok: z.literal(true), administrator: administratorSchema })),
+    addAdministrator: {
+      input: z.object({
+        email: emailSchema,
+        role: adminRoleSchema,
+        grants: z.array(assignableServiceIdSchema).default([]),
+      }),
+      output: z.object({ ok: z.literal(true), administrator: administratorSchema }),
+    },
 
     /** Owner-only. The last active owner can neither be demoted nor disabled. */
-    updateAdministrator: oc
-      .input(
-        z.object({
-          userId: idSchema,
-          role: adminRoleSchema.optional(),
-          enabled: z.boolean().optional(),
-          grants: z.array(assignableServiceIdSchema).optional(),
-        }),
-      )
-      .output(z.object({ ok: z.literal(true), administrator: administratorSchema })),
+    updateAdministrator: {
+      input: z.object({
+        userId: idSchema,
+        role: adminRoleSchema.optional(),
+        enabled: z.boolean().optional(),
+        grants: z.array(assignableServiceIdSchema).optional(),
+      }),
+      output: z.object({ ok: z.literal(true), administrator: administratorSchema }),
+    },
 
-    listAudit: oc.input(paginationInputSchema).output(pageOf(adminAuditEntrySchema)),
+    listAudit: { input: paginationInputSchema, output: pageOf(adminAuditEntrySchema) },
 
     /** Server-side logout through Auth, followed by clearing the HttpOnly cookie. */
-    logout: oc.input(z.object({})).output(okSchema),
+    logout: { input: z.object({}), output: okSchema },
   },
 };

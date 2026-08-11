@@ -1,42 +1,37 @@
-import { ORPCError } from '@orpc/client';
-import { implement } from '@orpc/server';
+import type { AuthInternalRouter } from '@template/auth/contract';
+import { usersAdminContract, usersPublicContract, type Identity } from '@template/contracts';
 import {
-  usersAdminContract,
-  usersPublicContract,
-  type AdminContext,
-  type authInternalContract,
-  type ContractRouterClient,
-  type Identity,
-} from '@template/contracts';
-import { createRpcClient, internalServiceUrl, type FetchLike } from '@template/shared';
+  contractCoverage,
+  createTrpcClient,
+  fromContract,
+  internalServiceUrl,
+  verifiedAdmin,
+  type AdminAwareContext,
+  type FetchLike,
+  type RpcContext,
+} from '@template/shared';
+import { initTRPC, TRPCError } from '@trpc/server';
 
 import { toProfile, type ProfileRow, type UsersRepository } from './repository.js';
-
-type AuthClient = ContractRouterClient<typeof authInternalContract>;
 
 /**
  * Fills in the sign-in address for a page of profiles.
  *
- * Users does not store it — Auth owns the identity — so it is fetched per request, in one call for
- * the whole page rather than one per row. An id Auth does not know stays `null`, which is how a
- * profile left behind by a deleted account is visible as exactly that.
- *
- * `callAuth` is threaded in from the context rather than reached for here: this is a plain function
- * with no context and no dependencies of its own, and it is the one place in Users where that had
- * to be arranged by hand. The `catch` below is why the deadline in `createRpcClient` matters —
- * without a bound on the wait there is nothing to fall back from.
+ * Users does not store it, so it is fetched per request, in one call for the whole page. An id Auth
+ * does not know stays `null`, which is how a profile left by a deleted account is visible as one.
+ * The `catch` below is why the deadline in `createTrpcClient` matters.
  */
 async function withEmails(rows: ProfileRow[], callAuth: FetchLike) {
   const profiles = rows.map((row) => ({ ...toProfile(row), email: null as string | null }));
   if (profiles.length === 0) return profiles;
 
   try {
-    const auth = createRpcClient<AuthClient>({
+    const auth = createTrpcClient<AuthInternalRouter>({
       url: `${internalServiceUrl('auth')}/internal/rpc`,
       fetch: callAuth,
     });
 
-    const { identities } = await auth.getIdentitiesByIds({
+    const { identities } = await auth.getIdentitiesByIds.query({
       ids: [...new Set(rows.map((row) => row.identity_id))],
     });
 
@@ -50,69 +45,93 @@ async function withEmails(rows: ProfileRow[], callAuth: FetchLike) {
   return profiles;
 }
 
-export interface PublicContext {
+export interface PublicContext extends RpcContext {
   repo: UsersRepository;
   /** Resolved through Auth on every call; `null` means no valid session. */
   identity: Identity | null;
 }
 
-export interface AdminRpcContext {
+export interface AdminRpcContext extends AdminAwareContext {
   repo: UsersRepository;
-  request: Request;
   /** Answers Auth's internal surface; the profile list needs the sign-in address from it. */
   callAuth: FetchLike;
-  admin: AdminContext | null;
 }
 
-function requireIdentity(context: PublicContext): Identity {
-  if (!context.identity) throw new ORPCError('UNAUTHORIZED', { message: 'Сессия не активна' });
-  return context.identity;
-}
+// --- public surface ---------------------------------------------------------------------------
 
-const publicOs = implement(usersPublicContract).$context<PublicContext>();
+const publicT = initTRPC.context<PublicContext>().create();
 
-export const publicRouter = publicOs.router({
-  getOwnProfile: publicOs.getOwnProfile.handler(async ({ context }) => {
-    const identity = requireIdentity(context);
-    // The profile is created lazily on first access, so Auth never has to know about Users.
-    return { profile: toProfile(await context.repo.ensure(identity.id)) };
-  }),
-
-  updateOwnProfile: publicOs.updateOwnProfile.handler(async ({ input, context }) => {
-    const identity = requireIdentity(context);
-    await context.repo.ensure(identity.id);
-    const row = await context.repo.updateProfile(identity.id, input.displayName);
-    return { ok: true as const, profile: toProfile(row) };
-  }),
-
+/**
+ * A session is required, and this is where that requirement lives.
+ *
+ * The route guard in the SPA is for the user flow; this is what actually protects the data.
+ */
+const withIdentity = publicT.procedure.use(({ ctx, next }) => {
+  if (!ctx.identity) throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Сессия не активна' });
+  return next({ ctx: { identity: ctx.identity } });
 });
 
-const adminOs = implement(usersAdminContract).$context<AdminRpcContext>();
+export const publicRouter = publicT.router({
+  getOwnProfile: fromContract(usersPublicContract.getOwnProfile, withIdentity).query(
+    async ({ ctx }) => {
+      // The profile is created lazily on first access, so Auth never has to know about Users.
+      return { profile: toProfile(await ctx.repo.ensure(ctx.identity.id)) };
+    },
+  ),
 
-function requireAdmin(context: AdminRpcContext): AdminContext {
-  if (!context.admin) throw new ORPCError('FORBIDDEN', { message: 'Контекст администратора отсутствует' });
-  return context.admin;
-}
-
-export const adminRouter = adminOs.router({
-  listProfiles: adminOs.listProfiles.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const { rows, total } = await context.repo.list(input.query, input.limit, input.offset);
-    return {
-      items: await withEmails(rows, context.callAuth),
-      total,
-      limit: input.limit,
-      offset: input.offset,
-    };
-  }),
-
-  getProfile: adminOs.getProfile.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const row = await context.repo.findById(input.id);
-    if (!row) throw new ORPCError('NOT_FOUND', { message: 'Профиль не найден' });
-
-    const [profile] = await withEmails([row], context.callAuth);
-    return { profile: profile! };
-  }),
-
+  updateOwnProfile: fromContract(usersPublicContract.updateOwnProfile, withIdentity).mutation(
+    async ({ input, ctx }) => {
+      await ctx.repo.ensure(ctx.identity.id);
+      const row = await ctx.repo.updateProfile(ctx.identity.id, input.displayName);
+      return { ok: true as const, profile: toProfile(row) };
+    },
+  ),
 });
+
+/** The router implements the contract exactly: nothing missing, nothing extra, no other schemas. */
+const publicCoverage: 'ok' = contractCoverage(usersPublicContract, publicRouter);
+void publicCoverage;
+
+// --- admin surface ----------------------------------------------------------------------------
+
+const adminT = initTRPC.context<AdminRpcContext>().create();
+
+const adminProcedure = adminT.procedure.use(({ ctx, next }) =>
+  next({ ctx: { admin: verifiedAdmin(ctx) } }),
+);
+
+/**
+ * Users has no admin operation that changes anything — a profile belongs to the person it
+ * describes, and this screen only reads it — so there is no `adminMutation` here. The CSRF half of
+ * the pair lives in `shared` and is used by the modules that do change something.
+ */
+export const adminRouter = adminT.router({
+  listProfiles: fromContract(usersAdminContract.listProfiles, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const { rows, total } = await ctx.repo.list(input.query, input.limit, input.offset);
+      return {
+        items: await withEmails(rows, ctx.callAuth),
+        total,
+        limit: input.limit,
+        offset: input.offset,
+      };
+    },
+  ),
+
+  getProfile: fromContract(usersAdminContract.getProfile, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const row = await ctx.repo.findById(input.id);
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Профиль не найден' });
+
+      const [profile] = await withEmails([row], ctx.callAuth);
+      return { profile: profile! };
+    },
+  ),
+});
+
+const adminCoverage: 'ok' = contractCoverage(usersAdminContract, adminRouter);
+void adminCoverage;
+
+/** The browser client is typed from these, and from nothing else. */
+export type UsersPublicRouter = typeof publicRouter;
+export type UsersAdminRouter = typeof adminRouter;

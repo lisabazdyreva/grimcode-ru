@@ -82,8 +82,8 @@ function AppFrame({ children }: { children: React.ReactNode }) {
   const logout = () => {
     // Signing out is a server operation: Auth invalidates the session, then the server clears the
     // cookie. Dropping the cookie in the browser would leave the session usable.
-    auth
-      .logout({})
+    auth.logout
+      .mutate({})
       .then(() => window.location.assign('/app/login'))
       .catch((error: unknown) => toast.error(messageOf(error)));
   };

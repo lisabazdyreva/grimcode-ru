@@ -52,7 +52,7 @@ export function VersionEditorPage() {
   const { versionId } = useParams({ from: '/versions/$versionId' });
   const navigate = useNavigate();
 
-  const state = useAsync<{ version: Version }>(() => api.getVersion({ id: versionId }), [versionId]);
+  const state = useAsync<{ version: Version }>(() => api.getVersion.query({ id: versionId }), [versionId]);
 
   const [subject, setSubject] = React.useState('');
   const [document, setDocument] = React.useState<Version['editorDocument'] | null>(null);
@@ -74,7 +74,7 @@ export function VersionEditorPage() {
     if (!document) return;
     setBusy(true);
     try {
-      await api.saveDraft({ id: versionId, subject, editorDocument: document });
+      await api.saveDraft.mutate({ id: versionId, subject, editorDocument: document });
       toast.success('Черновик сохранён');
       state.reload();
     } catch (error) {
@@ -88,8 +88,8 @@ export function VersionEditorPage() {
     setBusy(true);
     try {
       // Saving first, so what is published is what is on screen rather than the last saved copy.
-      if (document) await api.saveDraft({ id: versionId, subject, editorDocument: document });
-      await api.publishDraft({ id: versionId });
+      if (document) await api.saveDraft.mutate({ id: versionId, subject, editorDocument: document });
+      await api.publishDraft.mutate({ id: versionId });
       toast.success('Опубликовано — новые письма пойдут по этой версии');
       state.reload();
     } catch (error) {
@@ -218,7 +218,7 @@ export function VersionEditorPage() {
  */
 function VersionPreview({ versionId }: { versionId: string }) {
   const state = useAsync<{ subject: string; html: string; text: string }>(
-    () => api.previewVersion({ id: versionId, variables: {} }),
+    () => api.previewVersion.query({ id: versionId, variables: {} }),
     [versionId],
   );
 
@@ -259,7 +259,7 @@ function TestSend({ versionId }: { versionId: string }) {
     try {
       // A test send is a real send: it goes through the transport and lands in the delivery log
       // with exactly the content that left the system.
-      await api.testSend({ id: versionId, to: to.trim(), variables: {} });
+      await api.testSend.mutate({ id: versionId, to: to.trim(), variables: {} });
       toast.success('Отправлено — смотрите журнал');
       setOpen(false);
     } catch (error) {

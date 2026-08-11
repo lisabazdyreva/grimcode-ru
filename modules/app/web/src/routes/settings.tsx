@@ -49,7 +49,7 @@ export function SettingsScreen() {
 }
 
 function ProfileSection() {
-  const state = useAsync<{ profile: UserProfile }>(() => users.getOwnProfile({}), []);
+  const state = useAsync<{ profile: UserProfile }>(() => users.getOwnProfile.query({}), []);
   const [displayName, setDisplayName] = React.useState('');
   const [prefilled, setPrefilled] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -64,7 +64,7 @@ function ProfileSection() {
     event.preventDefault();
     setBusy(true);
     try {
-      await users.updateOwnProfile({
+      await users.updateOwnProfile.mutate({
         displayName: displayName.trim() === '' ? null : displayName.trim(),
       });
       toast.success('Сохранено');
@@ -130,7 +130,7 @@ function AccountSection() {
     event.preventDefault();
     setBusy(true);
     try {
-      await auth.requestEmailChange({ email });
+      await auth.requestEmailChange.mutate({ email });
       // The address only changes once the link in the new mailbox is opened; saying so avoids the
       // impression that it already did.
       toast.success('Подтвердите изменение по ссылке, отправленной на новый адрес');
@@ -144,7 +144,7 @@ function AccountSection() {
 
   const resend = async () => {
     try {
-      await auth.resendOwnVerification({});
+      await auth.resendOwnVerification.mutate({});
       toast.success('Новая ссылка подтверждения отправлена');
     } catch (error) {
       toast.error(messageOf(error));
@@ -208,7 +208,7 @@ function PasswordSection() {
     event.preventDefault();
     setBusy(true);
     try {
-      await auth.changePassword({ currentPassword, password: newPassword });
+      await auth.changePassword.mutate({ currentPassword, password: newPassword });
       toast.success('Пароль изменён. Все остальные сессии завершены.');
       setCurrentPassword('');
       setNewPassword('');
@@ -260,7 +260,7 @@ function PasswordSection() {
 }
 
 function SessionsSection() {
-  const state = useAsync<{ sessions: SessionRow[] }>(() => auth.listOwnSessions({}), []);
+  const state = useAsync<{ sessions: SessionRow[] }>(() => auth.listOwnSessions.query({}), []);
   const [busy, setBusy] = React.useState(false);
 
   // Auth revokes every session of the caller, this browser included — that is what makes it a
@@ -268,7 +268,7 @@ function SessionsSection() {
   const revokeAll = async () => {
     setBusy(true);
     try {
-      await auth.revokeOwnSessions({});
+      await auth.revokeOwnSessions.mutate({});
       window.location.assign('/app/login');
     } catch (error) {
       toast.error(messageOf(error));

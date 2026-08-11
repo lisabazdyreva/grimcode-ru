@@ -101,6 +101,20 @@ that left the system.
 
 Email has **no public surface**: it is absent from Gateway's public allowlist.
 
+### What Notifications may see of this module
+
+A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
+crosses through one named door and no other: `@template/email/contract` resolves to
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types and nothing else, while
+`@template/email` still resolves to `createApp` alone. The repository, the transport and the
+renderer are reachable by no specifier at all — which matters here more than elsewhere, because
+`@maily-to/render` is the one CPU-bound dependency in the process.
+
+That door is not an agreement about behaviour: it decides which files are visible, not what ends up
+in the type. What keeps the type honest is the `.output()` schema every procedure is built with and
+the `contractCoverage` line beside each router, which refuses to compile when the router and the
+contract disagree.
+
 ## Data
 
 Database `<PROJECT_SLUG>_email`, opened as the role of the same name and reachable by no other

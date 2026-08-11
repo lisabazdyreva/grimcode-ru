@@ -8,5 +8,11 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"],
-  "references": [{ "path": "../../contracts" }, { "path": "../../shared" }]
+  "references": [
+    { "path": "../../contracts" },
+    { "path": "../../shared" },
+    // Only for the router type behind `@template/admin/contract`. The `exports` of that package
+    // decide what this can reach; the reference decides only that it is built first.
+    { "path": "../admin" }
+  ]
 }

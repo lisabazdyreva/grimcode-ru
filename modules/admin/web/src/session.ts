@@ -29,5 +29,5 @@ export function useSession(): AdminSession {
 }
 
 export function loadSession(): Promise<AdminSession> {
-  return api.session({}) as Promise<AdminSession>;
+  return api.session.query({}) as Promise<AdminSession>;
 }

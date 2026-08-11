@@ -25,7 +25,10 @@ const LIMIT = 50;
  */
 export function AuditPage() {
   const [offset, setOffset] = React.useState(0);
-  const list = useAsync<Page<AuditEntry>>(() => api.listAudit({ limit: LIMIT, offset }), [offset]);
+  const list = useAsync<Page<AuditEntry>>(
+    () => api.listAudit.query({ limit: LIMIT, offset }),
+    [offset],
+  );
 
   if (list.error) {
     return (

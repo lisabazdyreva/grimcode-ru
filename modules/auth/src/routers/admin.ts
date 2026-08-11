@@ -1,7 +1,15 @@
-import { ORPCError } from '@orpc/client';
-import { implement } from '@orpc/server';
-import { authAdminContract, type AdminContext } from '@template/contracts';
-import { isCsrfValid, newToken, publicSiteUrl, type Logger } from '@template/shared';
+import { authAdminContract } from '@template/contracts';
+import {
+  contractCoverage,
+  fromContract,
+  newToken,
+  publicSiteUrl,
+  requireCsrf,
+  verifiedAdmin,
+  type AdminAwareContext,
+  type Logger,
+} from '@template/shared';
+import { initTRPC, TRPCError } from '@trpc/server';
 
 import type { Notifier } from '../notifier.js';
 import type { AuthRepository, IdentityRow } from '../repository.js';
@@ -15,13 +23,10 @@ import type { AuthRepository, IdentityRow } from '../repository.js';
  */
 export type IsActiveOwner = (userId: string) => Promise<boolean>;
 
-export interface AdminRpcContext {
+export interface AdminRpcContext extends AdminAwareContext {
   repo: AuthRepository;
   notifier: Notifier;
   logger: Logger;
-  request: Request;
-  /** Verified by Gateway. Absent means the request did not come through the admin route. */
-  admin: AdminContext | null;
   /**
    * Required, never optional and never defaulted. A missing implementation has to be a compile
    * error: a default of "assume not an owner" would turn one forgotten line in the wiring into a
@@ -34,28 +39,27 @@ export interface AdminRpcContext {
 const RESET_TTL_SECONDS = 60 * 60;
 const VERIFICATION_TTL_SECONDS = 60 * 60 * 24;
 
-const os = implement(authAdminContract).$context<AdminRpcContext>();
+const t = initTRPC.context<AdminRpcContext>().create();
 
 /**
  * Every admin mutation checks the verified context and the CSRF token. Both together mean a
  * request must come through Gateway's admin route *and* originate from the admin panel itself.
+ *
+ * The scope is `'auth'` and not `'panel'`: each admin surface issues its own cookie, and a token
+ * from the shell would be refused here on purpose.
  */
-function requireAdmin(context: AdminRpcContext): AdminContext {
-  if (!context.admin) throw new ORPCError('FORBIDDEN', { message: 'Контекст администратора отсутствует' });
-  return context.admin;
-}
+const adminProcedure = t.procedure.use(({ ctx, next }) =>
+  next({ ctx: { admin: verifiedAdmin(ctx) } }),
+);
 
-function requireMutation(context: AdminRpcContext): AdminContext {
-  const admin = requireAdmin(context);
-  if (!isCsrfValid(context.request.headers, 'auth')) {
-    throw new ORPCError('FORBIDDEN', { message: 'CSRF-токен отсутствует или неверен' });
-  }
-  return admin;
-}
+const adminMutation = adminProcedure.use(({ ctx, next }) => {
+  requireCsrf(ctx, 'auth');
+  return next();
+});
 
 async function loadIdentity(repo: AuthRepository, id: string): Promise<IdentityRow> {
   const row = await repo.findIdentityById(id);
-  if (!row) throw new ORPCError('NOT_FOUND', { message: 'Пользователь не найден' });
+  if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Пользователь не найден' });
   return row;
 }
 
@@ -72,32 +76,34 @@ async function adminIdentityOf(repo: AuthRepository, row: IdentityRow) {
   };
 }
 
-export const adminRouter = os.router({
-  listIdentities: os.listIdentities.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const { rows, total } = await context.repo.listIdentities(input.query, input.limit, input.offset);
+export const adminRouter = t.router({
+  listIdentities: fromContract(authAdminContract.listIdentities, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const { rows, total } = await ctx.repo.listIdentities(input.query, input.limit, input.offset);
 
-    return {
-      items: rows.map((row) => ({
-        id: row.id,
-        email: row.email,
-        emailVerifiedAt: row.email_verified_at?.toISOString() ?? null,
-        blockedAt: row.blocked_at?.toISOString() ?? null,
-        createdAt: row.created_at.toISOString(),
-        activeSessionCount: Number(row.active_session_count),
-        lastLoginAt: row.last_login_at?.toISOString() ?? null,
-      })),
-      total,
-      limit: input.limit,
-      offset: input.offset,
-    };
-  }),
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          email: row.email,
+          emailVerifiedAt: row.email_verified_at?.toISOString() ?? null,
+          blockedAt: row.blocked_at?.toISOString() ?? null,
+          createdAt: row.created_at.toISOString(),
+          activeSessionCount: Number(row.active_session_count),
+          lastLoginAt: row.last_login_at?.toISOString() ?? null,
+        })),
+        total,
+        limit: input.limit,
+        offset: input.offset,
+      };
+    },
+  ),
 
-  getIdentity: os.getIdentity.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const row = await loadIdentity(context.repo, input.id);
-    return { identity: await adminIdentityOf(context.repo, row) };
-  }),
+  getIdentity: fromContract(authAdminContract.getIdentity, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const row = await loadIdentity(ctx.repo, input.id);
+      return { identity: await adminIdentityOf(ctx.repo, row) };
+    },
+  ),
 
   /**
    * Sends the ordinary user-facing recovery link through Notifications and Email.
@@ -105,149 +111,159 @@ export const adminRouter = os.router({
    * The administrator never sets, sees or receives the token: it is the same time-limited
    * single-use flow the user would start themselves.
    */
-  sendRecovery: os.sendRecovery.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    const row = await loadIdentity(context.repo, input.id);
+  sendRecovery: fromContract(authAdminContract.sendRecovery, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      const row = await loadIdentity(ctx.repo, input.id);
 
-    const token = newToken(32);
-    await context.repo.issueToken(row.id, 'password-reset', token, RESET_TTL_SECONDS);
-    await context.repo.audit({
-      identityId: row.id,
-      action: 'admin.recovery.sent',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-    });
+      const token = newToken(32);
+      await ctx.repo.issueToken(row.id, 'password-reset', token, RESET_TTL_SECONDS);
+      await ctx.repo.audit({
+        identityId: row.id,
+        action: 'admin.recovery.sent',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+      });
 
-    await context.notifier.emit(
-      {
-        type: 'auth.password.reset_requested',
-        recipient: {
-          identityId: row.id,
-          email: row.email,
+      await ctx.notifier.emit(
+        {
+          type: 'auth.password.reset_requested',
+          recipient: {
+            identityId: row.id,
+            email: row.email,
+          },
+          payload: {
+            resetUrl: `${publicSiteUrl()}/app/reset-password/confirm?token=${encodeURIComponent(token)}`,
+          },
         },
-        payload: {
-          resetUrl: `${publicSiteUrl()}/app/reset-password/confirm?token=${encodeURIComponent(token)}`,
+        `auth.password.reset_requested:${row.id}:${Date.now()}`,
+      );
+
+      return { ok: true as const };
+    },
+  ),
+
+  resendVerification: fromContract(authAdminContract.resendVerification, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      const row = await loadIdentity(ctx.repo, input.id);
+      if (row.email_verified_at !== null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Адрес уже подтверждён' });
+      }
+
+      const token = newToken(32);
+      await ctx.repo.issueToken(row.id, 'email-verification', token, VERIFICATION_TTL_SECONDS);
+      await ctx.repo.audit({
+        identityId: row.id,
+        action: 'admin.verification.resent',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+      });
+
+      await ctx.notifier.emit(
+        {
+          type: 'auth.email.verification_requested',
+          recipient: {
+            identityId: row.id,
+            email: row.email,
+          },
+          payload: {
+            verificationUrl: `${publicSiteUrl()}/app/verify-email?token=${encodeURIComponent(token)}`,
+          },
         },
-      },
-      `auth.password.reset_requested:${row.id}:${Date.now()}`,
-    );
+        `auth.email.verification_requested:${row.id}:${Date.now()}`,
+      );
 
-    return { ok: true as const };
-  }),
+      return { ok: true as const };
+    },
+  ),
 
-  resendVerification: os.resendVerification.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    const row = await loadIdentity(context.repo, input.id);
-    if (row.email_verified_at !== null) {
-      throw new ORPCError('BAD_REQUEST', { message: 'Адрес уже подтверждён' });
-    }
+  revokeSessions: fromContract(authAdminContract.revokeSessions, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      const row = await loadIdentity(ctx.repo, input.id);
 
-    const token = newToken(32);
-    await context.repo.issueToken(row.id, 'email-verification', token, VERIFICATION_TTL_SECONDS);
-    await context.repo.audit({
-      identityId: row.id,
-      action: 'admin.verification.resent',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-    });
+      const revoked = await ctx.repo.revokeAllSessions(row.id);
+      await ctx.repo.audit({
+        identityId: row.id,
+        action: 'admin.sessions.revoked',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+        details: { revoked },
+      });
 
-    await context.notifier.emit(
-      {
-        type: 'auth.email.verification_requested',
-        recipient: {
-          identityId: row.id,
-          email: row.email,
-        },
-        payload: {
-          verificationUrl: `${publicSiteUrl()}/app/verify-email?token=${encodeURIComponent(token)}`,
-        },
-      },
-      `auth.email.verification_requested:${row.id}:${Date.now()}`,
-    );
-
-    return { ok: true as const };
-  }),
-
-  revokeSessions: os.revokeSessions.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    const row = await loadIdentity(context.repo, input.id);
-
-    const revoked = await context.repo.revokeAllSessions(row.id);
-    await context.repo.audit({
-      identityId: row.id,
-      action: 'admin.sessions.revoked',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-      details: { revoked },
-    });
-
-    return { ok: true as const };
-  }),
+      return { ok: true as const };
+    },
+  ),
 
   /** Owner-only, and no owner's identity can be blocked while they hold the rights. */
-  setBlocked: os.setBlocked.handler(async ({ input, context }) => {
-    const admin = requireMutation(context);
-    if (admin.role !== 'owner') {
-      throw new ORPCError('FORBIDDEN', { message: 'Блокировать может только владелец' });
-    }
-    if (input.blocked && admin.userId === input.id) {
-      // Otherwise the last working owner session could be removed by the owner themselves.
-      throw new ORPCError('FORBIDDEN', { message: 'Нельзя заблокировать самого себя' });
-    }
-
-    /*
-     * Blocking takes away every session and every token, so a blocked owner is an owner the panel
-     * can no longer let in. The registry's own rule counts owners by its `enabled` flag and cannot
-     * see that, so two owners could be reduced to none: block one here, remove the other there.
-     *
-     * Ownership is Admin's fact and blocking is Auth's, so Auth asks before it acts, and refuses
-     * outright: rights come off in Administrators first, and only then does blocking apply.
-     */
-    if (input.blocked) {
-      if (await context.isActiveOwner(input.id)) {
-        throw new ORPCError('CONFLICT', {
-          message: 'Сначала снимите права владельца в разделе «Администраторы»',
-        });
+  setBlocked: fromContract(authAdminContract.setBlocked, adminMutation).mutation(
+    async ({ input, ctx }) => {
+      if (ctx.admin.role !== 'owner') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Блокировать может только владелец' });
       }
-    }
+      if (input.blocked && ctx.admin.userId === input.id) {
+        // Otherwise the last working owner session could be removed by the owner themselves.
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Нельзя заблокировать самого себя' });
+      }
 
-    const row = await loadIdentity(context.repo, input.id);
-    const updated = await context.repo.setBlocked(row.id, input.blocked);
-    if (!updated) throw new ORPCError('NOT_FOUND', { message: 'Пользователь не найден' });
+      /*
+       * Blocking takes away every session and every token, so a blocked owner is an owner the panel
+       * can no longer let in. The registry counts owners by its `enabled` flag and cannot see that,
+       * so two owners could be reduced to none: block one here, remove the other there. Auth asks
+       * before it acts and refuses outright — rights come off in Administrators first.
+       */
+      if (input.blocked) {
+        if (await ctx.isActiveOwner(input.id)) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Сначала снимите права владельца в разделе «Администраторы»',
+          });
+        }
+      }
 
-    if (input.blocked) {
-      // Blocking takes effect immediately: sessions and outstanding auth tokens are revoked.
-      await context.repo.revokeAllSessions(row.id);
-      await context.repo.revokeTokens(row.id);
-    }
+      const row = await loadIdentity(ctx.repo, input.id);
+      const updated = await ctx.repo.setBlocked(row.id, input.blocked);
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Пользователь не найден' });
 
-    await context.repo.audit({
-      identityId: row.id,
-      action: input.blocked ? 'admin.identity.blocked' : 'admin.identity.unblocked',
-      actorUserId: admin.userId,
-      actorRole: admin.role,
-    });
+      if (input.blocked) {
+        // Blocking takes effect immediately: sessions and outstanding auth tokens are revoked.
+        await ctx.repo.revokeAllSessions(row.id);
+        await ctx.repo.revokeTokens(row.id);
+      }
 
-    return { ok: true as const, identity: await adminIdentityOf(context.repo, updated) };
-  }),
+      await ctx.repo.audit({
+        identityId: row.id,
+        action: input.blocked ? 'admin.identity.blocked' : 'admin.identity.unblocked',
+        actorUserId: ctx.admin.userId,
+        actorRole: ctx.admin.role,
+      });
 
-  listAudit: os.listAudit.handler(async ({ input, context }) => {
-    requireAdmin(context);
-    const { rows, total } = await context.repo.listAudit(input.query, input.limit, input.offset);
+      return { ok: true as const, identity: await adminIdentityOf(ctx.repo, updated) };
+    },
+  ),
 
-    return {
-      items: rows.map((row) => ({
-        id: String(row.id),
-        identityId: (row.identity_id as string | null) ?? null,
-        action: String(row.action),
-        actorUserId: (row.actor_user_id as string | null) ?? null,
-        actorRole: (row.actor_role as string | null) ?? null,
-        details: (row.details as Record<string, unknown>) ?? {},
-        createdAt: (row.created_at as Date).toISOString(),
-      })),
-      total,
-      limit: input.limit,
-      offset: input.offset,
-    };
-  }),
+  listAudit: fromContract(authAdminContract.listAudit, adminProcedure).query(
+    async ({ input, ctx }) => {
+      const { rows, total } = await ctx.repo.listAudit(input.query, input.limit, input.offset);
+
+      return {
+        items: rows.map((row) => ({
+          id: String(row.id),
+          identityId: (row.identity_id as string | null) ?? null,
+          action: String(row.action),
+          actorUserId: (row.actor_user_id as string | null) ?? null,
+          actorRole: (row.actor_role as string | null) ?? null,
+          details: (row.details as Record<string, unknown>) ?? {},
+          createdAt: (row.created_at as Date).toISOString(),
+        })),
+        total,
+        limit: input.limit,
+        offset: input.offset,
+      };
+    },
+  ),
 });
+
+const adminCoverage: 'ok' = contractCoverage(authAdminContract, adminRouter);
+void adminCoverage;
+
+/** Auth's own service admin is typed from this, and from nothing else. */
+export type AuthAdminRouter = typeof adminRouter;

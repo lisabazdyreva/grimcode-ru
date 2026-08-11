@@ -19,8 +19,11 @@ else.
 | `http/csrf.ts` | Double-submit CSRF token issuing and validation |
 | `http/service-app.ts` | Shared Hono app: request ids, access log, health endpoint, fail-closed 503 |
 | `db/admin-pool.ts` | `createAdminPool`, reachable only as `@template/shared/admin` — the owner's connection, used by `db-init` and nothing else |
-| `orpc/handler.ts` | Mounting an oRPC router on a path prefix, merging `set-cookie` from procedures |
-| `orpc/client.ts` | Typed oRPC client factory and `ServiceUnavailableError` |
+| `rpc.ts` | What a call to a neighbour needs whichever library carries it: `FetchLike`, the deadline, `ServiceUnavailableError` |
+| `trpc/mount.ts` | Mounting a tRPC router on a path prefix, merging `set-cookie` from procedures |
+| `trpc/contract.ts` | `fromContract` — procedures with the contract's schemas baked in — and `contractCoverage` |
+| `trpc/builders.ts` | The context every procedure has, and the two guards admin surfaces are built from |
+| `trpc/client.ts` | Typed tRPC client factory for one module calling another |
 | `db/pool.ts` | One PostgreSQL pool per module database, transactions, startup wait |
 | `db/migrator.ts` | Versioned migrations with recorded versions, checksums and advisory locks |
 | `theme.ts` | The same-origin `postMessage` protocol between Admin shell and service iframes |

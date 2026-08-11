@@ -1,12 +1,19 @@
 # contracts
 
-oRPC contracts and Zod runtime schemas for every inter-service call of the template.
+Zod runtime schemas for every inter-module call of the template, paired as `{ input, output }`.
 
-This package holds **no** server implementation, SQL or provider secrets. It is the only thing a
-module is allowed to share with another module: direct imports between `modules/*` are forbidden,
-and everything that crosses a boundary goes through oRPC using these contracts — including now that
-the modules share a process, where the transport is the neighbour's own application rather than the
-network.
+This package holds **no** server implementation, SQL or provider secrets, and it depends on nothing
+but `zod` — a contract that imported an RPC library would tie every module to that library's
+lifetime, which is the mistake this template has already had to undo once.
+
+A contract is what a module publishes about itself. Everything that crosses a boundary goes through
+one — including now that the modules share a process, where the transport is the neighbour's own
+application rather than the network.
+
+The pairs are not decoration: `fromContract` in `shared` builds each procedure with the contract's
+own `.input()` and `.output()` baked in, and `contractCoverage` refuses to compile a router that
+implements the wrong set. Together they are what replaced the library-level contract checking the
+template used before.
 
 ## Layout
 

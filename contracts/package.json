@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b tsconfig.json",
     "typecheck": "tsc -b tsconfig.json",
@@ -19,7 +21,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@orpc/contract": "1.14.10",
+    "@trpc/server": "11.18.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

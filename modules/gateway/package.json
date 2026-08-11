@@ -22,8 +22,11 @@
     "dev": "node --watch dist/index.js"
   },
   "dependencies": {
+    "@template/admin": "workspace:*",
     "@template/contracts": "workspace:*",
-    "@template/shared": "workspace:*"
+    "@template/shared": "workspace:*",
+    "@trpc/client": "11.18.0",
+    "@trpc/server": "11.18.0"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

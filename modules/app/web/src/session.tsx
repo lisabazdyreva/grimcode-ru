@@ -40,7 +40,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = React.useCallback(async () => {
     try {
-      const result = await auth.currentSession({});
+      const result = await auth.currentSession.query({});
       const next = (result.identity ?? null) as Identity | null;
       setIdentity(next);
       return next;

@@ -45,7 +45,7 @@ export function IdentitiesPage() {
   }, [query]);
 
   const list = useAsync<Page<Identity>>(
-    () => api.listIdentities({ query: search === '' ? undefined : search, limit: LIMIT, offset }),
+    () => api.listIdentities.query({ query: search === '' ? undefined : search, limit: LIMIT, offset }),
     [search, offset],
   );
 
@@ -156,7 +156,7 @@ function IdentityDialog({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const state = useAsync<{ identity: Identity }>(() => api.getIdentity({ id }), [id]);
+  const state = useAsync<{ identity: Identity }>(() => api.getIdentity.query({ id }), [id]);
   const identity = state.data?.identity;
   const [busy, setBusy] = React.useState(false);
 
@@ -216,7 +216,7 @@ function IdentityDialog({
             size="sm"
             disabled={busy}
             onClick={() =>
-              void run(() => api.sendRecovery({ id: identity.id }), 'Ссылка восстановления отправлена')
+              void run(() => api.sendRecovery.mutate({ id: identity.id }), 'Ссылка восстановления отправлена')
             }
           >
             Отправить ссылку восстановления
@@ -229,7 +229,7 @@ function IdentityDialog({
               disabled={busy}
               onClick={() =>
                 void run(
-                  () => api.resendVerification({ id: identity.id }),
+                  () => api.resendVerification.mutate({ id: identity.id }),
                   'Ссылка подтверждения отправлена',
                 )
               }
@@ -243,7 +243,7 @@ function IdentityDialog({
             size="sm"
             disabled={busy || identity.activeSessionCount === 0}
             onClick={() =>
-              void run(() => api.revokeSessions({ id: identity.id }), 'Все сессии завершены')
+              void run(() => api.revokeSessions.mutate({ id: identity.id }), 'Все сессии завершены')
             }
           >
             Завершить все сессии
@@ -258,7 +258,7 @@ function IdentityDialog({
             disabled={busy}
             onClick={() =>
               void run(
-                () => api.setBlocked({ id: identity.id, blocked: identity.blockedAt === null }),
+                () => api.setBlocked.mutate({ id: identity.id, blocked: identity.blockedAt === null }),
                 identity.blockedAt ? 'Разблокирован' : 'Заблокирован',
               )
             }
