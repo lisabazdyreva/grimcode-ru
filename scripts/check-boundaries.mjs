@@ -18,7 +18,13 @@ import path from 'node:path';
 
 import ts from 'typescript';
 
-import { compartmentOf, repoRoot, workspacePackages } from './workspace-rules.mjs';
+import {
+  allows,
+  compartmentOf,
+  describeAllowance,
+  repoRoot,
+  workspacePackages,
+} from './workspace-rules.mjs';
 
 const ignoredDirs = new Set([
   'node_modules',
@@ -35,6 +41,9 @@ const ignoredDirs = new Set([
   'test-results',
 ]);
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
+
+/** Areas allowed to open a database pool. The composer wires; a module is handed what it needs. */
+const POOL_CALLERS = ['composition'];
 
 const packages = workspacePackages();
 const packageNames = new Set(packages.map((entry) => entry.name));
@@ -71,7 +80,6 @@ function inspect(file) {
   const relative = repoRelative(file);
   const { rule, dir } = compartmentOf(relative);
   const ownName = nameOfDir.get(dir) ?? null;
-  const isModule = rule.area === 'modules/*';
 
   const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
 
@@ -86,10 +94,9 @@ function inspect(file) {
     const target = workspacePackageOf(specifier);
 
     if (target) {
-      if (target === ownName || rule.mayUse.includes(target)) return;
+      if (target === ownName || allows(rule, target)) return;
       importProblems.push(
-        `${at(node)} ${kind} of "${specifier}": ${rule.area} may use ` +
-          `${rule.mayUse.length > 0 ? rule.mayUse.join(', ') : 'no workspace package'}`,
+        `${at(node)} ${kind} of "${specifier}": ${rule.area} may use ${describeAllowance(rule)}`,
       );
       return;
     }
@@ -109,29 +116,16 @@ function inspect(file) {
   };
 
   /**
-   * `createPool('<module>')` names the database a module opens, and the only name it may pass is
-   * its own — the string is the whole of the choice, and nothing else in the repository checks it.
+   * Who may open a database at all.
    *
-   * The sixth stage replaces this with a stricter rule, "no call outside `composition/`", once the
-   * pools are created by the wiring rather than by the modules. Until then the literal is what
-   * there is to check.
+   * This started as "a module names its own database and no other", checking the string literal,
+   * because every module opened its own pool. Now the composer creates all five and hands each
+   * module a ready one, so the rule is both simpler and stricter: the call may only appear where
+   * the permission already is. A module cannot pass the wrong name because it cannot ask.
    */
   const recordPool = (node) => {
-    if (!isModule) {
-      poolProblems.push(`${at(node)} createPool() outside a module`);
-      return;
-    }
-
-    const expected = dir.split('/').at(-1);
-    const argument = node.arguments.length === 1 ? literal(node.arguments[0]) : null;
-
-    if (argument === null) {
-      poolProblems.push(
-        `${at(node)} createPool() must be called with one string literal, ` +
-          `and for this module it is '${expected}'`,
-      );
-    } else if (argument !== expected) {
-      poolProblems.push(`${at(node)} createPool('${argument}') in module "${expected}"`);
+    if (!POOL_CALLERS.includes(rule.area)) {
+      poolProblems.push(`${at(node)} createPool() in ${dir}`);
     }
   };
 
@@ -172,9 +166,9 @@ if (importProblems.length > 0) {
 }
 
 if (poolProblems.length > 0) {
-  console.error(`${importProblems.length > 0 ? '\n' : ''}Database pools opened under a wrong name:`);
+  console.error(`${importProblems.length > 0 ? '\n' : ''}Database pools opened outside the wiring:`);
   for (const problem of poolProblems) console.error(`- ${problem}`);
-  console.error('\nA module opens its own database and no other.');
+  console.error(`\ncreatePool() belongs to ${POOL_CALLERS.join(', ')}; a module is handed its pool.`);
 }
 
 if (importProblems.length > 0 || poolProblems.length > 0) process.exit(1);

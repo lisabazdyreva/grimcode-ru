@@ -20,7 +20,6 @@
     "typecheck": "tsc -b tsconfig.json && tsc -p web/tsconfig.json",
     "test": "vitest run",
     "lint": "eslint src web/src",
-    "start": "node dist/index.js",
     "dev:web": "vite --config web/vite.config.ts"
   },
   "dependencies": {

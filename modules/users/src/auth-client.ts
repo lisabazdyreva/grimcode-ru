@@ -5,6 +5,7 @@ import {
   parseCookies,
   REQUEST_ID_HEADER,
   sessionCookieName,
+  type FetchLike,
 } from '@template/shared';
 
 type AuthClient = ContractRouterClient<typeof authInternalContract>;
@@ -19,6 +20,7 @@ type AuthClient = ContractRouterClient<typeof authInternalContract>;
 export async function resolveIdentity(
   request: Request,
   requestId: string,
+  callAuth: FetchLike,
 ): Promise<Identity | null> {
   const token = parseCookies(request.headers.get('cookie'))[sessionCookieName()];
   if (!token) return null;
@@ -26,6 +28,7 @@ export async function resolveIdentity(
   const auth = createRpcClient<AuthClient>({
     url: `${internalServiceUrl('auth')}/internal/rpc`,
     headers: { [REQUEST_ID_HEADER]: requestId },
+    fetch: callAuth,
   });
 
   const { identity } = await auth.resolveSession({ sessionToken: token });

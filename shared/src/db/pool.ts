@@ -6,15 +6,19 @@ export type Pool = pg.Pool;
 export type PoolClient = pg.PoolClient;
 
 /**
- * PostgreSQL pool for one service database.
+ * PostgreSQL pool for one module database.
  *
- * A service may only ever open its own database. Reading or writing another service's database is
- * forbidden; cross-service data goes through HTTP/oRPC contracts.
+ * A module may only ever open its own database. Reading or writing another module's database is
+ * forbidden; data crosses a boundary through the contracts.
+ *
+ * `max` is per pool and there are five of them in one process, so the ceiling that matters is the
+ * sum. Ten each — the figure from when every module was its own container — would ask one server
+ * for fifty connections before doing anything unusual.
  */
 export function createPool(service: string): Pool {
   const pool = new pg.Pool({
     connectionString: serviceDatabaseUrl(service),
-    max: 10,
+    max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
     application_name: `${service}-service`,

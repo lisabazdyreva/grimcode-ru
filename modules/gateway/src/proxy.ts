@@ -1,5 +1,10 @@
 import type { AdminContext } from '@template/contracts';
-import { applyAdminContext, REQUEST_ID_HEADER, stripAdminContextHeaders } from '@template/shared';
+import {
+  applyAdminContext,
+  REQUEST_ID_HEADER,
+  stripAdminContextHeaders,
+  type FetchLike,
+} from '@template/shared';
 
 /**
  * Headers that describe a single network hop and must never be forwarded.
@@ -19,22 +24,36 @@ const HOP_BY_HOP_HEADERS = [
 
 const METHODS_WITHOUT_BODY = new Set(['GET', 'HEAD']);
 
+/**
+ * Where a request goes.
+ *
+ * An absolute URL means something outside this process, and there is exactly one such target left:
+ * Adminer, which stays its own container. A `FetchLike` is a module living in this process, and the
+ * request reaches it by call rather than over a socket.
+ */
+export type ProxyTarget = string | FetchLike;
+
 export interface ProxyOptions {
-  targetBaseUrl: string;
+  target: ProxyTarget;
   requestId: string;
   /** Present only after Admin allowed an `/admin/**` request. */
   adminContext?: AdminContext;
 }
 
 /**
- * Forwards a request to a service without rewriting its path.
+ * Forwards a request to its target without rewriting its path.
  *
- * The service receives exactly the address the browser asked for — `/admin/embed/service/email/...`
- * arrives at Email as `/admin/embed/service/email/...`.
+ * The module receives exactly the address the browser asked for, which is what makes the two kinds
+ * of target interchangeable: routing has always gone by path, and a module in this process reads the
+ * path off the very same `Request`.
+ *
+ * The administrator context still travels as headers rather than as an argument, and that keeps
+ * `access.test.ts` meaningful: the check that a forged `x-template-admin-*` buys nothing only means
+ * something while that is how the context arrives.
  */
 export async function proxyRequest(request: Request, options: ProxyOptions): Promise<Response> {
   const incoming = new URL(request.url);
-  const target = new URL(options.targetBaseUrl);
+  const target = new URL(typeof options.target === 'string' ? options.target : request.url);
   target.pathname = incoming.pathname;
   target.search = incoming.search;
 
@@ -60,14 +79,19 @@ export async function proxyRequest(request: Request, options: ProxyOptions): Pro
 
   const hasBody = !METHODS_WITHOUT_BODY.has(request.method.toUpperCase());
 
-  const upstream = await fetch(target, {
+  const init = {
     method: request.method,
     headers,
     body: hasBody ? request.body : null,
-    // A service's own redirect — Adminer's first response is one — belongs to the browser.
+    // A target's own redirect — Adminer's first response is one — belongs to the browser.
     redirect: 'manual',
     ...(hasBody ? { duplex: 'half' } : {}),
-  } as RequestInit & { duplex?: 'half' });
+  } as RequestInit & { duplex?: 'half' };
+
+  const upstream =
+    typeof options.target === 'string'
+      ? await fetch(target, init)
+      : await options.target(new Request(target, init));
 
   const responseHeaders = new Headers(upstream.headers);
 

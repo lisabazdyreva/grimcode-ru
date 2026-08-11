@@ -1,22 +1,26 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createLogger, createServiceApp, mountSpa, serveService } from '@template/shared';
+import { createServiceApp, mountSpa, type Logger, type ServiceApp } from '@template/shared';
+
+export interface AppDeps {
+  logger: Logger;
+}
 
 /**
  * The user-facing application.
  *
  * It has no database of its own: identity and sessions come from Auth, the product profile from
- * Users. Its server does one thing — serve the built SPA under `/app/` — because every protected
- * call the application makes is checked by the service that owns the data, not here.
+ * Users, and every protected call is checked by the module that owns the data. The build directory
+ * is resolved from this file rather than the working directory, which the composer chooses.
  */
-const logger = createLogger('app');
+export function createApp(deps: AppDeps): ServiceApp {
+  const app = createServiceApp('app', deps.logger);
 
-const app = createServiceApp('app', logger);
+  mountSpa(app, {
+    basePath: '/app',
+    rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
+  });
 
-mountSpa(app, {
-  basePath: '/app',
-  rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
-});
-
-serveService(app, 'app', logger);
+  return app;
+}

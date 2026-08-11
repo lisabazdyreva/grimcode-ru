@@ -7,6 +7,7 @@ import {
   createRpcClient,
   internalServiceUrl,
   REQUEST_ID_HEADER,
+  type FetchLike,
   type Logger,
 } from '@template/shared';
 
@@ -22,12 +23,14 @@ export class Notifier {
   constructor(
     private readonly logger: Logger,
     private readonly requestIdOf: () => string,
+    private readonly callNotifications: FetchLike,
   ) {}
 
   private client<T>(service: 'notifications', path: string): T {
     return createRpcClient<T>({
       url: `${internalServiceUrl(service)}${path}`,
       headers: { [REQUEST_ID_HEADER]: this.requestIdOf() },
+      fetch: this.callNotifications,
     });
   }
 

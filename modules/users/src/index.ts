@@ -2,49 +2,52 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createLogger,
-  createPool,
   createServiceApp,
   mountCsrfEndpoint,
   mountRpc,
   mountSpa,
   readAdminContext,
-  runMigrations,
-  serveService,
-  waitForDatabase,
+  type FetchLike,
+  type Logger,
+  type Pool,
+  type ServiceApp,
 } from '@template/shared';
 
 import { resolveIdentity } from './auth-client.js';
-import { migrations } from './db/migrations.js';
 import { UsersRepository } from './repository.js';
 import { adminRouter, publicRouter } from './routers.js';
 
-const logger = createLogger('users');
-const pool = createPool('users');
-const repo = new UsersRepository(pool);
+export { migrations } from './db/migrations.js';
 
-await waitForDatabase(pool);
-await runMigrations(pool, migrations, logger);
+export interface UsersDeps {
+  logger: Logger;
+  pool: Pool;
+  /** Answers Auth's internal surface. Users owns no sessions and asks on every protected call. */
+  callAuth: FetchLike;
+}
 
-const app = createServiceApp('users', logger);
+export function createApp(deps: UsersDeps): ServiceApp {
+  const repo = new UsersRepository(deps.pool);
+  const app = createServiceApp('users', deps.logger);
 
-mountRpc(app, '/service/users/rpc', publicRouter, async ({ request, hono }) => ({
-  repo,
-  identity: await resolveIdentity(request, hono.get('requestId')),
-}));
+  mountRpc(app, '/service/users/rpc', publicRouter, async ({ request, hono }) => ({
+    repo,
+    identity: await resolveIdentity(request, hono.get('requestId'), deps.callAuth),
+  }));
 
+  mountRpc(app, '/admin/embed/service/users/rpc', adminRouter, ({ request }) => ({
+    repo,
+    request,
+    callAuth: deps.callAuth,
+    admin: readAdminContext(request.headers),
+  }));
 
-mountRpc(app, '/admin/embed/service/users/rpc', adminRouter, ({ request }) => ({
-  repo,
-  request,
-  admin: readAdminContext(request.headers),
-}));
+  mountCsrfEndpoint(app, '/admin/embed/service/users/csrf', 'users');
 
-mountCsrfEndpoint(app, '/admin/embed/service/users/csrf', 'users');
+  mountSpa(app, {
+    basePath: '/admin/embed/service/users',
+    rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
+  });
 
-mountSpa(app, {
-  basePath: '/admin/embed/service/users',
-  rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
-});
-
-serveService(app, 'users', logger);
+  return app;
+}

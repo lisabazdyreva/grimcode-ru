@@ -6,9 +6,10 @@
  * limits — requests per address, per network — belong at the edge proxy in front of Gateway, which
  * is the only thing that knows the real client address; see `docs/deployment.md`.
  *
- * Counting in memory means each instance counts on its own, so running two copies of a service
- * doubles the allowance. That is exact for the topology this template ships (one container per
- * service) and a deliberate trade against writing a row on every failed attempt.
+ * Counting in memory means each instance counts on its own, so running two copies doubles the
+ * allowance. That is exact for the topology this template ships — one process, and every module
+ * inside it shares that process — and a deliberate trade against writing a row on every failed
+ * attempt. It stops being exact the moment there is more than one instance of the server.
  */
 export interface RateLimiter {
   /** Records an attempt and answers whether it is still within the allowance. */

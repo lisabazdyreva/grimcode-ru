@@ -21,7 +21,7 @@ const composeFiles = ['docker/compose.yaml', 'docker/compose.local.yaml'].map((f
 const envPath = join(repoRoot, '.env');
 
 /** Services allowed to publish a host port locally. Nothing else may. */
-const PUBLISHABLE = new Set(['gateway', 'postgres']);
+const PUBLISHABLE = new Set(['server', 'postgres']);
 /** The database must never leave the loopback interface. */
 const LOOPBACK = new Set(['127.0.0.1', '::1']);
 
@@ -131,15 +131,15 @@ for (const [name, service] of Object.entries(config.services ?? {})) {
     const host = typeof port === 'string' ? port.split(':')[0] : port.host_ip;
     if (host && LOOPBACK.has(host)) continue;
 
-    // Gateway on every interface is the documented default: the project has to be reachable from a
-    // virtual machine's host or a phone. Only the others are a mistake.
-    if (name === 'gateway') continue;
+    // The application on every interface is the documented default: the project has to be
+    // reachable from a virtual machine's host or a phone. Only the others are a mistake.
+    if (name === 'server') continue;
 
     {
       const where = host || 'all interfaces';
       problems.push(
         `"${name}" publishes ${port.published ?? port} on "${where}"; ` +
-          'only Gateway may be opened beyond loopback',
+          'only the application may be opened beyond loopback',
       );
     }
   }
@@ -151,7 +151,7 @@ if (!config.services?.adminer) {
   problems.push('Adminer must never have a host port; it is reachable only through Gateway');
 }
 
-if (!config.services?.gateway) problems.push('The gateway service is missing');
+if (!config.services?.server) problems.push('The server service is missing');
 
 if (problems.length > 0) {
   console.error('Compose configuration problems:');

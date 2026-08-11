@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../contracts" },
+    { "path": "../shared" },
+    { "path": "../modules/admin" },
+    { "path": "../modules/app" },
+    { "path": "../modules/auth" },
+    { "path": "../modules/email" },
+    { "path": "../modules/gateway" },
+    { "path": "../modules/notifications" },
+    { "path": "../modules/users" }
+  ]
+}

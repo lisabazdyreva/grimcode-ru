@@ -6,7 +6,16 @@
  * declarations by the file extension, and a `.d.ts` next to an `.mjs` is not found at all
  * (`TS7016: Could not find a declaration file`).
  *
- * Today the entry starts the server as a side effect of being imported and exports nothing, so
- * this file says exactly that. When the site gains a `createApp()` its signature belongs here.
+ * This is also why `site` can never be a project reference: its tsconfig is `noEmit` with bundler
+ * resolution, for the framework's own build. The composer reaches it as an ordinary dependency,
+ * through the `./server` export, and the build order comes from that declared dependency.
  */
-export {};
+import type { Hono } from 'hono';
+
+export interface SiteOptions {
+  /** The site's public address. Every generated link — robots, sitemap — is built from it. */
+  origin: string;
+}
+
+/** Builds the site application. It listens to nothing; the composer owns the port. */
+export declare function createApp(options: SiteOptions): Hono;

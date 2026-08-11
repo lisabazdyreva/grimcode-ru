@@ -9,7 +9,13 @@ import {
   type emailInternalContract,
   type NotificationEvent,
 } from '@template/contracts';
-import { createRpcClient, internalServiceUrl, REQUEST_ID_HEADER, type Logger } from '@template/shared';
+import {
+  createRpcClient,
+  internalServiceUrl,
+  REQUEST_ID_HEADER,
+  type FetchLike,
+  type Logger,
+} from '@template/shared';
 
 import type { EventRow, NotificationsRepository } from './repository.js';
 
@@ -19,6 +25,8 @@ export interface InternalContext {
   repo: NotificationsRepository;
   logger: Logger;
   requestId: string;
+  /** Answers Email's internal surface. */
+  callEmail: FetchLike;
 }
 
 export interface AdminRpcContext {
@@ -77,6 +85,7 @@ export const internalRouter = internalOs.router({
       const email = createRpcClient<EmailClient>({
         url: `${internalServiceUrl('email')}/internal/rpc`,
         headers: { [REQUEST_ID_HEADER]: context.requestId },
+        fetch: context.callEmail,
       });
 
       const result = await email.send({

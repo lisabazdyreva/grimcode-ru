@@ -2,12 +2,17 @@
 #
 # Local development runs `docker/compose.local.yaml` instead, through `pnpm start`.
 #
-# Only Gateway is reachable from outside; everything else lives on the internal network with no
-# host port at all. PostgreSQL is not here: in production the database is a managed resource of the
-# deployment platform, reached through DATABASE_URL, so the application never runs its own.
+# Two containers of ours and one job that runs to completion. `server` is the whole application —
+# every module in one process — and `adminer` is a third-party console the panel embeds. Nothing is
+# reachable from outside except through `server`. PostgreSQL is not here: in production the database
+# is a managed resource of the deployment platform, reached through DATABASE_URL, so the application
+# never runs its own.
 #
-# There is no host port for Gateway either. The platform routes the domain to the container's
+# There is no host port for `server` either. The platform routes the domain to the container's
 # fixed internal port, which is why nobody has to choose a number.
+#
+# Two names sit close together here and mean different things: the Compose service `server` is the
+# whole process, and `gateway` inside it is the module that traffic enters through.
 #
 # Everything a deployment must supply is listed in `docs/deployment.md`; the `:?` markers below
 # are what enforces it.
@@ -15,8 +20,8 @@
 name: ${PROJECT_SLUG:?PROJECT_SLUG is required}
 
 services:
-  # Creates the per-service databases if they do not exist yet. Harmless on every later deploy: it
-  # only ever adds what is missing, and each service still applies its own migrations on start.
+  # Creates the per-module databases if they do not exist yet. Harmless on every later deploy: it
+  # only ever adds what is missing, and the application still applies the migrations on start.
   db-init:
     image: postgres:17-alpine
     restart: 'no'
@@ -38,168 +43,25 @@ services:
         done
     networks: [internal]
 
-  gateway:
+  # The application: every module in one process. Gateway is the only one mounted on the port.
+  server:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-      args:
-        SERVICE: gateway
     environment:
       PROJECT_SLUG: ${PROJECT_SLUG}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:?PUBLIC_SITE_URL is required}
-    # The only container the platform routes traffic to. No `ports`: publishing one would put the
-    # application on the host's network instead of behind whatever terminates TLS.
-    expose: ['8080']
-    depends_on: [admin, app, auth, site, users, notifications, email, adminer]
-    restart: unless-stopped
-    networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
-  site:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        SERVICE: site
-    environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
-    expose: ['3000']
-    restart: unless-stopped
-    networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
-  app:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        SERVICE: app
-    environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
-    expose: ['3001']
-    restart: unless-stopped
-    networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
-  admin:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        SERVICE: admin
-    environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      # Set to put this service's database on another server or under other credentials.
+      # Set any of these to put one module's database on another server or under other credentials.
       DATABASE_URL_ADMIN: ${DATABASE_URL_ADMIN:-}
-    expose: ['3002']
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      # Admin resolves the session and finds the first owner through Auth, so it has nothing to
-      # answer with until Auth is up. Local development had this dependency; deployment did not.
-      auth:
-        condition: service_started
-    restart: unless-stopped
-    networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
-  auth:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        SERVICE: auth
-    environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      # Set to put this service's database on another server or under other credentials.
       DATABASE_URL_AUTH: ${DATABASE_URL_AUTH:-}
-      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL}
+      DATABASE_URL_USERS: ${DATABASE_URL_USERS:-}
+      DATABASE_URL_NOTIFICATIONS: ${DATABASE_URL_NOTIFICATIONS:-}
+      DATABASE_URL_EMAIL: ${DATABASE_URL_EMAIL:-}
       AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-2592000}
       AUTH_LOGIN_ATTEMPT_LIMIT: ${AUTH_LOGIN_ATTEMPT_LIMIT:-10}
       AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS: ${AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS:-900}
-    expose: ['3003']
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-    networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
-  users:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        SERVICE: users
-    environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      # Set to put this service's database on another server or under other credentials.
-      DATABASE_URL_USERS: ${DATABASE_URL_USERS:-}
-    expose: ['3004']
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-    networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
-  notifications:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        SERVICE: notifications
-    environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      # Set to put this service's database on another server or under other credentials.
-      DATABASE_URL_NOTIFICATIONS: ${DATABASE_URL_NOTIFICATIONS:-}
-    expose: ['3005']
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-    networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
-
-  email:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        SERVICE: email
-    environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      # Set to put this service's database on another server or under other credentials.
-      DATABASE_URL_EMAIL: ${DATABASE_URL_EMAIL:-}
       # A production deployment that leaves this on `log` sends nothing: messages are recorded and
       # stay put. That is a deliberate default — a misconfigured transport should not mail people.
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-log}
@@ -207,10 +69,14 @@ services:
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-}
       UNISENDER_GO_API_KEY: ${UNISENDER_GO_API_KEY:-}
       UNISENDER_GO_API_URL: ${UNISENDER_GO_API_URL:-}
-    expose: ['3006']
+    # The only container the platform routes traffic to. No `ports`: publishing one would put the
+    # application on the host's network instead of behind whatever terminates TLS.
+    expose: ['8080']
     depends_on:
       db-init:
         condition: service_completed_successfully
+      adminer:
+        condition: service_started
     restart: unless-stopped
     networks: [internal]
     logging:

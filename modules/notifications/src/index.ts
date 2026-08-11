@@ -2,48 +2,52 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createLogger,
-  createPool,
   createServiceApp,
   mountCsrfEndpoint,
   mountRpc,
   mountSpa,
   readAdminContext,
-  runMigrations,
-  serveService,
-  waitForDatabase,
+  type FetchLike,
+  type Logger,
+  type Pool,
+  type ServiceApp,
 } from '@template/shared';
 
-import { migrations } from './db/migrations.js';
 import { NotificationsRepository } from './repository.js';
 import { adminRouter, internalRouter } from './routers.js';
 
-const logger = createLogger('notifications');
-const pool = createPool('notifications');
-const repo = new NotificationsRepository(pool);
+export { migrations } from './db/migrations.js';
 
-await waitForDatabase(pool);
-await runMigrations(pool, migrations, logger);
+export interface NotificationsDeps {
+  logger: Logger;
+  pool: Pool;
+  /** Answers Email's internal surface: Notifications routes an event, Email renders and sends it. */
+  callEmail: FetchLike;
+}
 
-const app = createServiceApp('notifications', logger);
+export function createApp(deps: NotificationsDeps): ServiceApp {
+  const repo = new NotificationsRepository(deps.pool);
+  const app = createServiceApp('notifications', deps.logger);
 
-// Notifications has no public surface: only other services emit events, over the internal network.
-mountRpc(app, '/internal/rpc', internalRouter, ({ hono }) => ({
-  repo,
-  logger: hono.get('logger'),
-  requestId: hono.get('requestId'),
-}));
+  // Notifications has no public surface: only other modules emit events, over the internal path.
+  mountRpc(app, '/internal/rpc', internalRouter, ({ hono }) => ({
+    repo,
+    logger: hono.get('logger'),
+    requestId: hono.get('requestId'),
+    callEmail: deps.callEmail,
+  }));
 
-mountRpc(app, '/admin/embed/service/notifications/rpc', adminRouter, ({ request }) => ({
-  repo,
-  admin: readAdminContext(request.headers),
-}));
+  mountRpc(app, '/admin/embed/service/notifications/rpc', adminRouter, ({ request }) => ({
+    repo,
+    admin: readAdminContext(request.headers),
+  }));
 
-mountCsrfEndpoint(app, '/admin/embed/service/notifications/csrf', 'notifications');
+  mountCsrfEndpoint(app, '/admin/embed/service/notifications/csrf', 'notifications');
 
-mountSpa(app, {
-  basePath: '/admin/embed/service/notifications',
-  rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
-});
+  mountSpa(app, {
+    basePath: '/admin/embed/service/notifications',
+    rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
+  });
 
-serveService(app, 'notifications', logger);
+  return app;
+}

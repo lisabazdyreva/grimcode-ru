@@ -18,8 +18,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src",
-    "dev": "vite dev",
-    "start": "node server/index.mjs"
+    "dev": "vite dev"
   },
   "dependencies": {
     "@hono/node-server": "2.0.11",

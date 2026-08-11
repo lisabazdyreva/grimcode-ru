@@ -8,7 +8,7 @@ import {
   type ContractRouterClient,
   type Identity,
 } from '@template/contracts';
-import { createRpcClient, internalServiceUrl } from '@template/shared';
+import { createRpcClient, internalServiceUrl, type FetchLike } from '@template/shared';
 
 import { toProfile, type ProfileRow, type UsersRepository } from './repository.js';
 
@@ -20,14 +20,20 @@ type AuthClient = ContractRouterClient<typeof authInternalContract>;
  * Users does not store it — Auth owns the identity — so it is fetched per request, in one call for
  * the whole page rather than one per row. An id Auth does not know stays `null`, which is how a
  * profile left behind by a deleted account is visible as exactly that.
+ *
+ * `callAuth` is threaded in from the context rather than reached for here: this is a plain function
+ * with no context and no dependencies of its own, and it is the one place in Users where that had
+ * to be arranged by hand. The `catch` below is why the deadline in `createRpcClient` matters —
+ * without a bound on the wait there is nothing to fall back from.
  */
-async function withEmails(rows: ProfileRow[]) {
+async function withEmails(rows: ProfileRow[], callAuth: FetchLike) {
   const profiles = rows.map((row) => ({ ...toProfile(row), email: null as string | null }));
   if (profiles.length === 0) return profiles;
 
   try {
     const auth = createRpcClient<AuthClient>({
       url: `${internalServiceUrl('auth')}/internal/rpc`,
+      fetch: callAuth,
     });
 
     const { identities } = await auth.getIdentitiesByIds({
@@ -53,6 +59,8 @@ export interface PublicContext {
 export interface AdminRpcContext {
   repo: UsersRepository;
   request: Request;
+  /** Answers Auth's internal surface; the profile list needs the sign-in address from it. */
+  callAuth: FetchLike;
   admin: AdminContext | null;
 }
 
@@ -91,7 +99,7 @@ export const adminRouter = adminOs.router({
     requireAdmin(context);
     const { rows, total } = await context.repo.list(input.query, input.limit, input.offset);
     return {
-      items: await withEmails(rows),
+      items: await withEmails(rows, context.callAuth),
       total,
       limit: input.limit,
       offset: input.offset,
@@ -103,7 +111,7 @@ export const adminRouter = adminOs.router({
     const row = await context.repo.findById(input.id);
     if (!row) throw new ORPCError('NOT_FOUND', { message: 'Профиль не найден' });
 
-    const [profile] = await withEmails([row]);
+    const [profile] = await withEmails([row], context.callAuth);
     return { profile: profile! };
   }),
 

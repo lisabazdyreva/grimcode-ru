@@ -1,10 +1,10 @@
 import { optionalEnv } from './env.js';
 
 /**
- * Fixed internal ports of the template.
- *
- * They are pinned in the images and in Compose. Nobody types them by hand: locally `.env` only
- * chooses the published host ports of Gateway and PostgreSQL.
+ * Fixed internal ports of the template. Most are no longer dialled — the modules share one process,
+ * so a neighbour's address is only what a `Request` is built from — and they are kept because they
+ * are the escape hatch: point `SERVICE_URL_<MODULE>` at a real address, hand that module's client
+ * the network `fetch`, and it moves back out into a service of its own without a code change.
  */
 export const INTERNAL_PORTS = {
   gateway: 8080,
@@ -20,11 +20,7 @@ export const INTERNAL_PORTS = {
 
 export type InternalServiceName = keyof typeof INTERNAL_PORTS;
 
-/**
- * Base URL of another service on the internal Docker network.
- *
- * Services talk to each other directly over this network; nothing here is published outwards.
- */
+/** Base URL of another service on the internal network; nothing here is published outwards. */
 export function internalServiceUrl(service: InternalServiceName): string {
   return optionalEnv(
     `SERVICE_URL_${service.toUpperCase()}`,
@@ -32,10 +28,15 @@ export function internalServiceUrl(service: InternalServiceName): string {
   );
 }
 
-/** Port this service listens on inside its own container. */
+/**
+ * Port to listen on. Inside the container the fixed internal port is right; outside there is no
+ * publishing step, so the application takes `GATEWAY_PORT`, which Compose does not declare to the
+ * container. That is what lets two worktrees run at once.
+ */
 export function ownPort(service: InternalServiceName): number {
-  const raw = process.env.PORT;
-  if (raw !== undefined && raw !== '') {
+  for (const name of service === 'gateway' ? ['PORT', 'GATEWAY_PORT'] : ['PORT']) {
+    const raw = process.env[name];
+    if (raw === undefined || raw === '') continue;
     const parsed = Number.parseInt(raw, 10);
     if (Number.isFinite(parsed)) return parsed;
   }

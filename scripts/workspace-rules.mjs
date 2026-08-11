@@ -32,8 +32,16 @@ export const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
  *
  * `mayUse` names workspace packages only. Third-party packages are not the subject of this table —
  * see `OUTSIDE_PROCESS_PACKAGES` for the one thing that is.
+ *
+ * `composition` is the single exception and holds the widest permission in the repository, because
+ * its whole job is to know every module and wire them together. That is affordable only while it
+ * contains nothing but the order of calls: the day it starts deciding something, this line is the
+ * hole it decides through.
  */
+export const EVERY_PACKAGE = '*';
+
 export const AREA_RULES = [
+  { area: 'composition', mayUse: EVERY_PACKAGE },
   { area: 'contracts', mayUse: [] },
   { area: 'shared', mayUse: ['@template/contracts'] },
   { area: 'modules/*', mayUse: ['@template/contracts', '@template/shared'] },
@@ -41,6 +49,17 @@ export const AREA_RULES = [
   { area: 'scripts', mayUse: [] },
   { area: '.', mayUse: [] },
 ];
+
+/** Whether a rule allows reaching for a workspace package. */
+export function allows(rule, packageName) {
+  return rule.mayUse === EVERY_PACKAGE || rule.mayUse.includes(packageName);
+}
+
+/** How to name a rule's allowance when reporting a violation. */
+export function describeAllowance(rule) {
+  if (rule.mayUse === EVERY_PACKAGE) return 'every workspace package';
+  return rule.mayUse.length > 0 ? rule.mayUse.join(', ') : 'no workspace package';
+}
 
 /**
  * Packages that open a door out of the process. Only `shared` may declare one.

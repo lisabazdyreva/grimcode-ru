@@ -184,6 +184,29 @@ describe('service databases', () => {
     expect(serviceDatabaseUrl('email')).toBe('postgres://other@db:5432/custom');
     delete process.env.DATABASE_URL_EMAIL;
   });
+
+  /** Running on the machine rather than in Compose, where the host `postgres` does not exist. */
+  it('redirects to the published port when the application runs outside Compose', () => {
+    process.env.PROJECT_SLUG = 'demo';
+    process.env.DATABASE_URL = 'postgres://u:p@postgres:5432/postgres';
+    process.env.LOCAL_POSTGRES_HOST = '127.0.0.1';
+    process.env.POSTGRES_PORT = '63003';
+
+    expect(serviceDatabaseUrl('auth')).toBe('postgres://u:p@127.0.0.1:63003/demo_auth');
+
+    delete process.env.LOCAL_POSTGRES_HOST;
+    delete process.env.POSTGRES_PORT;
+  });
+
+  it('takes an explicit override literally, even then', () => {
+    process.env.LOCAL_POSTGRES_HOST = '127.0.0.1';
+    process.env.DATABASE_URL_EMAIL = 'postgres://other@db:5432/custom';
+
+    expect(serviceDatabaseUrl('email')).toBe('postgres://other@db:5432/custom');
+
+    delete process.env.DATABASE_URL_EMAIL;
+    delete process.env.LOCAL_POSTGRES_HOST;
+  });
 });
 
 describe('theme', () => {

@@ -2,7 +2,7 @@ import type { AuthorizationResult } from '@template/contracts';
 import { ADMIN_CONTEXT_HEADERS, createLogger, ServiceUnavailableError } from '@template/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isAdminService, isPublicService } from './registry.js';
+import { isAdminService, isPublicService, type GatewayTargets } from './registry.js';
 import { routeRequest } from './router.js';
 
 /**
@@ -21,15 +21,53 @@ vi.mock('./authorize.js', () => ({
   },
 }));
 
-/** Captures what Gateway actually sent upstream. */
+/** What Gateway actually sent onwards, and to which of its targets. */
 interface Forwarded {
-  url: string;
+  target: string;
+  path: string;
   method: string;
   headers: Headers;
 }
 
 const forwarded: Forwarded[] = [];
 const logger = createLogger('gateway-test');
+
+let upstreamResponse: () => Response;
+
+/**
+ * A module standing in for a real one.
+ *
+ * Gateway is handed applications rather than addresses, so a fake is a function that answers a
+ * `Request` — which is all a real module is from here. Where a request went is now the name of the
+ * target rather than a host in a URL, and that is the honest question: in one process there is no
+ * host to look at, and the module still receives the address the browser asked for.
+ */
+function fakeModule(name: string) {
+  return (request: Request): Response => {
+    const url = new URL(request.url);
+    forwarded.push({
+      target: name,
+      path: url.pathname + url.search,
+      method: request.method,
+      headers: new Headers(request.headers),
+    });
+    return upstreamResponse();
+  };
+}
+
+function fakeTargets(): GatewayTargets {
+  return {
+    site: fakeModule('site'),
+    app: fakeModule('app'),
+    admin: fakeModule('admin'),
+    auth: fakeModule('auth'),
+    users: fakeModule('users'),
+    notifications: fakeModule('notifications'),
+    email: fakeModule('email'),
+  };
+}
+
+let targets: GatewayTargets;
 
 const OWNER = {
   state: 'allowed',
@@ -40,18 +78,21 @@ const OWNER = {
 
 const DENIED = { state: 'denied', reason: 'not-an-administrator' } satisfies AuthorizationResult;
 
-let upstreamResponse: () => Response;
-
 beforeEach(() => {
   process.env.PROJECT_SLUG = 'template';
   forwarded.length = 0;
   stub.calls.length = 0;
   stub.authorize = async () => DENIED;
   upstreamResponse = () => new Response('upstream', { status: 200 });
+  targets = fakeTargets();
 
+  // Adminer is the one target that is still a real address over a real network: it stays its own
+  // container, so it is still the global `fetch` that answers for it.
   vi.stubGlobal('fetch', async (input: URL | RequestInfo, init?: RequestInit) => {
+    const url = new URL(input instanceof URL ? input.toString() : String(input));
     forwarded.push({
-      url: input instanceof URL ? input.toString() : String(input),
+      target: url.host,
+      path: url.pathname + url.search,
       method: init?.method ?? 'GET',
       headers: new Headers(init?.headers as HeadersInit),
     });
@@ -64,12 +105,12 @@ afterEach(() => {
 });
 
 async function route(path: string, init?: RequestInit): Promise<Response> {
-  return routeRequest(new Request(`http://gateway.test${path}`, init), 'req-test', logger);
+  return routeRequest(new Request(`http://gateway.test${path}`, init), 'req-test', logger, targets);
 }
 
 describe('allowlists', () => {
   /**
-   * The database browser is not a service of this template. It is a section of the admin panel, so
+   * The database browser is not a module of this template. It is a section of the admin panel, so
    * it appears in neither list and is reached by its own area instead.
    */
   it('keeps Adminer out of both service lists', () => {
@@ -86,17 +127,20 @@ describe('allowlists', () => {
 describe('public routing', () => {
   it('sends everything unmatched to site without rewriting the path', async () => {
     await route('/pricing?ref=1');
-    expect(forwarded[0]?.url).toBe('http://site:3000/pricing?ref=1');
+    expect(forwarded[0]?.target).toBe('site');
+    expect(forwarded[0]?.path).toBe('/pricing?ref=1');
   });
 
   it('sends /app/** to app', async () => {
     await route('/app/dashboard');
-    expect(forwarded[0]?.url).toBe('http://app:3001/app/dashboard');
+    expect(forwarded[0]?.target).toBe('app');
+    expect(forwarded[0]?.path).toBe('/app/dashboard');
   });
 
   it('sends an allowlisted /service/:name/** to that service, path preserved', async () => {
     await route('/service/auth/rpc/login', { method: 'POST', body: '{}' });
-    expect(forwarded[0]?.url).toBe('http://auth:3003/service/auth/rpc/login');
+    expect(forwarded[0]?.target).toBe('auth');
+    expect(forwarded[0]?.path).toBe('/service/auth/rpc/login');
   });
 
   it('refuses an unknown public service', async () => {
@@ -131,7 +175,8 @@ describe('admin authorization', () => {
     await route('/admin/embed/service/email/templates/123');
 
     const sent = forwarded[0];
-    expect(sent?.url).toBe('http://email:3006/admin/embed/service/email/templates/123');
+    expect(sent?.target).toBe('email');
+    expect(sent?.path).toBe('/admin/embed/service/email/templates/123');
     expect(sent?.headers.get('x-template-admin-user-id')).toBe(OWNER.userId);
     expect(sent?.headers.get('x-template-admin-email')).toBe('owner@example.com');
     expect(sent?.headers.get('x-template-admin-role')).toBe('owner');
@@ -172,14 +217,16 @@ describe('admin authorization', () => {
     stub.authorize = async () => OWNER;
     await route('/admin/embed/database/');
     expect(stub.calls).toEqual([{ area: 'database' }]);
-    expect(forwarded[0]?.url).toBe('http://adminer:8080/admin/embed/database/');
+    expect(forwarded[0]?.target).toBe('adminer:8080');
+    expect(forwarded[0]?.path).toBe('/admin/embed/database/');
   });
 
   it('asks Admin about the panel itself for everything else', async () => {
     stub.authorize = async () => OWNER;
     await route('/admin/administrators');
     expect(stub.calls).toEqual([{ area: 'panel' }]);
-    expect(forwarded[0]?.url).toBe('http://admin:3002/admin/administrators');
+    expect(forwarded[0]?.target).toBe('admin');
+    expect(forwarded[0]?.path).toBe('/admin/administrators');
   });
 
   it('refuses an unknown admin service without asking Admin at all', async () => {
@@ -238,7 +285,7 @@ describe('response headers', () => {
     expect(forwarded[0]?.headers.get('accept-encoding')).toBe('identity');
   });
 
-  it('keeps a service redirect and its cookie for the browser', async () => {
+  it('keeps a target redirect and its cookie for the browser', async () => {
     upstreamResponse = () =>
       new Response(null, {
         status: 302,

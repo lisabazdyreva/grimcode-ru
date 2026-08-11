@@ -13,6 +13,7 @@ import {
   parseCookies,
   REQUEST_ID_HEADER,
   sessionCookieName,
+  type FetchLike,
   type Logger,
 } from '@template/shared';
 
@@ -234,10 +235,17 @@ export const adminRouter = adminOs.router({
   }),
 });
 
-/** Typed client for Auth's internal surface, used by authorization and the administrator list. */
-export function createAuthClient(requestId: string): AuthClient {
+/**
+ * Typed client for Auth's internal surface, used by authorization and the administrator list.
+ *
+ * `callAuth` is who answers — the network when Auth is a separate service, Auth's own app when it
+ * shares this process. Either way the call goes through the contract, which is what keeps the two
+ * honest about the shape of what crosses between them.
+ */
+export function createAuthClient(requestId: string, callAuth: FetchLike): AuthClient {
   return createRpcClient<AuthClient>({
     url: `${internalServiceUrl('auth')}/internal/rpc`,
     headers: { [REQUEST_ID_HEADER]: requestId },
+    fetch: callAuth,
   });
 }

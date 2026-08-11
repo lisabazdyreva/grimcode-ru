@@ -39,6 +39,49 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
 
+  composition:
+    dependencies:
+      '@template/admin':
+        specifier: workspace:*
+        version: link:../modules/admin
+      '@template/app':
+        specifier: workspace:*
+        version: link:../modules/app
+      '@template/auth':
+        specifier: workspace:*
+        version: link:../modules/auth
+      '@template/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@template/email':
+        specifier: workspace:*
+        version: link:../modules/email
+      '@template/gateway':
+        specifier: workspace:*
+        version: link:../modules/gateway
+      '@template/notifications':
+        specifier: workspace:*
+        version: link:../modules/notifications
+      '@template/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@template/site':
+        specifier: workspace:*
+        version: link:../modules/site
+      '@template/users':
+        specifier: workspace:*
+        version: link:../modules/users
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
+
   contracts:
     dependencies:
       '@orpc/contract':

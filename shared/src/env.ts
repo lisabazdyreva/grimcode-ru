@@ -40,18 +40,36 @@ export function publicSiteUrl(): string {
 }
 
 /**
- * Connection string of one service database.
+ * Where PostgreSQL is, when the application runs on the machine instead of in Compose.
  *
- * The template uses a single base `DATABASE_URL`; each stateful service owns the database
- * `<PROJECT_SLUG>_<service>` on that server. A deployment that needs different credentials or
- * hosts per service can set `DATABASE_URL_<SERVICE>` instead.
+ * `DATABASE_URL` names the host `postgres`, which exists only inside the Compose network. The
+ * substitution lives here, where every caller passes through, and in Compose the variable is simply
+ * not declared to the container — the switch is the declaration, not a flag anybody has to remember.
+ */
+function withLocalHost(url: URL): URL {
+  const host = process.env.LOCAL_POSTGRES_HOST;
+  if (host === undefined || host === '') return url;
+
+  url.hostname = host;
+  url.port = optionalEnv('POSTGRES_PORT', url.port);
+  return url;
+}
+
+/**
+ * Connection string of one module database.
+ *
+ * The template uses a single base `DATABASE_URL`; each module with state owns the database
+ * `<PROJECT_SLUG>_<module>` on that server. A deployment that needs different credentials or hosts
+ * per module can set `DATABASE_URL_<MODULE>` instead.
  */
 export function serviceDatabaseUrl(service: string): string {
+  // An explicit override is taken literally, `LOCAL_POSTGRES_HOST` or not: whoever wrote out a
+  // whole connection string for one module meant that server and not another.
   const override = process.env[`DATABASE_URL_${service.toUpperCase()}`];
   if (override !== undefined && override !== '') return override;
 
   const base = requireEnv('DATABASE_URL');
-  const url = new URL(base);
+  const url = withLocalHost(new URL(base));
   url.pathname = `/${serviceDatabaseName(service)}`;
   return url.toString();
 }

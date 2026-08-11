@@ -1,4 +1,5 @@
 packages:
+  - composition
   - contracts
   - shared
   - modules/*

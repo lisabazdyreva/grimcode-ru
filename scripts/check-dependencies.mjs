@@ -23,7 +23,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import {
+  allows,
   compartmentOf,
+  describeAllowance,
   OUTSIDE_PROCESS_HOME,
   OUTSIDE_PROCESS_PACKAGES,
   repoRoot,
@@ -72,13 +74,11 @@ for (const { name, dir, manifest } of packages) {
 
   for (const section of SECTIONS) {
     for (const dependency of Object.keys(manifest[section] ?? {})) {
-      if (workspaceNames.has(dependency) && dependency !== name) {
-        if (!rule.mayUse.includes(dependency)) {
-          problems.push(
-            `${dir} declares "${dependency}" in ${section}; ${rule.area} may use ` +
-              `${rule.mayUse.length > 0 ? rule.mayUse.join(', ') : 'no workspace package'}`,
-          );
-        }
+      if (workspaceNames.has(dependency) && dependency !== name && !allows(rule, dependency)) {
+        problems.push(
+          `${dir} declares "${dependency}" in ${section}; ` +
+            `${rule.area} may use ${describeAllowance(rule)}`,
+        );
       }
 
       if (OUTSIDE_PROCESS_PACKAGES.includes(dependency) && dir !== OUTSIDE_PROCESS_HOME) {

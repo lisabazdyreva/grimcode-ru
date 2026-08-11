@@ -38,6 +38,31 @@ subnet of its own and never touches anyone else's.
 `pnpm check` is what has to be green. It runs from a clean checkout with the single lockfile and
 needs no running stack.
 
+## The fast cycle: running the application on the machine
+
+`pnpm start` rebuilds the image, and one image now holds every module, so a one-line change costs a
+full rebuild — around forty seconds. The second mode skips Docker for the application entirely:
+
+```bash
+node scripts/compose.mjs up -d postgres adminer
+pnpm dev
+```
+
+`pnpm dev` builds what changed and runs the application directly, on `GATEWAY_PORT` — the same
+address as the container it replaces, so nothing else has to be told about it. PostgreSQL is reached
+through `LOCAL_POSTGRES_HOST` from `.env`: the host `postgres` exists only inside the Compose
+network, and the published port differs per worktree.
+
+Three things this mode does not give you:
+
+- **`/admin/database` does not work.** Adminer answers at `adminer:8080`, a name that exists only
+  inside the Compose network, and it may never be given a host port — that is a documented rule
+  `check-compose.mjs` enforces. Everything else in the panel works.
+- **Error bodies carry a stack.** `NODE_ENV` is not `production` outside the container, so an RPC
+  failure answers with more detail than a deployment would.
+- **It is your machine's Node.** The image pins one; here you get whatever `node -v` says, which is
+  the point of the speed and also the reason a green `pnpm dev` is not a green deployment.
+
 ## Reaching it from another machine
 
 Nothing to configure: the gateway is published on every interface, so the stack answers on the
