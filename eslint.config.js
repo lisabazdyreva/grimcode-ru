@@ -38,7 +38,7 @@ export default tseslint.config(
             {
               group: ['**/modules/*'],
               message:
-                'Services must not import each other. Use contracts/ and HTTP/oRPC instead.',
+                'Modules must not import each other. Use @template/contracts, or a neighbour as @template/<name>/contract.',
             },
           ],
         },
@@ -63,6 +63,34 @@ export default tseslint.config(
        */
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+
+      /*
+       * Browser code may read the server's types and nothing else.
+       *
+       * With tRPC this import is not optional: a client is typed from the router, so `web` has to
+       * name a type that lives in `src`. The difference between borrowing the type and shipping the
+       * server is one word — `import type { AuthAdminRouter }` versus `import { authRouter }` — and
+       * the second puts routers, repositories and `pg` into a browser bundle without a single error.
+       * `verbatimModuleSyntax` does not catch it: it forces the keyword where a type is meant and
+       * never forbids meaning a value. Hence the typescript-eslint variant — `allowTypeImports` is
+       * the whole point.
+       *
+       * It covers the route no other check sees, a relative path up and back into `src`:
+       * `check-boundaries` looks for crossings between modules, and this one stays inside one.
+       */
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/src/**'],
+              allowTypeImports: true,
+              message:
+                'Browser code may take types from the server, never values. Use `import type`, or the module door @template/<name>/contract.',
+            },
+          ],
+        },
+      ],
     },
   },
 );

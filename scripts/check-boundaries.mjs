@@ -73,6 +73,25 @@ const POOL_FUNCTIONS = ['createPool', 'createAdminPool'];
  */
 const ENV_FORBIDDEN_AREAS = ['modules/*'];
 
+/**
+ * The door a neighbour comes through, and the one file that must carry nothing at runtime.
+ *
+ * With tRPC a client is typed from the server's router, so the type has to leave the module. That
+ * is what `exports: "./contract"` opens, and what the rule above lets a neighbour import. The
+ * permission is affordable for exactly one reason: the door hands over declarations and no code —
+ * every one of these files compiles to `export {};`.
+ *
+ * One value export ends that. Re-export the router instead of its type and the door starts handing
+ * out routers, repositories and `pg`; `exports` would still name a single entry and would still be
+ * satisfied, because it says which file may be opened and never what is inside. A neighbour that
+ * imports the door would pull the implementation into its own build — `app/web` into a browser
+ * bundle — with nothing red anywhere.
+ *
+ * So the check is narrow on purpose: in this one file, every export and every import must be
+ * type-only. It is the counterpart of the `web` lint rule, which guards the other route into `src`.
+ */
+const DOOR_FILE = /^modules\/[^/]+\/src\/contract\.ts$/;
+
 const packages = workspacePackages();
 const packageNames = new Set(packages.map((entry) => entry.name));
 const nameOfDir = new Map(packages.map((entry) => [entry.dir, entry.name]));
@@ -104,6 +123,7 @@ function workspacePackageOf(specifier) {
 const importProblems = [];
 const poolProblems = [];
 const envProblems = [];
+const doorProblems = [];
 
 function inspect(file) {
   const relative = repoRelative(file);
@@ -191,7 +211,46 @@ function inspect(file) {
     ts.forEachChild(node, visit);
   };
 
+  if (DOOR_FILE.test(relative)) inspectDoor(relative, source, at);
+
   visit(source);
+}
+
+/**
+ * Everything in the door must be a declaration. Anything else is code that would be emitted.
+ *
+ * `export { AuthPublicRouter }` without `type` is the case worth naming: it looks identical in the
+ * editor and type-checks, but the emitted file keeps the re-export, so the door stops being empty
+ * and starts pulling `./routers/public.js` — and everything it imports — into whoever opened it.
+ */
+function inspectDoor(relative, source, at) {
+  const say = (node, what) => doorProblems.push(`${at(node)} ${what}`);
+
+  for (const statement of source.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      if (!statement.isTypeOnly) say(statement, 'export is not type-only — write `export type {…}`');
+      continue;
+    }
+
+    if (ts.isImportDeclaration(statement)) {
+      if (!statement.importClause?.isTypeOnly) {
+        say(statement, 'import is not type-only — write `import type {…}`');
+      }
+      continue;
+    }
+
+    if (ts.isExportAssignment(statement)) {
+      say(statement, 'default export — the door exports declarations, not values');
+      continue;
+    }
+
+    if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) continue;
+
+    const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
+    if (modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) {
+      say(statement, 'exports a value — only types may leave through the door');
+    }
+  }
 }
 
 const files = walk(repoRoot);
@@ -219,7 +278,22 @@ if (envProblems.length > 0) {
   console.error('\nA module is handed what it needs; the composer is what reads the environment.');
 }
 
-if (importProblems.length > 0 || poolProblems.length > 0 || envProblems.length > 0) {
+if (doorProblems.length > 0) {
+  const earlier = importProblems.length > 0 || poolProblems.length > 0 || envProblems.length > 0;
+  console.error(`${earlier ? '\n' : ''}Doors that would carry code:`);
+  for (const problem of doorProblems) console.error(`- ${problem}`);
+  console.error(
+    '\nmodules/*/src/contract.ts is the only file a neighbour may import; it must compile to ' +
+      '`export {};` so the type crosses the boundary and the implementation does not.',
+  );
+}
+
+if (
+  importProblems.length > 0 ||
+  poolProblems.length > 0 ||
+  envProblems.length > 0 ||
+  doorProblems.length > 0
+) {
   process.exit(1);
 }
 

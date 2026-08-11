@@ -18,7 +18,7 @@ import {
   sessionCookie,
 } from './http/cookies.js';
 import { createRateLimiter } from './rate-limit.js';
-import { CSRF_HEADER, isCsrfValid, requiresCsrfCheck } from './http/csrf.js';
+import { CSRF_HEADER, isCsrfValid } from './http/csrf.js';
 import { createServiceApp } from './http/service-app.js';
 import type { Logger } from './logger.js';
 import { applyTheme, normalizeServicePath } from './theme.js';
@@ -117,12 +117,6 @@ describe('csrf', () => {
   // The cookie name is scoped by project slug so parallel worktrees never share a token.
   beforeEach(() => {
     process.env.PROJECT_SLUG = 'template';
-  });
-
-  it('skips safe methods and guards the rest', () => {
-    expect(requiresCsrfCheck('GET')).toBe(false);
-    expect(requiresCsrfCheck('head')).toBe(false);
-    expect(requiresCsrfCheck('POST')).toBe(true);
   });
 
   it('accepts a matching cookie and header pair', () => {

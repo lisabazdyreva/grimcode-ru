@@ -127,6 +127,11 @@ crosses through one named door: `@template/admin/contract` resolves to
 this module *is* the registry of who may do what, and the rights, the last-owner rule and the audit
 log all live behind `repository.ts`, which no specifier reaches.
 
+That door is not an agreement about behaviour: it decides which files are visible, not what ends up
+in the type. What keeps the type honest is the `.output()` schema every procedure is built with and
+the `contractCoverage` line beside each router, which refuses to compile when the router and the
+contract disagree — see [contracts/README.md](../../contracts/README.md) for how a procedure is added.
+
 Three callers use that door: Gateway for `authorize` on every `/admin/**` request, the composer for
 `isActiveOwner`, and the panel's own browser bundle for the surface above.
 

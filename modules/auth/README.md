@@ -46,6 +46,11 @@ application's own browser bundle — and holds the password hashes, the session 
 tokens. All three live behind `repository.ts`, which no specifier reaches; what crosses the boundary
 is the shape of the questions and nothing else.
 
+That door is not an agreement about behaviour: it decides which files are visible, not what ends up
+in the type. What keeps the type honest is the `.output()` schema every procedure is built with and
+the `contractCoverage` line beside each router, which refuses to compile when the router and the
+contract disagree — see [contracts/README.md](../../contracts/README.md) for how a procedure is added.
+
 The two admin builders here check the CSRF token under the scope `'auth'`, not `'panel'`: every
 admin surface issues its own cookie, so a token minted for the shell is refused here on purpose.
 The public surface has no CSRF token at all and is not meant to — it is the application's own
