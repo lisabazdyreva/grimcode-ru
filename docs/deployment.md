@@ -23,11 +23,11 @@ worse than a run that refuses to start, so Compose fails on a missing one and na
 
 | Required | |
 | --- | --- |
-| `PROJECT_SLUG` | Names the Compose project and the databases. Changing it points every service at a different database. |
+| `PROJECT_SLUG` | Names the Compose project and the databases. Changing it points every service at a different database. **At most 49 characters of `[a-z0-9_]`** — PostgreSQL truncates identifiers to 63 bytes silently, and `<slug>_notifications` adds fourteen. |
 | `PUBLIC_SITE_URL` | The public origin as a visitor sees it. Links in email are built from it, and it decides whether the session cookie is marked `Secure`. |
 | `DATABASE_URL` | The managed database, as the role that owns the server. `db-init` uses it to create the module roles and hand them ownership, so it needs `CREATE ROLE` and the ability to transfer ownership of objects to those roles — a superuser, or a member of them. |
 | `EMAIL_FROM_ADDRESS` | Who messages come from. |
-| `DB_PASSWORD_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One password per module. Each module connects as its own role `<PROJECT_SLUG>_<module>` with its own password and can open no other database. Five separate secrets, and this is real added work for whoever deploys — there is no default and no fallback to the credentials in `DATABASE_URL`. |
+| `DB_PASSWORD_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One password per module. **Generate five random strings and store them as five secrets** — the values in `.env.example` are local placeholders and must not reach a deployment. There is no default and no fallback to the credentials in `DATABASE_URL`: each module connects as its own role `<PROJECT_SLUG>_<module>`, and a leaked one opens that module's database and no other. |
 
 | Optional | |
 | --- | --- |

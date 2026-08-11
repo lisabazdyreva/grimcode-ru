@@ -14,6 +14,13 @@ pnpm start
 `.env.example` run as they are. `PROJECT_SLUG` is worth setting before the first run — it names the
 Compose project, the cookies and the databases.
 
+**Keep it to 49 characters of `[a-z0-9_]`.** PostgreSQL truncates identifiers to 63 bytes and does
+it silently, and the longest name built from the slug is `<slug>_notifications` — fourteen
+characters on top. A slug past 49 leaves databases called `myproject_no` and `myproject_us`, which
+work and read like nothing; past that, two of them truncate to the same name, and two modules would
+share one database. `db-init` refuses that last case and nothing catches the first, so the number is
+worth respecting rather than discovering.
+
 Ports come from one range, `PORT_RANGE_START..PORT_RANGE_END`. Its first port is the main checkout's
 and nothing else may take it; `GATEWAY_PORT` names it and `PUBLIC_SITE_URL` follows, which is what
 ends up in email links and what decides whether the session cookie is marked `Secure`.
@@ -136,8 +143,14 @@ node scripts/compose.mjs exec postgres psql -U template -d "${PROJECT_SLUG}_auth
 Each module connects as a role of its own — `<PROJECT_SLUG>_<module>`, with the password from
 `DB_PASSWORD_<MODULE>` — and owns its database and everything in it. `PUBLIC` has no `CONNECT`, so a
 module presented with a neighbour's database name is refused while connecting, before any statement
-runs. That is the only layer here that catches a query written against a neighbour's table: to every
-other check in this repository, SQL is a string.
+runs.
+
+What that is worth, precisely: a query against a neighbour's table is already impossible because the
+table is in another database, and a module cannot open a connection of its own because
+`check-boundaries` and `check-dependencies` refuse `createPool`, `createAdminPool`, `process.env`
+and `pg` in a module. The role adds the two things those cannot — one leaked module password opens
+one database rather than five, and it is the only layer here that is not a script of ours, so it
+still refuses when every check above has been edited away.
 
 The role above is the owner of the server, from `DATABASE_URL`, which is what `db-init` uses and
 what `psql` is convenient with.

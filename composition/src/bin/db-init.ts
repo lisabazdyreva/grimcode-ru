@@ -16,13 +16,11 @@ import { DATABASE_MODULES } from '../wiring.js';
 /**
  * Gives each module a database of its own and a role that can open nothing else.
  *
- * Until this existed, every module connected with one login to five databases, and
- * `createPool('auth')` from Admin would simply have worked. A separate role is what turns "must
- * not" into "cannot", and it is the only layer that catches a query written against a neighbour's
- * table: to a check that reads code, SQL is a string and not a structure.
- *
- * Idempotent by construction, because it runs on every start: everything below either creates what
- * is missing or re-states what is already true.
+ * Worth being exact about what it buys: a query against a neighbour's table is caught by the
+ * databases being separate, and opening a connection at all by `check-boundaries`. What the role
+ * adds is the blast radius — one leaked password opens one database instead of five — and being the
+ * only layer here nobody in this repository wrote: the checks can be weakened by editing a line, a
+ * role without CONNECT keeps refusing. Idempotent, because it runs on every start.
  */
 
 const logger = createLogger('db-init');
@@ -151,24 +149,28 @@ async function main(): Promise<void> {
     await admin.query(`GRANT CONNECT ON DATABASE ${quote(database)} TO ${quote(role)}`);
 
     /*
-     * The database console needs `CONNECT` back, and nothing would ever show that it is missing.
-     * A deployment is advised to give Adminer an account with fewer rights than the application
-     * has, and such an account gets exactly one privilege from `PUBLIC` — `CONNECT`. Revoking it
-     * leaves the console unable to log in at all. What it does not get here is any right to read:
-     * how much data the console sees is decided by whoever created that account, and granting
-     * `SELECT` from here would silently undo what a deployment narrowed on purpose.
+     * The database console needs `CONNECT` back, and nothing would show that it is missing: an
+     * account narrowed for Adminer gets exactly one privilege from `PUBLIC`. No right to read is
+     * granted here — that is decided by whoever created the account.
      */
     const consoleRole = optionalEnv('ADMINER_USERNAME', '');
     if (consoleRole !== '') {
       await admin.query(`GRANT CONNECT ON DATABASE ${quote(database)} TO ${quote(consoleRole)}`);
     }
 
-    // Ownership of the objects inside, which is a separate matter from owning the database.
-    const owned = createAdminPool(databaseUrlFor(database));
-    try {
-      await owned.query(transferOwnership(role));
-    } finally {
-      await owned.end();
+    /*
+     * Ownership of the objects inside is a one-time migration, for a database that already held
+     * tables when this role first appeared: every table belongs to the old user, and the next
+     * migration stops with `must be owner of table`. Keyed on the role, which is created once,
+     * rather than the database, which exists on every restart.
+     */
+    if (createdRole) {
+      const owned = createAdminPool(databaseUrlFor(database));
+      try {
+        await owned.query(transferOwnership(role));
+      } finally {
+        await owned.end();
+      }
     }
 
     logger.info('module database ready', {
@@ -177,6 +179,7 @@ async function main(): Promise<void> {
       role,
       createdDatabase,
       createdRole,
+      ownershipTransferred: createdRole,
       consoleGranted: consoleRole !== '',
     });
   }
