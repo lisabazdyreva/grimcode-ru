@@ -172,11 +172,40 @@ describe('passwords', () => {
 });
 
 describe('service databases', () => {
-  it('derives one database per service from the base url', () => {
+  /** Nothing about a module's connection comes from the base string except where the server is. */
+  it('derives a database, a role and a password per module from the base url', () => {
     process.env.PROJECT_SLUG = 'demo';
-    process.env.DATABASE_URL = 'postgres://u:p@postgres:5432/postgres';
+    process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
+    process.env.DB_PASSWORD_AUTH = 'auth-password';
+
     expect(serviceDatabaseName('auth')).toBe('demo_auth');
-    expect(serviceDatabaseUrl('auth')).toBe('postgres://u:p@postgres:5432/demo_auth');
+    expect(serviceDatabaseUrl('auth')).toBe(
+      'postgres://demo_auth:auth-password@postgres:5432/demo_auth',
+    );
+
+    delete process.env.DB_PASSWORD_AUTH;
+  });
+
+  /** Fail closed: a module with no password of its own must not fall back to the owner's. */
+  it('refuses to start a module that has no password', () => {
+    process.env.PROJECT_SLUG = 'demo';
+    process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
+    delete process.env.DB_PASSWORD_AUTH;
+
+    expect(() => serviceDatabaseUrl('auth')).toThrow(/DB_PASSWORD_AUTH/);
+  });
+
+  /** A password with `@` or `/` in it tears a concatenated string apart; `URL` escapes each part. */
+  it('survives a password with characters that would tear a url apart', () => {
+    process.env.PROJECT_SLUG = 'demo';
+    process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
+    process.env.DB_PASSWORD_AUTH = 'p@ss/word:1';
+
+    const parsed = new URL(serviceDatabaseUrl('auth'));
+    expect(parsed.hostname).toBe('postgres');
+    expect(decodeURIComponent(parsed.password)).toBe('p@ss/word:1');
+
+    delete process.env.DB_PASSWORD_AUTH;
   });
 
   it('prefers an explicit per-service override', () => {
@@ -191,11 +220,15 @@ describe('service databases', () => {
     process.env.DATABASE_URL = 'postgres://u:p@postgres:5432/postgres';
     process.env.LOCAL_POSTGRES_HOST = '127.0.0.1';
     process.env.POSTGRES_PORT = '63003';
+    process.env.DB_PASSWORD_AUTH = 'auth-password';
 
-    expect(serviceDatabaseUrl('auth')).toBe('postgres://u:p@127.0.0.1:63003/demo_auth');
+    expect(serviceDatabaseUrl('auth')).toBe(
+      'postgres://demo_auth:auth-password@127.0.0.1:63003/demo_auth',
+    );
 
     delete process.env.LOCAL_POSTGRES_HOST;
     delete process.env.POSTGRES_PORT;
+    delete process.env.DB_PASSWORD_AUTH;
   });
 
   it('takes an explicit override literally, even then', () => {

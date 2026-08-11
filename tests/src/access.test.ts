@@ -1,3 +1,5 @@
+import { serviceDatabaseName, serviceDatabaseUrl } from '@template/shared';
+import { createAdminPool } from '@template/shared/admin';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ADMIN, errorCode, Session, serviceAdmin, waitForStack } from './client.js';
@@ -278,5 +280,40 @@ describe('public routing', () => {
 
     const body = (await response.json()) as { json: { identity: unknown } };
     expect(body.json.identity).toBeNull();
+  });
+});
+
+/**
+ * The one layer that catches SQL written against a neighbour's table.
+ *
+ * Every other boundary here is about code, and none of them can read a query — to a check a query is
+ * a string. A role that cannot open the database is the difference between "must not" and "cannot".
+ *
+ * The only check in the suite that speaks to PostgreSQL instead of going through Gateway, and it has
+ * to: the refusal it is about never becomes an HTTP response anywhere.
+ */
+describe('a module and a neighbour’s database', () => {
+  it('is refused on connection, not on the first query', async () => {
+    const url = new URL(serviceDatabaseUrl('admin'));
+    url.pathname = `/${serviceDatabaseName('auth')}`;
+
+    const pool = createAdminPool(url.toString());
+    try {
+      // Refused while connecting, so the message names the database and not a table. Arriving on
+      // the first SELECT instead would mean every statement is one bug away from succeeding.
+      await expect(pool.query('SELECT 1')).rejects.toThrow(/permission denied for database/i);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('opens its own', async () => {
+    const pool = createAdminPool(serviceDatabaseUrl('admin'));
+    try {
+      const { rows } = await pool.query<{ current_database: string }>('SELECT current_database()');
+      expect(rows[0]?.current_database).toBe(serviceDatabaseName('admin'));
+    } finally {
+      await pool.end();
+    }
   });
 });

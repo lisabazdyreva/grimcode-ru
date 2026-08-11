@@ -56,26 +56,57 @@ function withLocalHost(url: URL): URL {
 }
 
 /**
- * Connection string of one module database.
- *
- * The template uses a single base `DATABASE_URL`; each module with state owns the database
- * `<PROJECT_SLUG>_<module>` on that server. A deployment that needs different credentials or hosts
- * per module can set `DATABASE_URL_<MODULE>` instead.
+ * Connection string of one module database. The template uses a single base `DATABASE_URL` and each
+ * module with state owns `<PROJECT_SLUG>_<module>` on that server; a deployment that needs different
+ * credentials or hosts per module sets `DATABASE_URL_<MODULE>` instead.
  */
 export function serviceDatabaseUrl(service: string): string {
   // An explicit override is taken literally, `LOCAL_POSTGRES_HOST` or not: whoever wrote out a
-  // whole connection string for one module meant that server and not another.
+  // whole connection string for one module meant that server, that role and that password.
   const override = process.env[`DATABASE_URL_${service.toUpperCase()}`];
   if (override !== undefined && override !== '') return override;
 
   const base = requireEnv('DATABASE_URL');
   const url = withLocalHost(new URL(base));
+
+  // Assigned rather than concatenated: a password containing `@` or `/` would tear the string
+  // apart, and `URL` is what knows how to escape each part.
+  url.username = serviceDatabaseRole(service);
+  url.password = requireEnv(`DB_PASSWORD_${service.toUpperCase()}`);
   url.pathname = `/${serviceDatabaseName(service)}`;
   return url.toString();
 }
 
+/**
+ * The role a module connects as. Derived from the slug, exactly like the database name and for the
+ * same reason: taken from the connection string instead, `db-init`, the application and
+ * `bootstrap:worktree` would drift apart with nothing to notice it.
+ */
+export function serviceDatabaseRole(service: string): string {
+  return truncateIdentifier(`${projectSlug()}_${service}`);
+}
+
+/**
+ * The connection string of the role that owns the server — `CREATE ROLE`, `ALTER DATABASE`,
+ * `GRANT`. Only `db-init` has any business with it.
+ */
+export function adminDatabaseUrl(): string {
+  return withLocalHost(new URL(requireEnv('DATABASE_URL'))).toString();
+}
+
+/**
+ * PostgreSQL truncates every identifier to 63 bytes, silently and everywhere. Applying it where the
+ * name is derived keeps it from happening later in five places at once — but it does not make long
+ * slugs safe, and `db-init` refuses two names that survive truncation identically.
+ */
+export const IDENTIFIER_LIMIT = 63;
+
+export function truncateIdentifier(name: string): string {
+  return Buffer.from(name, 'utf8').subarray(0, IDENTIFIER_LIMIT).toString();
+}
+
 export function serviceDatabaseName(service: string): string {
-  return `${projectSlug()}_${service}`;
+  return truncateIdentifier(`${projectSlug()}_${service}`);
 }
 
 /** Name of the session cookie. Scoped by project slug so parallel worktrees do not collide. */

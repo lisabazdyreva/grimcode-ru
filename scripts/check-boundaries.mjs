@@ -42,8 +42,36 @@ const ignoredDirs = new Set([
 ]);
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
 
-/** Areas allowed to open a database pool. The composer wires; a module is handed what it needs. */
-const POOL_CALLERS = ['composition'];
+/**
+ * Areas allowed to open a database pool. The composer wires; a module is handed what it needs.
+ *
+ * `createAdminPool` is on the same list and is the more dangerous of the two: it opens whatever
+ * connection string it is given, as the role that owns the server. It lives behind the subpath
+ * `@template/shared/admin` so it never turns up in completions, and this is the check behind that.
+ *
+ * `tests` is on the list for one check and one only — that a module's credentials are refused a
+ * neighbour's database. Everything else in that suite goes through Gateway on purpose, because a
+ * test that reaches into the database proves the database works and says nothing about whether the
+ * request would have been allowed.
+ */
+const POOL_CALLERS = ['composition', 'tests'];
+const POOL_FUNCTIONS = ['createPool', 'createAdminPool'];
+
+/**
+ * Areas forbidden to read the environment directly.
+ *
+ * This is the first line of the one boundary the move genuinely weakened. Compose used to hand each
+ * container only its own variables — the mail key existed for `email` and nowhere else — and in one
+ * process `process.env` is shared by everyone in it. Roles on the database do not cover this: they
+ * stop a module connecting to a neighbour's database with its own credentials, but credentials read
+ * out of the environment would let it connect as the owner.
+ *
+ * So a module is handed what it needs and does not look. `shared` reads the environment on purpose —
+ * that is where the typed access lives — and a test may set a variable to check the code that reads
+ * it. The second line is in the composer, which deletes the single-module secrets once they have
+ * been handed out.
+ */
+const ENV_FORBIDDEN_AREAS = ['modules/*'];
 
 const packages = workspacePackages();
 const packageNames = new Set(packages.map((entry) => entry.name));
@@ -75,6 +103,7 @@ function workspacePackageOf(specifier) {
 
 const importProblems = [];
 const poolProblems = [];
+const envProblems = [];
 
 function inspect(file) {
   const relative = repoRelative(file);
@@ -116,20 +145,29 @@ function inspect(file) {
   };
 
   /**
-   * Who may open a database at all.
-   *
-   * This started as "a module names its own database and no other", checking the string literal,
-   * because every module opened its own pool. Now the composer creates all five and hands each
-   * module a ready one, so the rule is both simpler and stricter: the call may only appear where
-   * the permission already is. A module cannot pass the wrong name because it cannot ask.
+   * The composer creates all five pools and hands each module a ready one, so the call may only
+   * appear where the permission already is — a module cannot pass the wrong name because it cannot ask.
    */
-  const recordPool = (node) => {
+  const recordPool = (node, name) => {
     if (!POOL_CALLERS.includes(rule.area)) {
-      poolProblems.push(`${at(node)} createPool() in ${dir}`);
+      poolProblems.push(`${at(node)} ${name}() in ${dir}`);
     }
   };
 
+  const readsEnvironment =
+    ENV_FORBIDDEN_AREAS.includes(rule.area) && !/\.test\.tsx?$/.test(relative);
+
   const visit = (node) => {
+    if (
+      readsEnvironment &&
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text === 'env' &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'process'
+    ) {
+      envProblems.push(`${at(node)} reads process.env in ${dir}`);
+    }
+
     if (ts.isImportDeclaration(node)) {
       const specifier = literal(node.moduleSpecifier);
       if (specifier) {
@@ -146,8 +184,8 @@ function inspect(file) {
       if (specifier && ts.isIdentifier(node.expression) && node.expression.text === 'require') {
         recordImport(node, specifier, 'require');
       }
-      if (ts.isIdentifier(node.expression) && node.expression.text === 'createPool') {
-        recordPool(node);
+      if (ts.isIdentifier(node.expression) && POOL_FUNCTIONS.includes(node.expression.text)) {
+        recordPool(node, node.expression.text);
       }
     }
     ts.forEachChild(node, visit);
@@ -168,9 +206,21 @@ if (importProblems.length > 0) {
 if (poolProblems.length > 0) {
   console.error(`${importProblems.length > 0 ? '\n' : ''}Database pools opened outside the wiring:`);
   for (const problem of poolProblems) console.error(`- ${problem}`);
-  console.error(`\ncreatePool() belongs to ${POOL_CALLERS.join(', ')}; a module is handed its pool.`);
+  console.error(
+    `\n${POOL_FUNCTIONS.join('() and ')}() belong to ${POOL_CALLERS.join(', ')}; ` +
+      'a module is handed its pool.',
+  );
 }
 
-if (importProblems.length > 0 || poolProblems.length > 0) process.exit(1);
+if (envProblems.length > 0) {
+  const separator = importProblems.length > 0 || poolProblems.length > 0 ? '\n' : '';
+  console.error(`${separator}Modules reading the environment:`);
+  for (const problem of envProblems) console.error(`- ${problem}`);
+  console.error('\nA module is handed what it needs; the composer is what reads the environment.');
+}
+
+if (importProblems.length > 0 || poolProblems.length > 0 || envProblems.length > 0) {
+  process.exit(1);
+}
 
 console.log(`Boundary check passed (${packages.length} packages, ${files.length} files).`);

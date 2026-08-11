@@ -30,7 +30,8 @@ subnet of its own and never touches anyone else's.
 | | |
 | --- | --- |
 | `pnpm start` / `pnpm stop` | Start and stop the stack |
-| `pnpm logs <service>` | Follow one service |
+| `pnpm db-init` / `pnpm migrate` | Create the databases and roles; apply the migrations |
+| `pnpm logs server` | Follow the application |
 | `pnpm check` | Lint, types, unit tests, production build, dependencies, boundaries, service ids, Compose |
 | `pnpm test:acceptance` | The HTTP checks, against the running stack |
 | `pnpm test:browser` | The Chromium checks, against the running stack |
@@ -45,15 +46,20 @@ full rebuild — around forty seconds. The second mode skips Docker for the appl
 
 ```bash
 node scripts/compose.mjs up -d postgres adminer
+pnpm db-init && pnpm migrate
 pnpm dev
 ```
+
+The first two are the same commands the deployment runs as jobs before the application starts, and
+they are needed here for the same reason: the application no longer migrates anything on start-up.
+Running them again is harmless — both only ever add what is missing.
 
 `pnpm dev` builds what changed and runs the application directly, on `GATEWAY_PORT` — the same
 address as the container it replaces, so nothing else has to be told about it. PostgreSQL is reached
 through `LOCAL_POSTGRES_HOST` from `.env`: the host `postgres` exists only inside the Compose
 network, and the published port differs per worktree.
 
-Three things this mode does not give you:
+Four things this mode does not give you:
 
 - **`/admin/database` does not work.** Adminer answers at `adminer:8080`, a name that exists only
   inside the Compose network, and it may never be given a host port — that is a documented rule
@@ -62,6 +68,8 @@ Three things this mode does not give you:
   failure answers with more detail than a deployment would.
 - **It is your machine's Node.** The image pins one; here you get whatever `node -v` says, which is
   the point of the speed and also the reason a green `pnpm dev` is not a green deployment.
+- **Migrations are yours to run.** `pnpm migrate` after a schema change, before `pnpm dev` — nothing
+  applies them behind you any more.
 
 ## Reaching it from another machine
 
@@ -86,7 +94,7 @@ pnpm bootstrap:worktree
 ```
 
 It finds the main checkout through git rather than a path written down anywhere, carries its `.env`
-over, replaces what must differ, and copies the local service databases across with a logical dump
+over, replaces what must differ, and copies the local module databases across with a logical dump
 and restore — so the new branch starts with the data you were already working with.
 
 Ports come out of `PORT_RANGE_START..PORT_RANGE_END`, never the first one — that belongs to the main
@@ -125,27 +133,39 @@ Adminer, themed to match the panel around it; it has no host port in any environ
 node scripts/compose.mjs exec postgres psql -U template -d "${PROJECT_SLUG}_auth"
 ```
 
+Each module connects as a role of its own — `<PROJECT_SLUG>_<module>`, with the password from
+`DB_PASSWORD_<MODULE>` — and owns its database and everything in it. `PUBLIC` has no `CONNECT`, so a
+module presented with a neighbour's database name is refused while connecting, before any statement
+runs. That is the only layer here that catches a query written against a neighbour's table: to every
+other check in this repository, SQL is a string.
+
+The role above is the owner of the server, from `DATABASE_URL`, which is what `db-init` uses and
+what `psql` is convenient with.
+
 ## The checks, and what each is for
 
 | Script | Refuses |
 | --- | --- |
 | `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver lives in `shared` and nowhere else; an `.npmrc` setting that would hoist every package into reach |
-| `check-boundaries.mjs` | A service importing another service, type-only imports included; a service opening a database that is not its own |
+| `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool opened outside the wiring; a module reading the environment |
 | `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; Adminer being public or grantable |
-| `check-compose.mjs` | Anything but Gateway published locally; anything at all published in production; a PostgreSQL container in production |
+| `check-compose.mjs` | Anything but the application published locally; anything at all published in production; a PostgreSQL container in production |
 | `check-scripts.mjs` | A script named after a pnpm command — `pnpm up` would run pnpm's dependency update instead of starting the project |
 
 They exist because each protects a rule that is easy to break by accident and hard to notice.
 
-## Adding a service
+## Adding a module
 
 1. Its contract in `contracts/`, split into public, internal and admin surfaces.
-2. The service under `modules/`, with its own migrations if it stores anything.
+2. The module under `modules/`, exporting `createApp(deps)` and — if it stores anything — its
+   `migrations`, plus an entry in the composer's `MIGRATIONS` list, which is what gives it a pool, a
+   database and a role.
 3. Its id in `ADMIN_SERVICE_IDS` and — only if it should be reachable without a session — in
    Gateway's public allowlist.
 4. Its entry in the Admin shell's [`services.ts`](../modules/admin/web/src/services.ts).
-5. Its service in `docker/compose.yaml` — the one topology; `docker/compose.local.yaml` only adds what local development has on top.
+5. Its password variable `DB_PASSWORD_<MODULE>` in `.env.example` and in the Compose environment
+   anchor. Nothing else in `docker/compose.yaml` changes: a module is not a container any more.
 
 `check-service-ids.mjs` will tell you if you missed one of the three places ids live.
 
-For a service admin interface, see [the admin panel](admin-panel.md).
+For a module's admin interface, see [the admin panel](admin-panel.md).

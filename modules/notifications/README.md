@@ -40,7 +40,7 @@ up in the service admin instead of disappearing into a log line.
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | internal Docker network only | other services emitting events |
+| `/internal/rpc` | never routed by Gateway; in-process only | other modules emitting events |
 | `/admin/embed/service/notifications/rpc` | through Gateway's admin route | administrators granted Notifications |
 
 Notifications has **no public surface**: it is deliberately absent from Gateway's public
@@ -48,8 +48,9 @@ allowlist, so no browser can emit an event.
 
 ## Data
 
-Database `<PROJECT_SLUG>_notifications`, single `events` table. Migrations are in
-[`src/db/migrations.ts`](src/db/migrations.ts).
+Database `<PROJECT_SLUG>_notifications`, single `events` table, opened as the role of the same
+name. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
+`migrate` command, not on start.
 
 ## Environment
 

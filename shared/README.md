@@ -1,26 +1,27 @@
 # shared
 
-Common technical utilities and the admin UI foundation.
+Common technical utilities every module is allowed to use.
 
-Business logic and per-service repositories never live here — those belong to the owning service.
-A service may import its own folder, `contracts/`, `shared/` and external packages, and nothing
+Business logic and per-module repositories never live here — those belong to the owning module.
+A module may import its own folder, `contracts/`, `shared/` and external packages, and nothing
 else.
 
 ## Runtime modules
 
 | Module | Purpose |
 | --- | --- |
-| `env.ts` | Typed environment access, project slug, per-service database URLs and cookie names |
-| `service-urls.ts` | Pinned internal container ports and internal service base URLs |
+| `env.ts` | Typed environment access, project slug, per-module database URLs and roles, cookie names |
+| `service-urls.ts` | The port the process listens on, and the addresses a module's client is built from |
 | `logger.ts` | JSON-line logger with request-scoped child loggers |
 | `crypto.ts` | Ids, single-use tokens, scrypt password hashing, constant-time comparison |
 | `http/cookies.ts` | Cookie parsing and serialization, including the expired logout cookie |
 | `http/admin-context.ts` | The verified administrator context headers and their strip/apply/read helpers |
 | `http/csrf.ts` | Double-submit CSRF token issuing and validation |
 | `http/service-app.ts` | Shared Hono app: request ids, access log, health endpoint, fail-closed 503 |
+| `db/admin-pool.ts` | `createAdminPool`, reachable only as `@template/shared/admin` — the owner's connection, used by `db-init` and nothing else |
 | `orpc/handler.ts` | Mounting an oRPC router on a path prefix, merging `set-cookie` from procedures |
 | `orpc/client.ts` | Typed oRPC client factory and `ServiceUnavailableError` |
-| `db/pool.ts` | One PostgreSQL pool per service database, transactions, startup wait |
+| `db/pool.ts` | One PostgreSQL pool per module database, transactions, startup wait |
 | `db/migrator.ts` | Versioned migrations with recorded versions, checksums and advisory locks |
 | `theme.ts` | The same-origin `postMessage` protocol between Admin shell and service iframes |
 

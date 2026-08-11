@@ -20,6 +20,8 @@
     "check:scripts": "node scripts/check-scripts.mjs",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dependencies && pnpm run check:boundaries && pnpm run check:service-ids && pnpm run check:compose && pnpm run check:scripts",
     "dev": "pnpm run build && node --env-file=.env composition/dist/index.js",
+    "migrate": "node --env-file=.env composition/dist/bin/migrate.js",
+    "db-init": "node --env-file=.env composition/dist/bin/db-init.js",
     "start": "node scripts/compose.mjs up -d --build",
     "stop": "node scripts/compose.mjs down",
     "logs": "node scripts/compose.mjs logs -f",

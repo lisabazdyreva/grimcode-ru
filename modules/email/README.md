@@ -95,7 +95,7 @@ that left the system.
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | internal Docker network only | Notifications |
+| `/internal/rpc` | never routed by Gateway; in-process only | Notifications |
 | `/admin/embed/service/email/rpc` | through Gateway's admin route | administrators granted Email |
 | `/admin/embed/service/email/**` | through Gateway's admin route | the built service admin |
 
@@ -103,7 +103,9 @@ Email has **no public surface**: it is absent from Gateway's public allowlist.
 
 ## Data
 
-Database `<PROJECT_SLUG>_email`. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts).
+Database `<PROJECT_SLUG>_email`, opened as the role of the same name and reachable by no other
+module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
+`migrate` command, which also creates the seed templates.
 
 ## Environment
 

@@ -7,8 +7,9 @@ profile to an Auth identity and nothing more.
 
 ## Data
 
-Users owns the database `<PROJECT_SLUG>_users`. Migrations are in
-[`src/db/migrations.ts`](src/db/migrations.ts).
+Users owns the database `<PROJECT_SLUG>_users`, opened as the role of the same name. Migrations are
+in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the `migrate` command, not on
+start.
 
 `profiles.identity_id` deliberately has **no foreign key**: the identity lives in the Auth
 database, which Users may never read or reference. The link is a contract, not a join.

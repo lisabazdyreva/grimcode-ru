@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./admin": {
+      "types": "./dist/db/admin-pool.d.ts",
+      "import": "./dist/db/admin-pool.js"
+    },
     "./browser": {
       "types": "./dist/theme.d.ts",
       "import": "./dist/theme.js"

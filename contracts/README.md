@@ -3,8 +3,10 @@
 oRPC contracts and Zod runtime schemas for every inter-service call of the template.
 
 This package holds **no** server implementation, SQL or provider secrets. It is the only thing a
-service is allowed to share with another service: direct imports between `modules/*` are
-forbidden, and cross-service communication goes through HTTP/oRPC using these contracts.
+module is allowed to share with another module: direct imports between `modules/*` are forbidden,
+and everything that crosses a boundary goes through oRPC using these contracts — including now that
+the modules share a process, where the transport is the neighbour's own application rather than the
+network.
 
 ## Layout
 
@@ -17,7 +19,7 @@ forbidden, and cross-service communication goes through HTTP/oRPC using these co
 | `src/notifications.ts` | The closed set of typed events and their template routing |
 | `src/email.ts` | Templates, versions, publish, preview, test send and the delivery log |
 
-## Three surfaces per service
+## Three surfaces per module
 
 Every service contract is split by trust boundary, and each part is mounted on its own path:
 
@@ -26,7 +28,7 @@ Every service contract is split by trust boundary, and each part is mounted on i
 - `admin` — reachable as `/admin/embed/service/<name>/rpc` only after Gateway verified the session, the
   admin role and the grant on that service.
 - `internal` — mounted on `/internal/rpc`, which Gateway never proxies, so it stays reachable only
-  from inside the Docker network.
+  from inside the process: Gateway routes nothing to it.
 
 ## Service ids
 

@@ -19,46 +19,69 @@
 
 name: ${PROJECT_SLUG:?PROJECT_SLUG is required}
 
+# One image, three uses: the application, and two jobs that run to completion before it starts.
+# Pinning `image` means it is built once and the two jobs reuse it rather than each building a copy.
+x-app: &app
+  image: ${PROJECT_SLUG}-app
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  logging:
+    driver: json-file
+    options: { max-size: '10m', max-file: '3' }
+
+# What every module needs to open its own database, and nothing that belongs to only one of them.
+# Each module connects as `<PROJECT_SLUG>_<module>` with its own password; the role, not the code,
+# is what makes a neighbour's database unopenable.
+x-app-environment: &app-environment
+  PROJECT_SLUG: ${PROJECT_SLUG}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  DB_PASSWORD_ADMIN: ${DB_PASSWORD_ADMIN:?DB_PASSWORD_ADMIN is required}
+  DB_PASSWORD_AUTH: ${DB_PASSWORD_AUTH:?DB_PASSWORD_AUTH is required}
+  DB_PASSWORD_USERS: ${DB_PASSWORD_USERS:?DB_PASSWORD_USERS is required}
+  DB_PASSWORD_NOTIFICATIONS: ${DB_PASSWORD_NOTIFICATIONS:?DB_PASSWORD_NOTIFICATIONS is required}
+  DB_PASSWORD_EMAIL: ${DB_PASSWORD_EMAIL:?DB_PASSWORD_EMAIL is required}
+  # Set any of these to put one module's database on another server or under other credentials.
+  DATABASE_URL_ADMIN: ${DATABASE_URL_ADMIN:-}
+  DATABASE_URL_AUTH: ${DATABASE_URL_AUTH:-}
+  DATABASE_URL_USERS: ${DATABASE_URL_USERS:-}
+  DATABASE_URL_NOTIFICATIONS: ${DATABASE_URL_NOTIFICATIONS:-}
+  DATABASE_URL_EMAIL: ${DATABASE_URL_EMAIL:-}
+
 services:
-  # Creates the per-module databases if they do not exist yet. Harmless on every later deploy: it
-  # only ever adds what is missing, and the application still applies the migrations on start.
+  # Gives each module a database and a role that can open nothing else, then hands ownership of
+  # the objects inside over to it. Runs on every deploy and changes nothing when there is nothing
+  # to change.
   db-init:
-    image: postgres:17-alpine
+    <<: *app
     restart: 'no'
     environment:
-      PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-    entrypoint: ['sh', '-ec']
-    command:
-      - |
-        for service in admin auth users notifications email; do
-          db="$${PROJECT_SLUG}_$${service}"
-          if psql "$${DATABASE_URL}" -tAc "SELECT 1 FROM pg_database WHERE datname = '$${db}'" | grep -q 1; then
-            echo "[db-init] $${db} exists"
-          else
-            echo "[db-init] creating $${db}"
-            psql "$${DATABASE_URL}" -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$${db}\""
-          fi
-        done
+      <<: *app-environment
+      # The console account, if a deployment created one, needs CONNECT back on every database.
+      ADMINER_USERNAME: ${ADMINER_USERNAME:-}
+    command: ['node', 'dist/bin/db-init.js']
+    networks: [internal]
+
+  # Applies the migrations and seeds what a fresh installation needs. A failure here stops the
+  # deploy with a non-zero exit code instead of leaving the application in a restart loop.
+  migrate:
+    <<: *app
+    restart: 'no'
+    environment: *app-environment
+    command: ['node', 'dist/bin/migrate.js']
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     networks: [internal]
 
   # The application: every module in one process. Gateway is the only one mounted on the port.
   server:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    <<: *app
     environment:
+      <<: *app-environment
       PROJECT_SLUG: ${PROJECT_SLUG}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:?PUBLIC_SITE_URL is required}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      # Set any of these to put one module's database on another server or under other credentials.
-      DATABASE_URL_ADMIN: ${DATABASE_URL_ADMIN:-}
-      DATABASE_URL_AUTH: ${DATABASE_URL_AUTH:-}
-      DATABASE_URL_USERS: ${DATABASE_URL_USERS:-}
-      DATABASE_URL_NOTIFICATIONS: ${DATABASE_URL_NOTIFICATIONS:-}
-      DATABASE_URL_EMAIL: ${DATABASE_URL_EMAIL:-}
       AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-2592000}
       AUTH_LOGIN_ATTEMPT_LIMIT: ${AUTH_LOGIN_ATTEMPT_LIMIT:-10}
       AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS: ${AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS:-900}
@@ -73,15 +96,12 @@ services:
     # application on the host's network instead of behind whatever terminates TLS.
     expose: ['8080']
     depends_on:
-      db-init:
+      migrate:
         condition: service_completed_successfully
       adminer:
         condition: service_started
     restart: unless-stopped
     networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
 
   adminer:
     build:

@@ -83,7 +83,9 @@ error rather than as a clean sign-out.
 
 ## Data
 
-Database `<PROJECT_SLUG>_admin`. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts).
+Database `<PROJECT_SLUG>_admin`, opened as the role of the same name and reachable by no other
+module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
+`migrate` command, not on start.
 
 `administrators.user_id` refers to an Auth identity and carries **no foreign key**: identities live
 in the Auth database, which Admin may never read or reference.
@@ -92,7 +94,7 @@ in the Auth database, which Admin may never read or reference.
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | internal Docker network only | Gateway, for `authorize` |
+| `/internal/rpc` | never routed by Gateway; in-process only | Gateway, for `authorize` |
 | `/admin/rpc` | through Gateway's admin route | the central Admin shell |
 | `/admin/**` | through Gateway's admin route | the built shell assets |
 

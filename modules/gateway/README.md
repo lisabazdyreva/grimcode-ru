@@ -1,23 +1,30 @@
 # gateway
 
-Public entry, routing and external security. Gateway is the **only** container published outside;
-every other service lives on the internal Docker network.
+The entry for traffic. The composer mounts Gateway, and only Gateway, on the public listener, so
+every request from outside reaches it before it reaches anything else.
+
+It is not the entry of the *program* — that is `composition/`, which starts first and builds
+everything — and it stays a module rather than becoming the composer. The composer has to know every
+module; Gateway holds the access policy. Together they would be the widest permission in the
+repository handed to the narrowest job.
 
 It has no database and contains no product business logic.
 
 ## Routing
 
-The path is never rewritten — a service receives exactly the address the browser asked for.
+The path is never rewritten — a module receives exactly the address the browser asked for. That is
+what makes the two kinds of target interchangeable: routing has always gone by path, and a module in
+this process reads the path off the very same `Request`.
 
 | Incoming path | Target | Gateway check |
 | --- | --- | --- |
-| `/admin/embed/service/:name/**` | admin surface of that service | session, admin role, grant on `:name` |
+| `/admin/embed/service/:name/**` | admin surface of that module | session, admin role, grant on `:name` |
 | `/admin/**` | `admin` | session and an admin role |
-| `/service/:name/**` | service from the public allowlist | none — the service secures itself |
+| `/service/:name/**` | module from the public allowlist | none — the module secures itself |
 | `/app/**` | `app` | none — App verifies the user session itself |
 | everything else | `site` | none — public |
 
-`:name` is never turned into a hostname. It is only ever looked up in the explicit allowlists in
+`:name` is never turned into a target by itself. It is only ever looked up in the explicit allowlists in
 [`src/registry.ts`](src/registry.ts):
 
 - **public** — `auth`, `users`;
@@ -69,9 +76,14 @@ also sets its own session cookie.
 | --- | --- |
 | `PROJECT_SLUG` | Session cookie name Gateway reads to find the session token |
 | `PUBLIC_SITE_URL` | External origin, used in the sign-in link of the 403 page |
-| `SERVICE_URL_*` | Optional overrides of internal service base URLs |
+| `SERVICE_URL_*` | Optional overrides of a module's base address — the way back out to a real service |
 
-Gateway's own listening port is fixed inside the image. Locally the published host port comes from
+Gateway does not hold addresses any more: the composer builds every module and hands the whole set
+over as `targets`. A target may be an application in this process or a URL, and Gateway does not
+care which — Adminer is a URL today, and a module that has to be moved back out into a service of its
+own becomes one without touching this package.
+
+The process's listening port is fixed inside the image. Locally the published host port comes from
 `GATEWAY_PORT` in `.env`; in production nothing is published at all.
 
 ## Commands

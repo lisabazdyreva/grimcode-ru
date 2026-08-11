@@ -1,11 +1,15 @@
 # Acceptance tests
 
-Fifty checks that run against a **running stack**, over HTTP, through Gateway.
+Fifty-seven checks that run against a **running stack**, over HTTP, through Gateway.
 
-They deliberately do not import service code. A test that called a router directly would prove the
+They deliberately do not import module code. A test that called a router directly would prove the
 router works while saying nothing about whether Gateway lets the request through — and Gateway is
 where access is actually decided. So every check here speaks to the stack the way a browser does:
 one URL, one cookie jar, one answer.
+
+Two checks are the exception and speak to PostgreSQL instead: that a module's credentials are
+refused a neighbour's database, and that they open its own. They have to — that refusal arrives on
+the connection and never becomes an HTTP response anywhere.
 
 ## Running them
 
@@ -68,7 +72,7 @@ one fixture template rather than a hundred.
 pnpm test:browser
 ```
 
-Twenty-four checks in Chromium, for the questions an HTTP request cannot answer. Each one also fails
+Twenty-eight checks in Chromium, for the questions an HTTP request cannot answer. Each one also fails
 on any console error or uncaught exception, so a bundle that renders but throws does not pass.
 
 **The shell** — [`admin-shell.spec.ts`](browser/admin-shell.spec.ts). The panel loads and renders;

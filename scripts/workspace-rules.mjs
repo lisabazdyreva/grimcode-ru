@@ -45,7 +45,10 @@ export const AREA_RULES = [
   { area: 'contracts', mayUse: [] },
   { area: 'shared', mayUse: ['@template/contracts'] },
   { area: 'modules/*', mayUse: ['@template/contracts', '@template/shared'] },
-  { area: 'tests', mayUse: [] },
+  // The acceptance suite talks to the running stack over HTTP and imports no module. It reaches
+  // for `shared` in exactly one place: proving that a module's credentials are refused a
+  // neighbour's database, which never becomes an HTTP response anywhere.
+  { area: 'tests', mayUse: ['@template/shared'] },
   { area: 'scripts', mayUse: [] },
   { area: '.', mayUse: [] },
 ];

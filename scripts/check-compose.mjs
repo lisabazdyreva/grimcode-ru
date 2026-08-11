@@ -70,12 +70,20 @@ function checkProduction() {
       {
         cwd: repoRoot,
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Every variable a deployment is required to supply, and nothing else. A new `:?` marker
+        // in the production file fails here until it is added — which is the point: the list a
+        // deployment has to be told about is the list that makes this parse.
         env: {
           ...process.env,
           PROJECT_SLUG: 'check',
           PUBLIC_SITE_URL: 'https://check.invalid',
           DATABASE_URL: 'postgres://check:check@db.invalid:5432/postgres',
           EMAIL_FROM_ADDRESS: 'no-reply@check.invalid',
+          DB_PASSWORD_ADMIN: 'check',
+          DB_PASSWORD_AUTH: 'check',
+          DB_PASSWORD_USERS: 'check',
+          DB_PASSWORD_NOTIFICATIONS: 'check',
+          DB_PASSWORD_EMAIL: 'check',
         },
       },
     ).toString();

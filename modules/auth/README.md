@@ -8,8 +8,10 @@ Even though its main table is called `identities`, these are identity users, not
 
 ## Data
 
-Auth owns the database `<PROJECT_SLUG>_auth` and no other. Versioned migrations live in
-[`src/db/migrations.ts`](src/db/migrations.ts).
+Auth owns the database `<PROJECT_SLUG>_auth` and no other — it connects as the role of the same
+name, which has no right to connect to anyone else’s. Versioned migrations live in
+[`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the `migrate` command, not on
+start.
 
 | Table | Contents |
 | --- | --- |
@@ -30,7 +32,7 @@ the very first registered user is when it bootstraps the first owner.
 | --- | --- | --- |
 | `/service/auth/rpc` | through Gateway, no admin check | anyone — Auth secures these itself |
 | `/admin/embed/service/auth/rpc` | through Gateway's admin route | administrators with a grant on Auth |
-| `/internal/rpc` | internal Docker network only | other services |
+| `/internal/rpc` | never routed by Gateway; in-process only | other modules |
 
 ### Public flows
 
