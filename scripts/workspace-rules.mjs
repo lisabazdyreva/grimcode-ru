@@ -26,7 +26,7 @@ export const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
  * Which workspace packages each area may reach for.
  *
  * The area is a path from the repository root; a `*` stands for one directory and makes every
- * directory under it a compartment of its own — `services/admin` and `services/auth` do not share
+ * directory under it a compartment of its own — `modules/admin` and `modules/auth` do not share
  * anything, and a relative import from one into the other is a violation even though both match the
  * same rule. `.` is the fallback for everything that is not listed: loose files at the root.
  *
@@ -36,7 +36,7 @@ export const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 export const AREA_RULES = [
   { area: 'contracts', mayUse: [] },
   { area: 'shared', mayUse: ['@template/contracts'] },
-  { area: 'services/*', mayUse: ['@template/contracts', '@template/shared'] },
+  { area: 'modules/*', mayUse: ['@template/contracts', '@template/shared'] },
   { area: 'tests', mayUse: [] },
   { area: 'scripts', mayUse: [] },
   { area: '.', mayUse: [] },
@@ -49,7 +49,7 @@ export const AREA_RULES = [
  * class a check can recognise. Reading it as "third-party runtime packages" would be wrong in both
  * directions — `@orpc/*`, `hono`, `react` and `zod` stay inside the process and are not on it, and
  * a mail client added tomorrow would have to be added here by hand. There is no mail client in the
- * repository today: `services/email` talks to Unisender with a plain `fetch`.
+ * repository today: `modules/email` talks to Unisender with a plain `fetch`.
  *
  * `@types/pg` is deliberately absent. Types are erased at build time and open nothing; five modules
  * declare it because `shared` hands out `pg.Pool` as a type, and removing it breaks the typecheck.
@@ -62,8 +62,8 @@ export const OUTSIDE_PROCESS_HOME = 'shared';
 /**
  * The compartment a repository-relative path belongs to, with the rule that governs it.
  *
- * `dir` is the compartment root — `services/admin`, `shared`, `.` — and is what tells two modules
- * apart under the same `services/*` rule.
+ * `dir` is the compartment root — `modules/admin`, `shared`, `.` — and is what tells two modules
+ * apart under the same `modules/*` rule.
  */
 export function compartmentOf(relative) {
   const segments = relative.split('/');
@@ -91,10 +91,8 @@ function workspaceGlobs() {
 }
 
 /**
- * Every workspace package, as `{ name, dir }` with `dir` relative to the repository root.
- *
- * Read from `pnpm-workspace.yaml` rather than hardcoded, so that renaming `services/` or adding a
- * package is one edit in the manifest and not a second one here.
+ * Every workspace package, read from `pnpm-workspace.yaml` rather than hardcoded, so renaming
+ * `modules/` is one edit in the manifest and not a second one here.
  */
 export function workspacePackages() {
   const found = [];

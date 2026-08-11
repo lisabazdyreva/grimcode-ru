@@ -3,7 +3,7 @@
 oRPC contracts and Zod runtime schemas for every inter-service call of the template.
 
 This package holds **no** server implementation, SQL or provider secrets. It is the only thing a
-service is allowed to share with another service: direct imports between `services/*` are
+service is allowed to share with another service: direct imports between `modules/*` are
 forbidden, and cross-service communication goes through HTTP/oRPC using these contracts.
 
 ## Layout

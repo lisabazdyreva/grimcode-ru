@@ -20,7 +20,7 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig.base.json turbo.json ./
 COPY contracts/package.json ./contracts/package.json
 COPY shared/package.json ./shared/package.json
-COPY services/${SERVICE}/package.json ./services/${SERVICE}/package.json
+COPY modules/${SERVICE}/package.json ./modules/${SERVICE}/package.json
 
 # The frozen lockfile is the repository's single lockfile; services never carry their own.
 RUN pnpm install --frozen-lockfile --filter @template/${SERVICE}...
@@ -31,7 +31,7 @@ ARG SERVICE
 
 COPY contracts ./contracts
 COPY shared ./shared
-COPY services/${SERVICE} ./services/${SERVICE}
+COPY modules/${SERVICE} ./modules/${SERVICE}
 
 # Builds the service and only the workspace packages it actually depends on.
 RUN pnpm --filter @template/${SERVICE}... build

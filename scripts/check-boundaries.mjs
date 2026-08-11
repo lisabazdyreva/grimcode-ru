@@ -71,7 +71,7 @@ function inspect(file) {
   const relative = repoRelative(file);
   const { rule, dir } = compartmentOf(relative);
   const ownName = nameOfDir.get(dir) ?? null;
-  const isModule = rule.area === 'services/*';
+  const isModule = rule.area === 'modules/*';
 
   const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
 

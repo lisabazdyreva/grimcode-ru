@@ -115,10 +115,10 @@ They exist because each protects a rule that is easy to break by accident and ha
 ## Adding a service
 
 1. Its contract in `contracts/`, split into public, internal and admin surfaces.
-2. The service under `services/`, with its own migrations if it stores anything.
+2. The service under `modules/`, with its own migrations if it stores anything.
 3. Its id in `ADMIN_SERVICE_IDS` and — only if it should be reachable without a session — in
    Gateway's public allowlist.
-4. Its entry in the Admin shell's [`services.ts`](../services/admin/web/src/services.ts).
+4. Its entry in the Admin shell's [`services.ts`](../modules/admin/web/src/services.ts).
 5. Its service in `docker/compose.yaml` — the one topology; `docker/compose.local.yaml` only adds what local development has on top.
 
 `check-service-ids.mjs` will tell you if you missed one of the three places ids live.

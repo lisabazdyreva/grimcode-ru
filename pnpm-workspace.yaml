@@ -1,5 +1,5 @@
 packages:
   - contracts
   - shared
-  - services/*
+  - modules/*
   - tests

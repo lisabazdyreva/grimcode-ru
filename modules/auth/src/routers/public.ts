@@ -33,18 +33,15 @@ const VERIFICATION_TTL_SECONDS = 60 * 60 * 24;
  * How often one account can actually be mailed a recovery link.
  *
  * Anyone may ask for a reset for any address without a session, so a per-request dedupe key would
- * let a stranger send unlimited mail to someone else. Bucketing the key by time means repeated
- * requests inside the window collapse onto the same notification, which Notifications already
- * deduplicates — the person gets one letter, not a flood.
+ * let a stranger send unlimited mail to someone else. Bucketing the key by time collapses repeated
+ * requests onto the same notification, which Notifications already deduplicates.
  */
 const RESET_REQUEST_WINDOW_MS = 15 * 60 * 1000;
 
 /**
- * Password guessing against one address is not free.
- *
- * Counted per address rather than per client: the address is the thing Auth actually knows, and it
- * is what an attacker has to keep hitting. Rate limits per client address belong to the proxy in
- * front of Gateway, which is the only part that sees the real one.
+ * Password guessing against one address is not free. Counted per address rather than per client:
+ * that is what Auth actually knows and what an attacker has to keep hitting. Limits per client
+ * address belong to the proxy in front of Gateway, the only part that sees the real one.
  */
 const loginAttempts = createRateLimiter({
   limit: intEnv('AUTH_LOGIN_ATTEMPT_LIMIT', 10),

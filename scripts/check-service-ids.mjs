@@ -3,8 +3,8 @@
  * Reconciles the three explicit declarations of admin service ids:
  *
  * - `contracts/src/common.ts`         — the canonical lists
- * - `services/gateway/src/registry.ts` — what Gateway is willing to proxy
- * - `services/admin/web/src/services.ts` — what the central Admin shell shows
+ * - `modules/gateway/src/registry.ts` — what Gateway is willing to proxy
+ * - `modules/admin/web/src/services.ts` — what the central Admin shell shows
  *
  * None of them derives the ids at runtime, on purpose. This check is what keeps them in step, so a
  * service can never be reachable through Gateway while being invisible in the shell, or listed in
@@ -35,8 +35,8 @@ function objectKeys(source, name) {
 }
 
 const contracts = read('contracts/src/common.ts');
-const gateway = read('services/gateway/src/registry.ts');
-const shell = read('services/admin/web/src/services.ts');
+const gateway = read('modules/gateway/src/registry.ts');
+const shell = read('modules/admin/web/src/services.ts');
 
 const canonicalAdmin = constArray(contracts, 'ADMIN_SERVICE_IDS');
 const canonicalAssignable = constArray(contracts, 'ASSIGNABLE_SERVICE_IDS');

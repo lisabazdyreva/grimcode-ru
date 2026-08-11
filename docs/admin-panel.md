@@ -64,13 +64,13 @@ one.
 ## Adding a section to the panel
 
 A section is a page of the Admin service's own shell: add a route in
-[`main.tsx`](../services/admin/web/src/main.tsx) and an entry in the sidebar. If only the owner
+[`main.tsx`](../modules/admin/web/src/main.tsx) and an entry in the sidebar. If only the owner
 should see it, wrap it the way `/admin/administrators` is wrapped — and remember that the guard is
 presentation, so the server has to refuse it too.
 
 ## Adding a service admin
 
-Copy the closest existing one — `services/auth/web` is the plainest — and change four things:
+Copy the closest existing one — `modules/auth/web` is the plainest — and change four things:
 
 1. `web/vite.config.ts`: the `base`, which must match `/admin/embed/service/<id>/`;
 2. `web/src/api.ts`: the prefix, the contract it is typed against, and which of its procedures
@@ -79,7 +79,7 @@ Copy the closest existing one — `services/auth/web` is the plainest — and ch
 4. `package.json`: the build and typecheck scripts, and the build-time dependencies.
 
 Then add the service to `ADMIN_SERVICE_IDS` in `contracts/`, to Gateway's allowlist, and to
-[`services.ts`](../services/admin/web/src/services.ts). `scripts/check-service-ids.mjs` refuses a
+[`services.ts`](../modules/admin/web/src/services.ts). `scripts/check-service-ids.mjs` refuses a
 build where it appears in one of the three and not the others.
 
 There is deliberately no generator. It would have to keep its own copy of the file list, the

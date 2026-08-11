@@ -14,10 +14,10 @@ made that way.
 | [Deployment](deployment.md) | What a deployment supplies, and what it must not |
 
 Each service has a README beside its code, describing what only that service knows:
-[gateway](../services/gateway/README.md), [site](../services/site/README.md),
-[app](../services/app/README.md), [admin](../services/admin/README.md),
-[auth](../services/auth/README.md), [users](../services/users/README.md),
-[notifications](../services/notifications/README.md), [email](../services/email/README.md).
+[gateway](../modules/gateway/README.md), [site](../modules/site/README.md),
+[app](../modules/app/README.md), [admin](../modules/admin/README.md),
+[auth](../modules/auth/README.md), [users](../modules/users/README.md),
+[notifications](../modules/notifications/README.md), [email](../modules/email/README.md).
 
 The [acceptance tests](../tests/README.md) describe what is verified against a running stack.
 

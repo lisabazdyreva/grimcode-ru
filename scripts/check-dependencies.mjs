@@ -12,7 +12,7 @@
  *
  * - **every dependency section, not just `dependencies`.** A rule that reads one section is a rule
  *   that is obeyed by moving a line into another one. `devDependencies` is used honestly here —
- *   `services/app` keeps `@template/contracts` there because vite compiles it in and the runtime
+ *   `modules/app` keeps `@template/contracts` there because vite compiles it in and the runtime
  *   image does not need it — so the sections cannot be told apart by intent either.
  * - **only the two rules below.** Nothing here says a module may not depend on `@orpc/*`, `react`
  *   or `zod`. The subject is reaching out of the process and reaching into a neighbour, not
