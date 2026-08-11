@@ -1,4 +1,4 @@
-import type { Identity } from '@template/contracts';
+import type { Identity } from './schemas.js';
 import { newId, sha256, withTransaction, type Pool, type PoolClient } from '@template/shared';
 
 /**

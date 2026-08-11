@@ -1,4 +1,4 @@
-import { EDITOR_FORMAT } from '@template/contracts';
+import { EDITOR_FORMAT } from './schemas.js';
 import { newId, withTransaction, type Pool, type PoolClient } from '@template/shared';
 
 import { SEED_TEMPLATES } from './seed.js';

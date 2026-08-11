@@ -1,4 +1,4 @@
-import { ASSIGNABLE_SERVICE_IDS, type AssignableServiceId } from '@template/contracts';
+import { ASSIGNABLE_SERVICE_IDS, type AssignableServiceId } from '@template/shared/vocabulary';
 import * as React from 'react';
 import { toast } from 'sonner';
 

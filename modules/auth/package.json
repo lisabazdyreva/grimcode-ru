@@ -27,7 +27,6 @@
     "dev:web": "vite --config web/vite.config.ts"
   },
   "dependencies": {
-    "@template/contracts": "workspace:*",
     "@template/notifications": "workspace:*",
     "@template/shared": "workspace:*",
     "@trpc/client": "11.18.0",

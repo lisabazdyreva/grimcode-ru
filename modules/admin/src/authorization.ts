@@ -3,12 +3,12 @@ import {
   ADMIN_SERVICE_IDS,
   type AdminTarget,
   type AdminServiceId,
-  type AuthorizationResult,
-} from '@template/contracts';
+} from '@template/shared/vocabulary';
 import type { Logger } from '@template/shared';
 import type { TRPCClient } from '@trpc/client';
 
 import type { AdminRepository } from './repository.js';
+import type { AuthorizationResult } from './schemas.js';
 
 export type AuthClient = TRPCClient<AuthInternalRouter>;
 

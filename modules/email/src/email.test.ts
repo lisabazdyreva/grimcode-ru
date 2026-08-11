@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { editorDocumentSchema, EDITOR_FORMAT, editorFormatSchema } from './schemas.js';
 
 import {
   assertDeclaredVariables,
@@ -268,5 +269,16 @@ describe('transports', () => {
 
     delete process.env.UNISENDER_GO_API_KEY;
     delete process.env.EMAIL_FROM_ADDRESS;
+  });
+});
+
+describe('email editor document', () => {
+  it('pins the stored editor format marker', () => {
+    expect(EDITOR_FORMAT).toBe('maily@1');
+    expect(editorFormatSchema.safeParse('unlayer@1').success).toBe(false);
+  });
+
+  it('accepts an empty document', () => {
+    expect(editorDocumentSchema.parse({ type: 'doc' })).toEqual({ type: 'doc', content: [] });
   });
 });

@@ -32,7 +32,7 @@ ones. No error, no failing build, just a boundary that is gone.
 
 ## The calls between modules
 
-Modules talk through their contracts, exactly as they did over the network, and the composer is what
+Modules talk through their published surfaces, exactly as they did over the network, and the composer is what
 makes that cheap: it hands each module's client the neighbour's own `app.fetch`, so the request is
 answered by a call instead of a socket. The URL in the client still matters — a `Request` is built
 from it — but nobody dials it.

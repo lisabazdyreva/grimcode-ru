@@ -33,7 +33,7 @@ this process reads the path off the very same `Request`.
 Adminer is deliberately absent from the public list. An unknown name has no entry, so nothing is
 proxied and Admin is not even asked about it — the answer is 404.
 
-`scripts/check-service-ids.mjs` reconciles these lists with `contracts/` and the central Admin
+`scripts/check-service-ids.mjs` reconciles these lists with `shared/src/vocabulary.ts` and the central Admin
 shell, so a service can never be reachable here while being invisible in the shell.
 
 ## Admin authorization

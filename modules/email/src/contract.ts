@@ -1,19 +1,16 @@
 /**
- * What a neighbour may see of this module.
+ * What a neighbour may see of this module: `@template/email` resolves to `createApp`,
+ * `@template/email/contract` to here, `dist/repository.js` to nothing at all. Types and only
+ * types, and Email is where a leak would hurt most: `@maily-to/render` is the one CPU-bound
+ * dependency in the process, and a neighbour must not reach it by following a type.
  *
- * With tRPC a client is typed from the server's router, so the type has to cross the boundary —
- * and that is a door the boundary did not have before. This file is the door: `@template/email`
- * resolves to `createApp` and nothing else, `@template/email/contract` resolves to here, and
- * `dist/repository.js` resolves to nothing at all.
- *
- * It re-exports types and only types. Nothing here may pull in the repository, the transport or
- * the renderer — the `exports` key would then be a formality while the whole module leaked through
- * it. Email is the module where that would hurt most: `@maily-to/render` is the one CPU-bound
- * dependency in the process, and a neighbour must not be able to reach it by following a type.
- *
- * Worth being honest about what this is not: `/contract` is a projection of the implementation,
- * not an agreement. It limits which files are visible, not what ends up in the type. What keeps
- * the type honest is the mandatory `.output()` that `fromContract` bakes in, and the
- * `contractCoverage` check next to each router.
+ * A projection of the implementation, not an agreement: what keeps the type honest is `.output()` on
+ * every procedure and the `satisfies` line pinning each router to the names it may hold.
  */
 export type { EmailAdminRouter, EmailInternalRouter } from './routers.js';
+
+/**
+ * The editor document this module stores, for the screen that edits it. A Zod object is a value and
+ * must not travel through this file, so what crosses is the inferred type.
+ */
+export type { EditorDocument } from './schemas.js';

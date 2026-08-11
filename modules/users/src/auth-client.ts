@@ -1,5 +1,5 @@
 import type { AuthInternalRouter } from '@template/auth/contract';
-import type { Identity } from '@template/contracts';
+import type { Identity } from '@template/auth/contract';
 import {
   createTrpcClient,
   internalServiceUrl,

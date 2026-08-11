@@ -31,7 +31,6 @@
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/react-router": "1.170.18",
     "@template/auth": "workspace:*",
-    "@template/contracts": "workspace:*",
     "@template/users": "workspace:*",
     "@types/node": "22.20.1",
     "@types/react": "19.2.17",

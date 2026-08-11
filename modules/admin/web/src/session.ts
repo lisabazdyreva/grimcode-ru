@@ -1,4 +1,4 @@
-import type { AdminServiceId } from '@template/contracts';
+import type { AdminServiceId } from '@template/shared/vocabulary';
 import * as React from 'react';
 
 import { api } from '@/api';

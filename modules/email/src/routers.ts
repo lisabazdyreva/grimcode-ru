@@ -1,7 +1,22 @@
-import { EDITOR_FORMAT, emailAdminContract, emailInternalContract } from '@template/contracts';
 import {
-  contractCoverage,
-  fromContract,
+  emailSchema,
+  idSchema,
+  okSchema,
+  pageOf,
+  paginationInputSchema,
+} from '@template/shared/vocabulary';
+import { z } from 'zod';
+
+import {
+  deliveryListItemSchema,
+  deliverySchema,
+  deliveryStatusSchema,
+  editorDocumentSchema,
+  EDITOR_FORMAT,
+  templateSchema,
+  templateVersionSchema,
+} from './schemas.js';
+import {
   requireCsrf,
   verifiedAdmin,
   type AdminAwareContext,
@@ -79,8 +94,43 @@ function renderFailure(error: unknown): never {
 
 const internalT = initTRPC.context<InternalContext>().create();
 
+/**
+ * Each router is constrained to exactly these names. `send` actually sends mail and belongs to the
+ * internal surface, which Gateway routes nothing to; the same line in the admin router would turn
+ * the panel into a way to send mail to any address on demand.
+ */
+type InternalName = 'send';
+type AdminName =
+  | 'listTemplates'
+  | 'getTemplate'
+  | 'createTemplate'
+  | 'updateTemplate'
+  | 'getVersion'
+  | 'createDraft'
+  | 'saveDraft'
+  | 'publishDraft'
+  | 'previewVersion'
+  | 'testSend'
+  | 'listDeliveries'
+  | 'getDelivery'
+  | 'uploadImage'
+  | 'reindexSeedTemplates';
+
 export const internalRouter = internalT.router({
-  send: fromContract(emailInternalContract.send, internalT.procedure).mutation(
+  send: internalT.procedure
+    .input(z.object({
+    templateKey: z.string().min(1).max(80),
+    to: emailSchema,
+    variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    dedupeKey: z.string().min(1).max(200),
+    }))
+    .output(z.object({
+    ok: z.literal(true),
+    deliveryId: idSchema,
+    deduplicated: z.boolean(),
+    status: deliveryStatusSchema,
+    }))
+    .mutation(
     async ({ input, ctx }) => {
       try {
         const result = await sendTemplate(input, ctx);
@@ -91,12 +141,9 @@ export const internalRouter = internalT.router({
         }
         throw error;
       }
-    },
-  ),
-});
+    }),
+} satisfies Record<InternalName, unknown>);
 
-const internalCoverage: 'ok' = contractCoverage(emailInternalContract, internalRouter);
-void internalCoverage;
 
 // --- admin surface ----------------------------------------------------------------------------
 
@@ -120,14 +167,23 @@ const adminMutation = adminProcedure.use(({ ctx, next }) => {
 });
 
 export const adminRouter = adminT.router({
-  listTemplates: fromContract(emailAdminContract.listTemplates, adminProcedure).query(
+  listTemplates: adminProcedure
+    .input(paginationInputSchema)
+    .output(pageOf(templateSchema))
+    .query(
     async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.listTemplates(input.query, input.limit, input.offset);
       return { items: rows.map(toTemplate), total, limit: input.limit, offset: input.offset };
     },
   ),
 
-  getTemplate: fromContract(emailAdminContract.getTemplate, adminProcedure).query(
+  getTemplate: adminProcedure
+    .input(z.object({ id: idSchema }))
+    .output(z.object({
+    template: templateSchema,
+    versions: z.array(templateVersionSchema.omit({ editorDocument: true })),
+    }))
+    .query(
     async ({ input, ctx }) => {
       const template = await ctx.repo.findTemplateById(input.id);
       if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Шаблон не найден' });
@@ -144,7 +200,10 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  createTemplate: fromContract(emailAdminContract.createTemplate, adminMutation).mutation(
+  createTemplate: adminMutation
+    .input(templateSchema.pick({ key: true, name: true, description: true, variables: true }))
+    .output(z.object({ ok: z.literal(true), template: templateSchema }))
+    .mutation(
     async ({ input, ctx }) => {
       if (await ctx.repo.findTemplateByKey(input.key)) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Шаблон с таким ключом уже есть' });
@@ -167,7 +226,15 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  updateTemplate: fromContract(emailAdminContract.updateTemplate, adminMutation).mutation(
+  updateTemplate: adminMutation
+    .input(z.object({
+    id: idSchema,
+    name: z.string().min(1).max(160).optional(),
+    description: z.string().max(1000).nullable().optional(),
+    variables: z.array(z.string()).optional(),
+    }))
+    .output(z.object({ ok: z.literal(true), template: templateSchema }))
+    .mutation(
     async ({ input, ctx }) => {
       const row = await ctx.repo.updateTemplate(input.id, input);
       await ctx.repo.audit({
@@ -180,11 +247,17 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  getVersion: fromContract(emailAdminContract.getVersion, adminProcedure).query(
+  getVersion: adminProcedure
+    .input(z.object({ id: idSchema }))
+    .output(z.object({ version: templateVersionSchema }))
+    .query(
     async ({ input, ctx }) => ({ version: toVersion(await loadVersion(ctx.repo, input.id)) }),
   ),
 
-  createDraft: fromContract(emailAdminContract.createDraft, adminMutation).mutation(
+  createDraft: adminMutation
+    .input(z.object({ templateId: idSchema }))
+    .output(z.object({ ok: z.literal(true), version: templateVersionSchema }))
+    .mutation(
     async ({ input, ctx }) => {
       const template = await ctx.repo.findTemplateById(input.templateId);
       if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Шаблон не найден' });
@@ -204,7 +277,14 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  saveDraft: fromContract(emailAdminContract.saveDraft, adminMutation).mutation(
+  saveDraft: adminMutation
+    .input(z.object({
+    id: idSchema,
+    subject: z.string().min(1).max(300),
+    editorDocument: editorDocumentSchema,
+    }))
+    .output(z.object({ ok: z.literal(true), version: templateVersionSchema }))
+    .mutation(
     async ({ input, ctx }) => {
       try {
         const row = await ctx.repo.saveDraft(input.id, input.subject, input.editorDocument);
@@ -223,7 +303,10 @@ export const adminRouter = adminT.router({
    * sanitizes the HTML and derives the plain text from that HTML. Runtime delivery then only ever
    * sends this stored result.
    */
-  publishDraft: fromContract(emailAdminContract.publishDraft, adminMutation).mutation(
+  publishDraft: adminMutation
+    .input(z.object({ id: idSchema }))
+    .output(z.object({ ok: z.literal(true), version: templateVersionSchema }))
+    .mutation(
     async ({ input, ctx }) => {
       const draft = await loadVersion(ctx.repo, input.id);
 
@@ -254,7 +337,13 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  previewVersion: fromContract(emailAdminContract.previewVersion, adminProcedure).query(
+  previewVersion: adminProcedure
+    .input(z.object({
+    id: idSchema,
+    variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    }))
+    .output(z.object({ subject: z.string(), html: z.string(), text: z.string() }))
+    .query(
     async ({ input, ctx }) => {
       const version = await loadVersion(ctx.repo, input.id);
 
@@ -270,7 +359,14 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  testSend: fromContract(emailAdminContract.testSend, adminMutation).mutation(
+  testSend: adminMutation
+    .input(z.object({
+    id: idSchema,
+    to: emailSchema,
+    variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    }))
+    .output(z.object({ ok: z.literal(true), deliveryId: idSchema }))
+    .mutation(
     async ({ input, ctx }) => {
       const version = await loadVersion(ctx.repo, input.id);
       const template = await ctx.repo.findTemplateById(version.template_id);
@@ -319,7 +415,10 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  listDeliveries: fromContract(emailAdminContract.listDeliveries, adminProcedure).query(
+  listDeliveries: adminProcedure
+    .input(paginationInputSchema.extend({ status: deliveryStatusSchema.optional() }))
+    .output(pageOf(deliveryListItemSchema))
+    .query(
     async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.listDeliveries(
         { query: input.query, status: input.status },
@@ -351,7 +450,10 @@ export const adminRouter = adminT.router({
   ),
 
   /** The immutable snapshot of one actually sent message, body included. */
-  getDelivery: fromContract(emailAdminContract.getDelivery, adminProcedure).query(
+  getDelivery: adminProcedure
+    .input(z.object({ id: idSchema }))
+    .output(z.object({ delivery: deliverySchema }))
+    .query(
     async ({ input, ctx }) => {
       const row = await ctx.repo.findDelivery(input.id);
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Отправка не найдена' });
@@ -377,7 +479,15 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  uploadImage: fromContract(emailAdminContract.uploadImage, adminMutation).mutation(
+  uploadImage: adminMutation
+    .input(z.object({
+    fileName: z.string().min(1).max(200),
+    contentType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+    /** Base64 payload, size-limited by the service. */
+    data: z.string().min(1),
+    }))
+    .output(z.object({ ok: z.literal(true), url: z.string() }))
+    .mutation(
     ({ input }) => {
       const bytes = Buffer.from(input.data, 'base64');
       if (bytes.length > 2_000_000) {
@@ -393,10 +503,10 @@ export const adminRouter = adminT.router({
     },
   ),
 
-  reindexSeedTemplates: fromContract(
-    emailAdminContract.reindexSeedTemplates,
-    adminMutation,
-  ).mutation(async ({ ctx }) => {
+  reindexSeedTemplates: adminMutation
+    .input(z.object({}))
+    .output(okSchema)
+    .mutation(async ({ ctx }) => {
     const created = await ctx.repo.ensureSeedTemplates((document, subject) =>
       renderMessage(document, subject).then(({ html, text }) => ({ html, text })),
     );
@@ -407,11 +517,9 @@ export const adminRouter = adminT.router({
       details: { created },
     });
     return { ok: true as const };
-  }),
-});
+    }),
+} satisfies Record<AdminName, unknown>);
 
-const adminCoverage: 'ok' = contractCoverage(emailAdminContract, adminRouter);
-void adminCoverage;
 
 /** The browser client and Notifications are typed from these, and from nothing else. */
 export type EmailInternalRouter = typeof internalRouter;

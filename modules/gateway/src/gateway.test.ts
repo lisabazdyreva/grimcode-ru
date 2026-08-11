@@ -1,4 +1,4 @@
-import type { AuthorizationResult } from '@template/contracts';
+import type { AuthorizationResult } from '@template/admin/contract';
 import { ADMIN_CONTEXT_HEADERS, createLogger, ServiceUnavailableError } from '@template/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

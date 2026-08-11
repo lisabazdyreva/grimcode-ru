@@ -7,7 +7,7 @@ routing layer with a memory, not a mail service.
 
 ## Closed set of events
 
-Only the event types declared in `contracts/src/notifications.ts` are accepted. The contract is a
+Only the event types declared in `shared/src/vocabulary.ts` are accepted. The contract is a
 discriminated union, so an unknown type is rejected by validation before it can reach storage.
 
 The template ships the base auth events needed for registration, email verification, account
@@ -55,9 +55,9 @@ crosses through one named door and no other: `@template/notifications/contract` 
 Email are reachable by no specifier at all.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
-in the type. What keeps the type honest is the `.output()` schema every procedure is built with and
-the `contractCoverage` line beside each router, which refuses to compile when the router and the
-contract disagree.
+in the type. What keeps the type honest is the `.output()` schema every procedure declares and the
+`satisfies` line beside each router, which refuses to compile when the router holds a name the
+surface is not allowed to hold.
 
 The admin surface issues a CSRF cookie like every other, and no call currently carries a token —
 because nothing on it changes anything. An event is a record of what happened, and a log that can

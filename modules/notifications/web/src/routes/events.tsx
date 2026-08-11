@@ -1,9 +1,6 @@
-import {
-  NOTIFICATION_EVENT_TYPES,
-  type storedNotificationEventSchema,
-} from '@template/contracts';
+import { NOTIFICATION_EVENT_TYPES } from '@template/shared/vocabulary';
+import type { StoredNotificationEvent } from '@template/notifications/contract';
 import * as React from 'react';
-import type { z } from 'zod';
 
 import { api } from '@/api';
 import { AdminPage, ErrorState } from '@/components/layout/admin-page';
@@ -25,7 +22,7 @@ import {
 } from '@/components/ui/select';
 import { useAsync, type Page } from '@/hooks/use-async';
 
-type Event = z.infer<typeof storedNotificationEventSchema>;
+type Event = StoredNotificationEvent;
 
 const LIMIT = 50;
 const ANY = 'any';

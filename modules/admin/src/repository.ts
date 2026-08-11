@@ -1,4 +1,6 @@
-import type { Administrator, AdminRole, AssignableServiceId } from '@template/contracts';
+import type { AdminRole, AssignableServiceId } from '@template/shared/vocabulary';
+
+import type { Administrator } from './schemas.js';
 import { newId, withTransaction, type Pool, type PoolClient } from '@template/shared';
 
 export interface AdministratorRow {

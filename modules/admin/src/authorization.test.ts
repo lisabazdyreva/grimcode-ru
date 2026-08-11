@@ -1,8 +1,9 @@
-import type { Identity } from '@template/contracts';
+import type { Identity } from '@template/auth/contract';
 import { createLogger } from '@template/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { authorize, canOpenDatabase, visibleServices, type AuthClient } from './authorization.js';
+import { authorizationResultSchema } from './schemas.js';
 import type { AdministratorRow, AdminRepository } from './repository.js';
 
 const logger = createLogger('admin-test');
@@ -255,5 +256,15 @@ describe('sidebar contents', () => {
   it('offers the database area to owners only', () => {
     expect(canOpenDatabase('owner')).toBe(true);
     expect(canOpenDatabase('admin')).toBe(false);
+  });
+});
+
+describe('authorization result', () => {
+  it('models denial reasons explicitly so Gateway never interprets an error', () => {
+    expect(
+      authorizationResultSchema.safeParse({ state: 'denied', reason: 'owner-only' }).success,
+    ).toBe(true);
+    expect(authorizationResultSchema.safeParse({ state: 'denied' }).success).toBe(false);
+    expect(authorizationResultSchema.safeParse({ state: 'awaiting-first-user' }).success).toBe(true);
   });
 });

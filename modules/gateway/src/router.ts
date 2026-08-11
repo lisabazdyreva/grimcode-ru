@@ -1,4 +1,4 @@
-import type { AdminContext, AdminTarget } from '@template/contracts';
+import type { AdminContext, AdminTarget } from '@template/shared/vocabulary';
 import { ServiceUnavailableError, type Logger } from '@template/shared';
 
 import { authorizeAdminRequest } from './authorize.js';

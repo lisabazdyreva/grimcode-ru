@@ -1,5 +1,5 @@
-import type { sessionSummarySchema, UserProfile } from '@template/contracts';
-import type { z } from 'zod';
+import type { SessionSummary } from '@template/auth/contract';
+import type { UserProfile } from '@template/users/contract';
 import * as React from 'react';
 import { toast } from 'sonner';
 
@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAsync } from '@/hooks/use-async';
 import { useSession } from '@/session';
 
-type SessionRow = z.infer<typeof sessionSummarySchema>;
+type SessionRow = SessionSummary;
 
 /**
  * One settings screen with sections, not three top-level areas.

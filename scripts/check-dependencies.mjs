@@ -2,22 +2,13 @@
 /**
  * What a package may declare, and what keeps `node_modules` isolated.
  *
- * `check-boundaries.mjs` reads imports; a third-party package is invisible to it — `pg` is the same
- * kind of import as `zod`. This check reads the manifests instead, where the difference is visible:
- * a module that declares the database driver can open a connection past `shared`, whether or not it
- * does today. The rules themselves live in `workspace-rules.mjs`, next to the import rules they
- * mirror.
+ * `check-boundaries.mjs` reads imports, and to it `pg` is the same kind of import as `zod`. This
+ * check reads the manifests, where the difference is visible: a module that declares the database
+ * driver can open a connection past `shared`, whether or not it does today.
  *
- * Two details that decide whether the check works at all:
- *
- * - **every dependency section, not just `dependencies`.** A rule that reads one section is a rule
- *   that is obeyed by moving a line into another one. `devDependencies` is used honestly here —
- *   `modules/app` keeps `@template/contracts` there because vite compiles it in and the runtime
- *   image does not need it — so the sections cannot be told apart by intent either.
- * - **only the two rules below.** Nothing here says a module may not depend on `@orpc/*`, `react`
- *   or `zod`. The subject is reaching out of the process and reaching into a neighbour, not
- *   dependencies in general; a check that goes red on honest code teaches whoever meets it to
- *   loosen the rule instead of describing the exception.
+ * Every dependency section is read, not just `dependencies` — a rule that reads one section is
+ * obeyed by moving a line into another. And only the two rules below: a check that goes red on
+ * honest code teaches whoever meets it to loosen the rule instead of describing the exception.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';

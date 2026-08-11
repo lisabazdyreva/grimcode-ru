@@ -1,4 +1,4 @@
-import type { NotificationEvent } from '@template/contracts';
+import type { NotificationEvent } from '@template/notifications/contract';
 import type { NotificationsInternalRouter } from '@template/notifications/contract';
 import {
   createTrpcClient,

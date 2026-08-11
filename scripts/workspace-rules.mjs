@@ -1,20 +1,9 @@
 /**
- * The boundary rules of the repository, written out in one place.
- *
- * Two checks read this file and they are the same rule seen from two sides:
- *
- * - `check-boundaries.mjs` — what a file may import;
- * - `check-dependencies.mjs` — what a manifest may declare.
- *
- * A module that may not import `@template/auth` may not declare it either, and a rule that only
- * exists on one of the two sides is a rule with a door next to it. One table means both sides move
- * together when the table changes.
- *
- * Neither of these is the first line of defence. pnpm refuses to resolve a package a manifest does
- * not declare, `rootDir` refuses a relative import that leaves the package, and `references` in the
- * tsconfigs keep the compile graph narrow. These checks are what catches the cases those three miss:
- * a manifest that declares something it should not, and a third-party package that opens a door out
- * of the process.
+ * The boundary rules of the repository, written out in one place. Two checks read them and they are
+ * the same rule seen from two sides: `check-boundaries.mjs` — what a file may import;
+ * `check-dependencies.mjs` — what a manifest may declare. A rule that exists on only one of the two
+ * sides is a rule with a door next to it. Neither is the first line of defence — pnpm, `rootDir` and
+ * `references` are; these catch what those miss.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -25,42 +14,29 @@ export const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 /**
  * Which workspace packages each area may reach for.
  *
- * The area is a path from the repository root; a `*` stands for one directory and makes every
- * directory under it a compartment of its own — `modules/admin` and `modules/auth` do not share
- * anything, and a relative import from one into the other is a violation even though both match the
- * same rule. `.` is the fallback for everything that is not listed: loose files at the root.
+ * A `*` in an area makes every directory under it a compartment of its own, so a relative import
+ * from `modules/admin` into `modules/auth` is a violation even though both match the same rule.
  *
- * `mayUse` names workspace packages only. Third-party packages are not the subject of this table —
- * see `OUTSIDE_PROCESS_PACKAGES` for the one thing that is.
- *
- * `composition` is the single exception and holds the widest permission in the repository, because
- * its whole job is to know every module and wire them together. That is affordable only while it
- * contains nothing but the order of calls: the day it starts deciding something, this line is the
- * hole it decides through.
+ * `composition` holds the widest permission in the repository, affordable only while it contains
+ * nothing but the order of calls: the day it decides something, this line is the hole it decides
+ * through.
  */
 export const EVERY_PACKAGE = '*';
 
 export const AREA_RULES = [
   { area: 'composition', mayUse: EVERY_PACKAGE },
-  { area: 'contracts', mayUse: [] },
-  { area: 'shared', mayUse: ['@template/contracts'] },
-  { area: 'modules/*', mayUse: ['@template/contracts', '@template/shared'], neighbourSubpath: true },
-  // The acceptance suite talks to the running stack over HTTP and imports no module. It reaches
-  // for `shared` in exactly one place: proving that a module's credentials are refused a
-  // neighbour's database, which never becomes an HTTP response anywhere.
+  { area: 'shared', mayUse: [] },
+  { area: 'modules/*', mayUse: ['@template/shared'], neighbourSubpath: true },
+  // The suite imports no module. It reaches for `shared` in one place: proving a module's
+  // credentials are refused a neighbour's database, which never becomes an HTTP response anywhere.
   { area: 'tests', mayUse: ['@template/shared'] },
   { area: 'scripts', mayUse: [] },
   { area: '.', mayUse: [] },
 ];
 
 /**
- * The one subpath a module may reach for in a neighbour, and nothing else of it.
- *
- * This is the price of tRPC, not a loosening of the module boundary: a tRPC client is typed from
- * the server's router, so six modules of seven have to see a type that lives in another module.
- * The door is one named export key — `@template/<neighbour>/contract` — and it is deliberately
- * narrow: `@template/auth` alone still resolves to `createApp`, and `dist/repository.js` resolves
- * to nothing.
+ * The one subpath a module may reach for in a neighbour: a tRPC client is typed from the server's
+ * router, so six modules of seven have to see a type that lives in another.
  */
 export const NEIGHBOUR_SUBPATH = 'contract';
 

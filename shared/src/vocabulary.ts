@@ -1,25 +1,28 @@
+/**
+ * The words every part of this template shares, and the only file a browser bundle may take a
+ * runtime value from.
+ *
+ * The primitives every schema is built out of, and the vocabulary the modules hold in common; a
+ * module's own shapes belong in its own `schemas.ts`.
+ *
+ * **It imports `zod` and nothing else, and there is a check behind that.** Browser bundles read this
+ * file, so one import of `env.ts` and `process.env` follows it into a page, where it does not exist.
+ */
+
 import { z } from 'zod';
 
 /**
- * Services that expose an admin surface inside the central Admin shell.
- *
- * Every one of them is a service of this template with its own database, its own contract and its
- * own built admin. The database browser is not on this list: it belongs to the Admin panel, not to
- * a service — see `adminTargetSchema`.
+ * Services that expose an admin surface inside the central Admin shell. The database browser is not
+ * here: it belongs to the panel and not to a service — see `adminTargetSchema`.
  */
 export const ADMIN_SERVICE_IDS = ['auth', 'users', 'notifications', 'email'] as const;
 
 export type AdminServiceId = (typeof ADMIN_SERVICE_IDS)[number];
 
 /**
- * What a request to the admin panel is asking for.
- *
- * `panel` is the shell and its own pages. `service` is one service's admin. `database` is the
- * panel's own database browser — a window into every service's data at once, which is why it is
- * part of the panel and never something an owner can hand out.
- *
- * Gateway works the target out from the URL and Admin decides who may reach it. Both read this
- * definition, so neither can drift into a shape the other does not understand.
+ * What a request to the admin panel is asking for. `database` is the panel's own browser — a window
+ * into every service's data at once, which is why it is never something an owner can hand out.
+ * Gateway works the target out from the URL and Admin decides who may reach it, and both read this.
  */
 export const adminTargetSchema = z.discriminatedUnion('area', [
   z.object({ area: z.literal('panel') }),
@@ -30,10 +33,8 @@ export const adminTargetSchema = z.discriminatedUnion('area', [
 export type AdminTarget = z.infer<typeof adminTargetSchema>;
 
 /**
- * Admin services an owner may hand to a regular administrator.
- *
- * The same list as `ADMIN_SERVICE_IDS` today, and kept separate on purpose: a project that adds a
- * service admin only the owner should reach leaves it out of this one.
+ * Admin services an owner may hand to a regular administrator. The same list as `ADMIN_SERVICE_IDS`
+ * today, and separate on purpose: a service admin only the owner should reach is left out of this.
  */
 export const ASSIGNABLE_SERVICE_IDS = ['auth', 'users', 'notifications', 'email'] as const;
 
@@ -79,3 +80,22 @@ export const adminContextSchema = z.object({
 export type AdminContext = z.infer<typeof adminContextSchema>;
 
 export const okSchema = z.object({ ok: z.literal(true) });
+
+/**
+ * Notifications accepts only these known typed events; anything else is rejected before it can
+ * reach Email.
+ *
+ * The list stays here rather than in the module because the admin screen renders a filter from it —
+ * a **browser** needs the array at runtime, and a module's door hands over types only.
+ */
+export const NOTIFICATION_EVENT_TYPES = [
+  'auth.user.registered',
+  'auth.email.verification_requested',
+  'auth.password.reset_requested',
+  'auth.email.change_requested',
+  'auth.email.changed',
+] as const;
+
+export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
+
+export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);

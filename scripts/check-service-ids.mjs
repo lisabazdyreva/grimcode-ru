@@ -2,7 +2,7 @@
 /**
  * Reconciles the three explicit declarations of admin service ids:
  *
- * - `contracts/src/common.ts`         — the canonical lists
+ * - `shared/src/vocabulary.ts`        — the canonical lists
  * - `modules/gateway/src/registry.ts` — what Gateway is willing to proxy
  * - `modules/admin/web/src/services.ts` — what the central Admin shell shows
  *
@@ -34,7 +34,7 @@ function objectKeys(source, name) {
   return [...match[1].matchAll(/^\s{2}([a-z][a-zA-Z0-9]*):/gm)].map((entry) => entry[1]);
 }
 
-const contracts = read('contracts/src/common.ts');
+const contracts = read('shared/src/vocabulary.ts');
 const gateway = read('modules/gateway/src/registry.ts');
 const shell = read('modules/admin/web/src/services.ts');
 

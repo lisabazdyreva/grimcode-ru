@@ -1,6 +1,5 @@
-import type { authAuditEntrySchema } from '@template/contracts';
+import type { AuthAuditEntry } from '@template/auth/contract';
 import * as React from 'react';
-import type { z } from 'zod';
 
 import { api } from '@/api';
 import { AdminPage, ErrorState } from '@/components/layout/admin-page';
@@ -8,7 +7,7 @@ import { DataTable, Pagination } from '@/components/layout/data-table';
 import { Badge } from '@/components/ui/badge';
 import { useAsync, type Page } from '@/hooks/use-async';
 
-type AuditEntry = z.infer<typeof authAuditEntrySchema>;
+type AuditEntry = AuthAuditEntry;
 
 const LIMIT = 50;
 

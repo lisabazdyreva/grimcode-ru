@@ -1,4 +1,4 @@
-import type { AdminContext } from '@template/contracts';
+import type { AdminContext } from '../vocabulary.js';
 import { TRPCError } from '@trpc/server';
 
 import { isCsrfValid } from '../http/csrf.js';

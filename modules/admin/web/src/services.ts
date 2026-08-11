@@ -1,4 +1,4 @@
-import type { AdminServiceId } from '@template/contracts';
+import type { AdminServiceId } from '@template/shared/vocabulary';
 
 export interface AdminServiceEntry {
   id: AdminServiceId;

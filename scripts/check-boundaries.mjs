@@ -1,17 +1,8 @@
 #!/usr/bin/env node
 /**
- * Boundary check: what a file may import, and which database a module may open.
- *
- * The rules are not in this file. They are in `workspace-rules.mjs`, written out as a table, next
- * to the same rules seen from the manifest side in `check-dependencies.mjs` — a rule that lives in
- * two places is a rule that will be changed in one of them.
- *
- * A module may import its own folder, `contracts/`, `shared/` and third-party packages. Importing a
- * neighbouring module is forbidden, including type-only imports: a type shared by two modules
- * belongs in `contracts/`. Cross-module calls go through the contracts.
- *
- * The walk covers the whole repository, not only the modules, so that `shared/` reaching into a
- * module or a script reaching into a package is caught by the same rule as the reverse.
+ * Boundary check: what a file may import, and which database a module may open. The rules are in
+ * `workspace-rules.mjs`, and the walk covers the whole repository, so `shared/` reaching into a
+ * module is caught by the same rule as the reverse.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -43,54 +34,34 @@ const ignoredDirs = new Set([
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
 
 /**
- * Areas allowed to open a database pool. The composer wires; a module is handed what it needs.
- *
- * `createAdminPool` is on the same list and is the more dangerous of the two: it opens whatever
- * connection string it is given, as the role that owns the server. It lives behind the subpath
- * `@template/shared/admin` so it never turns up in completions, and this is the check behind that.
- *
- * `tests` is on the list for one check and one only — that a module's credentials are refused a
- * neighbour's database. Everything else in that suite goes through Gateway on purpose, because a
- * test that reaches into the database proves the database works and says nothing about whether the
- * request would have been allowed.
+ * Areas allowed to open a database pool; a module is handed what it needs. `createAdminPool` opens
+ * whatever string it is given, as the role that owns the server, and this is the check behind the
+ * subpath it hides in. `tests` is here for one check: that a module's credentials are refused.
  */
 const POOL_CALLERS = ['composition', 'tests'];
 const POOL_FUNCTIONS = ['createPool', 'createAdminPool'];
 
 /**
- * Areas forbidden to read the environment directly.
- *
- * This is the first line of the one boundary the move genuinely weakened. Compose used to hand each
- * container only its own variables — the mail key existed for `email` and nowhere else — and in one
- * process `process.env` is shared by everyone in it. Roles on the database do not cover this: they
- * stop a module connecting to a neighbour's database with its own credentials, but credentials read
- * out of the environment would let it connect as the owner.
- *
- * So a module is handed what it needs and does not look. `shared` reads the environment on purpose —
- * that is where the typed access lives — and a test may set a variable to check the code that reads
- * it. The second line is in the composer, which deletes the single-module secrets once they have
- * been handed out.
+ * Areas forbidden to read the environment directly — the one boundary the move genuinely weakened,
+ * because roles say nothing about credentials read out of `process.env` and connected with as the
+ * owner. The second line is in the composer, which deletes them once handed out.
  */
 const ENV_FORBIDDEN_AREAS = ['modules/*'];
 
 /**
  * The door a neighbour comes through, and the one file that must carry nothing at runtime.
- *
- * With tRPC a client is typed from the server's router, so the type has to leave the module. That
- * is what `exports: "./contract"` opens, and what the rule above lets a neighbour import. The
- * permission is affordable for exactly one reason: the door hands over declarations and no code —
- * every one of these files compiles to `export {};`.
- *
- * One value export ends that. Re-export the router instead of its type and the door starts handing
- * out routers, repositories and `pg`; `exports` would still name a single entry and would still be
- * satisfied, because it says which file may be opened and never what is inside. A neighbour that
- * imports the door would pull the implementation into its own build — `app/web` into a browser
- * bundle — with nothing red anywhere.
- *
- * So the check is narrow on purpose: in this one file, every export and every import must be
- * type-only. It is the counterpart of the `web` lint rule, which guards the other route into `src`.
+ * `exports` says which file may be opened and never what is inside, so this check says the rest: in
+ * that one file, every export and every import must be type-only.
  */
 const DOOR_FILE = /^modules\/[^/]+\/src\/contract\.ts$/;
+
+/**
+ * The two files a browser bundle may read from `shared`. A bundler follows imports, not manifests,
+ * so one `import { intEnv } from './env.js'` and `process.env` follows it into a page, where the
+ * failure is a blank screen and not a build error.
+ */
+const BROWSER_SAFE_FILES = /^shared\/src\/(theme|vocabulary)\.ts$/;
+const BROWSER_SAFE_IMPORTS = new Set(['zod']);
 
 const packages = workspacePackages();
 const packageNames = new Set(packages.map((entry) => entry.name));
@@ -124,6 +95,7 @@ const importProblems = [];
 const poolProblems = [];
 const envProblems = [];
 const doorProblems = [];
+const browserProblems = [];
 
 function inspect(file) {
   const relative = repoRelative(file);
@@ -213,16 +185,31 @@ function inspect(file) {
 
   if (DOOR_FILE.test(relative)) inspectDoor(relative, source, at);
 
+  if (BROWSER_SAFE_FILES.test(relative)) {
+    for (const statement of source.statements) {
+      const specifier =
+        (ts.isImportDeclaration(statement) || (ts.isExportDeclaration(statement) && statement.moduleSpecifier))
+          ? literalOf(statement.moduleSpecifier)
+          : null;
+      if (specifier && !BROWSER_SAFE_IMPORTS.has(specifier)) {
+        browserProblems.push(`${at(statement)} imports "${specifier}"`);
+      }
+    }
+  }
+
   visit(source);
 }
 
 /**
- * Everything in the door must be a declaration. Anything else is code that would be emitted.
- *
- * `export { AuthPublicRouter }` without `type` is the case worth naming: it looks identical in the
- * editor and type-checks, but the emitted file keeps the re-export, so the door stops being empty
- * and starts pulling `./routers/public.js` — and everything it imports — into whoever opened it.
+ * Everything in the door must be a declaration. `export { AuthPublicRouter }` without `type` is the
+ * case worth naming: it looks identical in the editor and type-checks, but the emitted file keeps
+ * the re-export, so the door starts pulling `./routers/public.js` into whoever opened it.
  */
+/** The string of a module specifier node, or null when it is not a plain literal. */
+function literalOf(node) {
+  return node && ts.isStringLiteralLike(node) ? node.text : null;
+}
+
 function inspectDoor(relative, source, at) {
   const say = (node, what) => doorProblems.push(`${at(node)} ${what}`);
 
@@ -259,7 +246,9 @@ for (const file of files) inspect(file);
 if (importProblems.length > 0) {
   console.error('Imports that cross a boundary:');
   for (const problem of importProblems) console.error(`- ${problem}`);
-  console.error('\nUse @template/contracts or @template/shared, and call through the contracts.');
+  console.error(
+    '\nUse @template/shared, or a neighbour as @template/<name>/contract, and call through it.',
+  );
 }
 
 if (poolProblems.length > 0) {
@@ -278,6 +267,16 @@ if (envProblems.length > 0) {
   console.error('\nA module is handed what it needs; the composer is what reads the environment.');
 }
 
+if (browserProblems.length > 0) {
+  const earlier = importProblems.length > 0 || poolProblems.length > 0 || envProblems.length > 0;
+  console.error(`${earlier ? '\n' : ''}Browser-facing files reaching into the server:`);
+  for (const problem of browserProblems) console.error(`- ${problem}`);
+  console.error(
+    `\n${'shared/src/theme.ts and shared/src/vocabulary.ts are published to browser bundles; '}` +
+      'they may import zod and nothing else, or pg and process.env follow them into a page.',
+  );
+}
+
 if (doorProblems.length > 0) {
   const earlier = importProblems.length > 0 || poolProblems.length > 0 || envProblems.length > 0;
   console.error(`${earlier ? '\n' : ''}Doors that would carry code:`);
@@ -292,7 +291,8 @@ if (
   importProblems.length > 0 ||
   poolProblems.length > 0 ||
   envProblems.length > 0 ||
-  doorProblems.length > 0
+  doorProblems.length > 0 ||
+  browserProblems.length > 0
 ) {
   process.exit(1);
 }

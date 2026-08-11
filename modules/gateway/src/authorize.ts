@@ -1,5 +1,6 @@
 import type { AdminInternalRouter } from '@template/admin/contract';
-import type { AdminTarget, AuthorizationResult } from '@template/contracts';
+import type { AuthorizationResult } from '@template/admin/contract';
+import type { AdminTarget } from '@template/shared/vocabulary';
 import {
   createTrpcClient,
   internalServiceUrl,

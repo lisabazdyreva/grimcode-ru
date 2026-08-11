@@ -1,8 +1,7 @@
-import { authPublicContract, type Identity } from '@template/contracts';
+import { emailSchema, okSchema } from '@template/shared/vocabulary';
+import { z } from 'zod';
 import {
-  contractCoverage,
   createRateLimiter,
-  fromContract,
   expiredSessionCookie,
   hashPassword,
   intEnv,
@@ -18,6 +17,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 
 import type { Notifier } from '../notifier.js';
 import type { AuthRepository, IdentityRow } from '../repository.js';
+import { identitySchema, passwordSchema, sessionSummarySchema, type Identity } from '../schemas.js';
 import { newSessionToken, SESSION_TTL_SECONDS } from '../sessions.js';
 import { toIdentity } from '../repository.js';
 
@@ -80,8 +80,32 @@ async function openSession(ctx: PublicContext, identityId: string): Promise<void
   ctx.resHeaders.append('set-cookie', sessionCookie(token, ttl));
 }
 
+/**
+ * The public surface, by name, and the widest of the three: Gateway performs no check on
+ * `/service/auth/rpc`, so every procedure here is reachable by anyone on the internet and secures
+ * itself. A name from the internal list appearing here would publish it to the world —
+ * `resolveSession` turns a token into an identity.
+ */
+type PublicName =
+  | 'register'
+  | 'login'
+  | 'logout'
+  | 'currentSession'
+  | 'listOwnSessions'
+  | 'revokeOwnSessions'
+  | 'requestPasswordReset'
+  | 'resetPassword'
+  | 'changePassword'
+  | 'verifyEmail'
+  | 'resendOwnVerification'
+  | 'requestEmailChange'
+  | 'confirmEmailChange';
+
 export const publicRouter = t.router({
-  register: fromContract(authPublicContract.register, t.procedure).mutation(
+  register: t.procedure
+    .input(z.object({ email: emailSchema, password: passwordSchema }))
+    .output(z.object({ ok: z.literal(true), identity: identitySchema }))
+    .mutation(
     async ({ input, ctx }): Promise<{ ok: true; identity: Identity }> => {
       const existing = await ctx.repo.findIdentityByEmail(input.email);
       if (existing) {
@@ -121,7 +145,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  login: fromContract(authPublicContract.login, t.procedure).mutation(async ({ input, ctx }) => {
+  login: t.procedure
+    .input(z.object({ email: emailSchema, password: z.string().min(1).max(200) }))
+    .output(z.object({ ok: z.literal(true), identity: identitySchema }))
+    .mutation(async ({ input, ctx }) => {
     const attemptKey = input.email.trim().toLowerCase();
     if (!loginAttempts.attempt(attemptKey)) {
       // Said the same way to everyone, so the answer still reveals nothing about the address.
@@ -158,14 +185,20 @@ export const publicRouter = t.router({
   }),
 
   /** Server-side logout: the session row is invalidated first, the cookie is cleared after. */
-  logout: fromContract(authPublicContract.logout, t.procedure).mutation(async ({ ctx }) => {
+  logout: t.procedure
+    .input(z.object({}))
+    .output(okSchema)
+    .mutation(async ({ ctx }) => {
     const token = parseCookies(ctx.request.headers.get('cookie'))[sessionCookieName()];
     if (token) await ctx.repo.revokeSessionByToken(token);
     ctx.resHeaders.append('set-cookie', expiredSessionCookie());
     return { ok: true as const };
   }),
 
-  currentSession: fromContract(authPublicContract.currentSession, t.procedure).query(
+  currentSession: t.procedure
+    .input(z.object({}))
+    .output(z.object({ identity: identitySchema.nullable() }))
+    .query(
     async ({ ctx }) => {
       const token = parseCookies(ctx.request.headers.get('cookie'))[sessionCookieName()];
       if (!token) return { identity: null };
@@ -176,7 +209,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  listOwnSessions: fromContract(authPublicContract.listOwnSessions, t.procedure).query(
+  listOwnSessions: t.procedure
+    .input(z.object({}))
+    .output(z.object({ sessions: z.array(sessionSummarySchema) }))
+    .query(
     async ({ ctx }) => {
       const { row, token } = await currentIdentity(ctx);
       const current = await ctx.repo.resolveSession(token);
@@ -195,7 +231,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  revokeOwnSessions: fromContract(authPublicContract.revokeOwnSessions, t.procedure).mutation(
+  revokeOwnSessions: t.procedure
+    .input(z.object({}))
+    .output(okSchema)
+    .mutation(
     async ({ ctx }) => {
       const { row } = await currentIdentity(ctx);
       await ctx.repo.revokeAllSessions(row.id);
@@ -206,7 +245,10 @@ export const publicRouter = t.router({
   ),
 
   /** Always answers `ok`, so the flow never reveals whether an address is registered. */
-  requestPasswordReset: fromContract(authPublicContract.requestPasswordReset, t.procedure).mutation(
+  requestPasswordReset: t.procedure
+    .input(z.object({ email: emailSchema }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const identity = await ctx.repo.findIdentityByEmail(input.email);
 
@@ -232,7 +274,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  resetPassword: fromContract(authPublicContract.resetPassword, t.procedure).mutation(
+  resetPassword: t.procedure
+    .input(z.object({ token: z.string().min(20).max(200), password: passwordSchema }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const consumed = await ctx.repo.consumeToken(input.token, 'password-reset');
       if (!consumed)
@@ -248,7 +293,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  changePassword: fromContract(authPublicContract.changePassword, t.procedure).mutation(
+  changePassword: t.procedure
+    .input(z.object({ currentPassword: z.string().min(1).max(200), password: passwordSchema }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const { row } = await currentIdentity(ctx);
 
@@ -266,7 +314,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  verifyEmail: fromContract(authPublicContract.verifyEmail, t.procedure).mutation(
+  verifyEmail: t.procedure
+    .input(z.object({ token: z.string().min(20).max(200) }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const consumed = await ctx.repo.consumeToken(input.token, 'email-verification');
       if (!consumed)
@@ -278,10 +329,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  resendOwnVerification: fromContract(
-    authPublicContract.resendOwnVerification,
-    t.procedure,
-  ).mutation(async ({ ctx }) => {
+  resendOwnVerification: t.procedure
+    .input(z.object({}))
+    .output(okSchema)
+    .mutation(async ({ ctx }) => {
     const { row } = await currentIdentity(ctx);
     if (row.email_verified_at !== null) return { ok: true as const };
 
@@ -303,7 +354,10 @@ export const publicRouter = t.router({
     return { ok: true as const };
   }),
 
-  requestEmailChange: fromContract(authPublicContract.requestEmailChange, t.procedure).mutation(
+  requestEmailChange: t.procedure
+    .input(z.object({ email: emailSchema }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const { row } = await currentIdentity(ctx);
 
@@ -332,7 +386,10 @@ export const publicRouter = t.router({
     },
   ),
 
-  confirmEmailChange: fromContract(authPublicContract.confirmEmailChange, t.procedure).mutation(
+  confirmEmailChange: t.procedure
+    .input(z.object({ token: z.string().min(20).max(200) }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const consumed = await ctx.repo.consumeToken(input.token, 'email-change');
       if (!consumed)
@@ -370,10 +427,8 @@ export const publicRouter = t.router({
       return { ok: true as const };
     },
   ),
-});
+} satisfies Record<PublicName, unknown>);
 
-const publicCoverage: 'ok' = contractCoverage(authPublicContract, publicRouter);
-void publicCoverage;
 
 /** The application's browser client is typed from this, and from nothing else. */
 export type AuthPublicRouter = typeof publicRouter;

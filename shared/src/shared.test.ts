@@ -24,7 +24,6 @@ import type { Logger } from './logger.js';
 import { applyTheme, normalizeServicePath } from './theme.js';
 import type { RpcContext } from './trpc/builders.js';
 import { createTrpcClient } from './trpc/client.js';
-import { fromContract } from './trpc/contract.js';
 import { mountTrpc } from './trpc/mount.js';
 
 describe('cookies', () => {
@@ -323,10 +322,10 @@ describe('calling a neighbour in this process over tRPC', () => {
   /** A module with one procedure, mounted exactly as a real one is, and a client aimed at it. */
   function callNeighbour(answer: () => Promise<{ pong: string }>, timeoutMs?: number) {
     const router = t.router({
-      ping: fromContract(
-        { input: z.object({ say: z.string() }), output: z.object({ pong: z.string() }) },
-        t.procedure,
-      ).query(answer),
+      ping: t.procedure
+        .input(z.object({ say: z.string() }))
+        .output(z.object({ pong: z.string() }))
+        .query(answer),
     });
 
     const app = createServiceApp('email', silent);

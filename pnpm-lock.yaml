@@ -50,9 +50,6 @@ importers:
       '@template/auth':
         specifier: workspace:*
         version: link:../modules/auth
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       '@template/email':
         specifier: workspace:*
         version: link:../modules/email
@@ -82,27 +79,11 @@ importers:
         specifier: 4.1.10
         version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
 
-  contracts:
-    dependencies:
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-    devDependencies:
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 4.1.10
-        version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
-
   modules/admin:
     dependencies:
       '@template/auth':
         specifier: workspace:*
         version: link:../auth
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
       '@template/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -115,6 +96,9 @@ importers:
       hono:
         specifier: 4.12.32
         version: 4.12.32
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@tailwindcss/vite':
         specifier: 4.3.3
@@ -198,9 +182,6 @@ importers:
       '@template/auth':
         specifier: workspace:*
         version: link:../auth
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
       '@template/users':
         specifier: workspace:*
         version: link:../users
@@ -261,9 +242,6 @@ importers:
 
   modules/auth:
     dependencies:
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
       '@template/notifications':
         specifier: workspace:*
         version: link:../notifications
@@ -349,9 +327,6 @@ importers:
       '@maily-to/render':
         specifier: 0.2.3
         version: 0.2.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
       '@template/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -443,9 +418,6 @@ importers:
       '@template/admin':
         specifier: workspace:*
         version: link:../admin
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
       '@template/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -468,9 +440,6 @@ importers:
 
   modules/notifications:
     dependencies:
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
       '@template/email':
         specifier: workspace:*
         version: link:../email
@@ -617,9 +586,6 @@ importers:
       '@template/auth':
         specifier: workspace:*
         version: link:../auth
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
       '@template/shared':
         specifier: workspace:*
         version: link:../../shared
@@ -702,9 +668,6 @@ importers:
       '@hono/node-server':
         specifier: 2.0.11
         version: 2.0.11(hono@4.12.32)
-      '@template/contracts':
-        specifier: workspace:*
-        version: link:../contracts
       '@trpc/client':
         specifier: 11.18.0
         version: 11.18.0(@trpc/server@11.18.0(typescript@5.9.3))(typescript@5.9.3)

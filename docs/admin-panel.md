@@ -78,7 +78,7 @@ Copy the closest existing one — `modules/auth/web` is the plainest — and cha
 3. `web/src/main.tsx`: the `basepath`, the tabs and the routes;
 4. `package.json`: the build and typecheck scripts, and the build-time dependencies.
 
-Then add the service to `ADMIN_SERVICE_IDS` in `contracts/`, to Gateway's allowlist, and to
+Then add the service to `ADMIN_SERVICE_IDS` in `shared/src/vocabulary.ts`, to Gateway's allowlist, and to
 [`services.ts`](../modules/admin/web/src/services.ts). `scripts/check-service-ids.mjs` refuses a
 build where it appears in one of the three and not the others.
 

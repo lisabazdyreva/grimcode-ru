@@ -1,12 +1,6 @@
 import { z } from 'zod';
 
-import {
-  emailSchema,
-  idSchema,
-  isoDateTimeSchema,
-  pageOf,
-  paginationInputSchema,
-} from './common.js';
+import { emailSchema, idSchema, isoDateTimeSchema } from '@template/shared/vocabulary';
 
 /**
  * Product profile. Users never stores passwords, OAuth identities, sessions or admin rights.
@@ -35,32 +29,5 @@ export const adminUserProfileSchema = userProfileSchema.extend({
   email: emailSchema.nullable(),
 });
 
-export const usersPublicContract = {
-  /** Profile of the caller. Requires a valid user session, verified through Auth. */
-  getOwnProfile: {
-    input: z.object({}),
-    output: z.object({ profile: userProfileSchema }),
-  },
-
-  updateOwnProfile: {
-    input: z.object({ displayName: z.string().min(1).max(120).nullable() }),
-    output: z.object({ ok: z.literal(true), profile: userProfileSchema }),
-  },
-};
-
-export const usersAdminContract = {
-  listProfiles: {
-    input: paginationInputSchema,
-    output: pageOf(adminUserProfileSchema),
-  },
-
-  getProfile: {
-    input: z.object({ id: idSchema }),
-    output: z.object({ profile: adminUserProfileSchema }),
-  },
-};
-
-export const usersContract = {
-  public: usersPublicContract,
-  admin: usersAdminContract,
-};
+/** The profile as an administrator sees it: the product fields plus the account they belong to. */
+export type AdminUserProfile = z.infer<typeof adminUserProfileSchema>;

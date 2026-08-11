@@ -1,4 +1,4 @@
-import type { AdminIdentity } from '@template/contracts';
+import type { AdminIdentity } from '@template/auth/contract';
 import * as React from 'react';
 import { toast } from 'sonner';
 

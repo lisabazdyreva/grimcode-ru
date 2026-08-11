@@ -3,8 +3,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import * as React from 'react';
 import { toast } from 'sonner';
 
-import type { editorDocumentSchema } from '@template/contracts';
-import type { z } from 'zod';
+import type { EditorDocument } from '@template/email/contract';
 
 import { api, messageOf } from '@/api';
 import { AdminPage, ErrorState } from '@/components/layout/admin-page';
@@ -33,7 +32,7 @@ interface Version {
   status: 'draft' | 'published' | 'archived';
   subject: string;
   editorFormat: string;
-  editorDocument: z.infer<typeof editorDocumentSchema>;
+  editorDocument: EditorDocument;
   compiledHtml: string | null;
   compiledText: string | null;
 }

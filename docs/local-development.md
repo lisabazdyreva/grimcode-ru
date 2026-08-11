@@ -156,12 +156,13 @@ They exist because each protects a rule that is easy to break by accident and ha
 
 ## Adding a module
 
-1. Its contract in `contracts/`, split into public, internal and admin surfaces.
-2. The module under `modules/`, exporting `createApp(deps)` and — if it stores anything — its
+1. The module under `modules/`, with its routers split by trust boundary — public, internal, admin —
+   and a `src/contract.ts` re-exporting their **types** for whoever calls it.
+2. The same package exporting `createApp(deps)` and — if it stores anything — its
    `migrations`, plus an entry in the composer's `MIGRATIONS` list, which is what gives it a pool, a
    database and a role.
-3. Its id in `ADMIN_SERVICE_IDS` and — only if it should be reachable without a session — in
-   Gateway's public allowlist.
+3. Its id in `ADMIN_SERVICE_IDS` in [`shared/src/vocabulary.ts`](../shared/src/vocabulary.ts) and —
+   only if it should be reachable without a session — in Gateway's public allowlist.
 4. Its entry in the Admin shell's [`services.ts`](../modules/admin/web/src/services.ts).
 5. Its password variable `DB_PASSWORD_<MODULE>` in `.env.example` and in the Compose environment
    anchor. Nothing else in `docker/compose.yaml` changes: a module is not a container any more.

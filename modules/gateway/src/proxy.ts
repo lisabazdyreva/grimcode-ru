@@ -1,4 +1,4 @@
-import type { AdminContext } from '@template/contracts';
+import type { AdminContext } from '@template/shared/vocabulary';
 import {
   applyAdminContext,
   REQUEST_ID_HEADER,

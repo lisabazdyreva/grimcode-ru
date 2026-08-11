@@ -111,9 +111,9 @@ renderer are reachable by no specifier at all — which matters here more than e
 `@maily-to/render` is the one CPU-bound dependency in the process.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
-in the type. What keeps the type honest is the `.output()` schema every procedure is built with and
-the `contractCoverage` line beside each router, which refuses to compile when the router and the
-contract disagree.
+in the type. What keeps the type honest is the `.output()` schema every procedure declares and the
+`satisfies` line beside each router, which refuses to compile when the router holds a name the
+surface is not allowed to hold.
 
 ## Data
 

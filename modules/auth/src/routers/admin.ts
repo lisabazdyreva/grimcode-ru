@@ -1,7 +1,6 @@
-import { authAdminContract } from '@template/contracts';
+import { idSchema, okSchema, pageOf, paginationInputSchema } from '@template/shared/vocabulary';
+import { z } from 'zod';
 import {
-  contractCoverage,
-  fromContract,
   newToken,
   publicSiteUrl,
   requireCsrf,
@@ -13,13 +12,14 @@ import { initTRPC, TRPCError } from '@trpc/server';
 
 import type { Notifier } from '../notifier.js';
 import type { AuthRepository, IdentityRow } from '../repository.js';
+import { adminIdentitySchema, authAuditEntrySchema } from '../schemas.js';
 
 /**
  * Whether this identity is an active owner of the admin panel.
  *
- * Ownership is Admin's fact, and Auth needs it for exactly one rule, so Auth declares what it
- * needs and is handed an implementation — it does not reach for Admin itself. The direction of the
- * call is then a decision of the wiring, which is the only place that knows about both.
+ * Ownership is Admin's fact and Auth needs it for one rule, so Auth declares what it needs and is
+ * handed an implementation. The direction of the call is a decision of the wiring, the only place
+ * that knows about both.
  */
 export type IsActiveOwner = (userId: string) => Promise<boolean>;
 
@@ -28,10 +28,9 @@ export interface AdminRpcContext extends AdminAwareContext {
   notifier: Notifier;
   logger: Logger;
   /**
-   * Required, never optional and never defaulted. A missing implementation has to be a compile
-   * error: a default of "assume not an owner" would turn one forgotten line in the wiring into a
-   * rule that silently stops running, and the rule is what keeps the panel from being left with no
-   * owner at all.
+   * Required, never optional and never defaulted: a default of "assume not an owner" would turn one
+   * forgotten line in the wiring into a rule that silently stops running, and that rule is what
+   * keeps the panel from being left with no owner at all.
    */
   isActiveOwner: IsActiveOwner;
 }
@@ -42,11 +41,10 @@ const VERIFICATION_TTL_SECONDS = 60 * 60 * 24;
 const t = initTRPC.context<AdminRpcContext>().create();
 
 /**
- * Every admin mutation checks the verified context and the CSRF token. Both together mean a
- * request must come through Gateway's admin route *and* originate from the admin panel itself.
- *
- * The scope is `'auth'` and not `'panel'`: each admin surface issues its own cookie, and a token
- * from the shell would be refused here on purpose.
+ * Every admin mutation checks the verified context and the CSRF token: together they mean a request
+ * must come through Gateway's admin route *and* originate from the admin panel itself. The scope is
+ * `'auth'` and not `'panel'` — each surface issues its own cookie, and a token from the shell is
+ * refused here on purpose.
  */
 const adminProcedure = t.procedure.use(({ ctx, next }) =>
   next({ ctx: { admin: verifiedAdmin(ctx) } }),
@@ -76,8 +74,25 @@ async function adminIdentityOf(repo: AuthRepository, row: IdentityRow) {
   };
 }
 
+/**
+ * The service admin surface, by name, reachable only after Gateway verified the grant on Auth:
+ * `setBlocked` ends every session a person has and `sendRecovery` mails them a reset link, and on
+ * the public surface either would lock people out of their own accounts.
+ */
+type AdminName =
+  | 'listIdentities'
+  | 'getIdentity'
+  | 'sendRecovery'
+  | 'resendVerification'
+  | 'revokeSessions'
+  | 'setBlocked'
+  | 'listAudit';
+
 export const adminRouter = t.router({
-  listIdentities: fromContract(authAdminContract.listIdentities, adminProcedure).query(
+  listIdentities: adminProcedure
+    .input(paginationInputSchema)
+    .output(pageOf(adminIdentitySchema))
+    .query(
     async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.listIdentities(input.query, input.limit, input.offset);
 
@@ -98,7 +113,10 @@ export const adminRouter = t.router({
     },
   ),
 
-  getIdentity: fromContract(authAdminContract.getIdentity, adminProcedure).query(
+  getIdentity: adminProcedure
+    .input(z.object({ id: idSchema }))
+    .output(z.object({ identity: adminIdentitySchema }))
+    .query(
     async ({ input, ctx }) => {
       const row = await loadIdentity(ctx.repo, input.id);
       return { identity: await adminIdentityOf(ctx.repo, row) };
@@ -106,12 +124,14 @@ export const adminRouter = t.router({
   ),
 
   /**
-   * Sends the ordinary user-facing recovery link through Notifications and Email.
-   *
-   * The administrator never sets, sees or receives the token: it is the same time-limited
-   * single-use flow the user would start themselves.
+   * Sends the ordinary user-facing recovery link through Notifications and Email. The administrator
+   * never sets, sees or receives the token: it is the same time-limited single-use flow the user
+   * would start themselves.
    */
-  sendRecovery: fromContract(authAdminContract.sendRecovery, adminMutation).mutation(
+  sendRecovery: adminMutation
+    .input(z.object({ id: idSchema }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const row = await loadIdentity(ctx.repo, input.id);
 
@@ -142,7 +162,10 @@ export const adminRouter = t.router({
     },
   ),
 
-  resendVerification: fromContract(authAdminContract.resendVerification, adminMutation).mutation(
+  resendVerification: adminMutation
+    .input(z.object({ id: idSchema }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const row = await loadIdentity(ctx.repo, input.id);
       if (row.email_verified_at !== null) {
@@ -176,7 +199,10 @@ export const adminRouter = t.router({
     },
   ),
 
-  revokeSessions: fromContract(authAdminContract.revokeSessions, adminMutation).mutation(
+  revokeSessions: adminMutation
+    .input(z.object({ id: idSchema }))
+    .output(okSchema)
+    .mutation(
     async ({ input, ctx }) => {
       const row = await loadIdentity(ctx.repo, input.id);
 
@@ -194,7 +220,10 @@ export const adminRouter = t.router({
   ),
 
   /** Owner-only, and no owner's identity can be blocked while they hold the rights. */
-  setBlocked: fromContract(authAdminContract.setBlocked, adminMutation).mutation(
+  setBlocked: adminMutation
+    .input(z.object({ id: idSchema, blocked: z.boolean() }))
+    .output(z.object({ ok: z.literal(true), identity: adminIdentitySchema }))
+    .mutation(
     async ({ input, ctx }) => {
       if (ctx.admin.role !== 'owner') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Блокировать может только владелец' });
@@ -240,7 +269,10 @@ export const adminRouter = t.router({
     },
   ),
 
-  listAudit: fromContract(authAdminContract.listAudit, adminProcedure).query(
+  listAudit: adminProcedure
+    .input(paginationInputSchema)
+    .output(pageOf(authAuditEntrySchema))
+    .query(
     async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.listAudit(input.query, input.limit, input.offset);
 
@@ -260,10 +292,8 @@ export const adminRouter = t.router({
       };
     },
   ),
-});
+} satisfies Record<AdminName, unknown>);
 
-const adminCoverage: 'ok' = contractCoverage(authAdminContract, adminRouter);
-void adminCoverage;
 
 /** Auth's own service admin is typed from this, and from nothing else. */
 export type AuthAdminRouter = typeof adminRouter;

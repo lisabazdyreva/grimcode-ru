@@ -25,7 +25,6 @@
     "@template/admin": "workspace:*",
     "@template/app": "workspace:*",
     "@template/auth": "workspace:*",
-    "@template/contracts": "workspace:*",
     "@template/email": "workspace:*",
     "@template/gateway": "workspace:*",
     "@template/notifications": "workspace:*",

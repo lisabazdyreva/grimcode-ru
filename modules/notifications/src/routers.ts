@@ -1,14 +1,7 @@
-import {
-  EVENT_TEMPLATE_KEYS,
-  notificationsAdminContract,
-  notificationsInternalContract,
-  type NotificationEvent,
-} from '@template/contracts';
+import { idSchema, notificationEventTypeSchema, pageOf, paginationInputSchema } from '@template/shared/vocabulary';
 import type { EmailInternalRouter } from '@template/email/contract';
 import {
-  contractCoverage,
   createTrpcClient,
-  fromContract,
   internalServiceUrl,
   REQUEST_ID_HEADER,
   verifiedAdmin,
@@ -19,7 +12,15 @@ import {
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
+import { z } from 'zod';
+
 import type { EventRow, NotificationsRepository } from './repository.js';
+import {
+  EVENT_TEMPLATE_KEYS,
+  notificationEventSchema,
+  storedNotificationEventSchema,
+  type NotificationEvent,
+} from './schemas.js';
 
 export interface InternalContext extends RpcContext {
   repo: NotificationsRepository;
@@ -58,15 +59,24 @@ export function variablesOf(event: NotificationEvent): Record<string, string> {
 
 const internalT = initTRPC.context<InternalContext>().create();
 
+/**
+ * Each router is constrained to exactly these names, which stops a procedure written into the wrong
+ * surface: `emit` belongs to the internal router, and in a public one would let anyone forge
+ * notifications.
+ */
+type InternalName = 'emit';
+type AdminName = 'listEvents' | 'getEvent';
+
 export const internalRouter = internalT.router({
   /**
-   * Accepts one typed event and routes it to Email.
-   *
-   * The contract's discriminated union already rejects anything that is not a known event type,
-   * so an unknown event never reaches storage. `dedupeKey` makes a repeated delivery harmless.
+   * Accepts one typed event and routes it to Email. The discriminated union rejects anything that is
+   * not a known event type, so an unknown event never reaches storage, and `dedupeKey` makes a
+   * repeated delivery harmless.
    */
-  emit: fromContract(notificationsInternalContract.emit, internalT.procedure).mutation(
-    async ({ input, ctx }) => {
+  emit: internalT.procedure
+    .input(z.object({ event: notificationEventSchema, dedupeKey: z.string().min(1).max(200) }))
+    .output(z.object({ ok: z.literal(true), eventId: idSchema, deduplicated: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
       const { event, dedupeKey } = input;
 
       const { row, created } = await ctx.repo.accept(
@@ -121,12 +131,9 @@ export const internalRouter = internalT.router({
       }
 
       return { ok: true as const, eventId: row.id, deduplicated: false };
-    },
-  ),
-});
+    }),
+} satisfies Record<InternalName, unknown>);
 
-const internalCoverage: 'ok' = contractCoverage(notificationsInternalContract, internalRouter);
-void internalCoverage;
 
 // --- admin surface ------------------------------------------------------------------------------
 
@@ -141,28 +148,33 @@ const adminProcedure = adminT.procedure.use(({ ctx, next }) =>
 );
 
 export const adminRouter = adminT.router({
-  listEvents: fromContract(notificationsAdminContract.listEvents, adminProcedure).query(
-    async ({ input, ctx }) => {
+  listEvents: adminProcedure
+    .input(
+      paginationInputSchema.extend({
+        type: notificationEventTypeSchema.optional(),
+        status: z.enum(['accepted', 'routed', 'failed']).optional(),
+      }),
+    )
+    .output(pageOf(storedNotificationEventSchema))
+    .query(async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.list(
         { query: input.query, type: input.type, status: input.status },
         input.limit,
         input.offset,
       );
       return { items: rows.map(toStored), total, limit: input.limit, offset: input.offset };
-    },
-  ),
+    }),
 
-  getEvent: fromContract(notificationsAdminContract.getEvent, adminProcedure).query(
-    async ({ input, ctx }) => {
+  getEvent: adminProcedure
+    .input(z.object({ id: idSchema }))
+    .output(z.object({ event: storedNotificationEventSchema }))
+    .query(async ({ input, ctx }) => {
       const row = await ctx.repo.findById(input.id);
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Событие не найдено' });
       return { event: toStored(row) };
-    },
-  ),
-});
+    }),
+} satisfies Record<AdminName, unknown>);
 
-const adminCoverage: 'ok' = contractCoverage(notificationsAdminContract, adminRouter);
-void adminCoverage;
 
 /** The browser client and Auth are typed from these, and from nothing else. */
 export type NotificationsInternalRouter = typeof internalRouter;

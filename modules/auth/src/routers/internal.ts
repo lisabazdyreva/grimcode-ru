@@ -1,8 +1,10 @@
-import { authInternalContract } from '@template/contracts';
-import { contractCoverage, fromContract, type RpcContext } from '@template/shared';
+import { emailSchema, idSchema, okSchema } from '@template/shared/vocabulary';
+import { z } from 'zod';
+import type { RpcContext } from '@template/shared';
 import { initTRPC } from '@trpc/server';
 
 import { toIdentity, type AuthRepository } from '../repository.js';
+import { identitySchema } from '../schemas.js';
 
 export interface InternalContext extends RpcContext {
   repo: AuthRepository;
@@ -15,8 +17,23 @@ export interface InternalContext extends RpcContext {
  */
 const t = initTRPC.context<InternalContext>().create();
 
+/**
+ * The internal surface, by name. Their arguments say why the mount matters — a session token, a list
+ * of identity ids, an address to look up: every one assumes a caller that is already trusted.
+ */
+type InternalName =
+  | 'resolveSession'
+  | 'revokeSessionByToken'
+  | 'getFirstIdentity'
+  | 'getIdentitiesByIds'
+  | 'searchIdentities'
+  | 'getIdentityByEmail';
+
 export const internalRouter = t.router({
-  resolveSession: fromContract(authInternalContract.resolveSession, t.procedure).query(
+  resolveSession: t.procedure
+    .input(z.object({ sessionToken: z.string().min(1).max(400) }))
+    .output(z.object({ identity: identitySchema.nullable() }))
+    .query(
     async ({ input, ctx }) => {
       const resolved = await ctx.repo.resolveSession(input.sessionToken);
       // A blocked identity has no usable session, even if the row itself has not expired yet.
@@ -29,45 +46,58 @@ export const internalRouter = t.router({
    * The same revocation the public `logout` performs, without the cookie: whoever calls this owns
    * the response the browser sees and clears the cookie there.
    */
-  revokeSessionByToken: fromContract(
-    authInternalContract.revokeSessionByToken,
-    t.procedure,
-  ).mutation(async ({ input, ctx }) => {
+  revokeSessionByToken: t.procedure
+    .input(z.object({ sessionToken: z.string().min(1).max(400) }))
+    .output(okSchema)
+    .mutation(async ({ input, ctx }) => {
     await ctx.repo.revokeSessionByToken(input.sessionToken);
     return { ok: true as const };
   }),
 
-  getFirstIdentity: fromContract(authInternalContract.getFirstIdentity, t.procedure).query(
+  getFirstIdentity: t.procedure
+    .input(z.object({}))
+    .output(z.object({ identity: identitySchema.nullable() }))
+    .query(
     async ({ ctx }) => {
       const row = await ctx.repo.findFirstIdentity();
       return { identity: row ? toIdentity(row) : null };
     },
   ),
 
-  getIdentitiesByIds: fromContract(authInternalContract.getIdentitiesByIds, t.procedure).query(
+  getIdentitiesByIds: t.procedure
+    .input(z.object({ ids: z.array(idSchema).max(200) }))
+    .output(z.object({ identities: z.array(identitySchema) }))
+    .query(
     async ({ input, ctx }) => {
       const rows = await ctx.repo.findIdentitiesByIds(input.ids);
       return { identities: rows.map(toIdentity) };
     },
   ),
 
-  searchIdentities: fromContract(authInternalContract.searchIdentities, t.procedure).query(
+  searchIdentities: t.procedure
+    .input(z.object({
+    query: z.string().min(1).max(200),
+    limit: z.number().int().min(1).max(20).default(10),
+    }))
+    .output(z.object({ identities: z.array(identitySchema) }))
+    .query(
     async ({ input, ctx }) => {
       const rows = await ctx.repo.searchIdentities(input.query, input.limit);
       return { identities: rows.map(toIdentity) };
     },
   ),
 
-  getIdentityByEmail: fromContract(authInternalContract.getIdentityByEmail, t.procedure).query(
+  getIdentityByEmail: t.procedure
+    .input(z.object({ email: emailSchema }))
+    .output(z.object({ identity: identitySchema.nullable() }))
+    .query(
     async ({ input, ctx }) => {
       const row = await ctx.repo.findIdentityByEmail(input.email);
       return { identity: row ? toIdentity(row) : null };
     },
   ),
-});
+} satisfies Record<InternalName, unknown>);
 
-const internalCoverage: 'ok' = contractCoverage(authInternalContract, internalRouter);
-void internalCoverage;
 
 /** Admin, Users and the composer are typed from this, and from nothing else. */
 export type AuthInternalRouter = typeof internalRouter;

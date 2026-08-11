@@ -34,9 +34,9 @@ surface, and this module's own admin panel, which takes the same route rather th
 `src` by a relative path.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
-in the type. What keeps the type honest is the `.output()` schema every procedure is built with and
-the `contractCoverage` line beside each router, which refuses to compile when the router and the
-contract disagree — see [contracts/README.md](../../contracts/README.md) for how a procedure is
+in the type. What keeps the type honest is the `.output()` schema every procedure declares and the
+`satisfies` line beside each router, which refuses to compile when the router holds a name the
+surface is not allowed to hold — see [shared/README.md](../../shared/README.md) for how a procedure is
 added.
 
 ### Session checks are server-side

@@ -21,7 +21,6 @@ WORKDIR /repo
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc tsconfig.base.json turbo.json ./
 COPY composition/package.json ./composition/package.json
-COPY contracts/package.json ./contracts/package.json
 COPY shared/package.json ./shared/package.json
 COPY modules/admin/package.json ./modules/admin/package.json
 COPY modules/app/package.json ./modules/app/package.json
@@ -39,7 +38,6 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 
 COPY composition ./composition
-COPY contracts ./contracts
 COPY shared ./shared
 COPY modules ./modules
 

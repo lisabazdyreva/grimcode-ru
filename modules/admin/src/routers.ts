@@ -1,10 +1,19 @@
 import type { AuthInternalRouter } from '@template/auth/contract';
-import { adminContract, type AdminRole } from '@template/contracts';
 import {
-  contractCoverage,
+  adminRoleSchema,
+  adminServiceIdSchema,
+  adminTargetSchema,
+  assignableServiceIdSchema,
+  emailSchema,
+  idSchema,
+  okSchema,
+  pageOf,
+  paginationInputSchema,
+  type AdminRole,
+} from '@template/shared/vocabulary';
+import {
   createTrpcClient,
   expiredSessionCookie,
-  fromContract,
   internalServiceUrl,
   parseCookies,
   REQUEST_ID_HEADER,
@@ -19,7 +28,10 @@ import {
 import { initTRPC, TRPCError } from '@trpc/server';
 
 import { authorize, canOpenDatabase, visibleServices, type AuthClient } from './authorization.js';
+import { z } from 'zod';
+
 import { toAdministrator, type AdminRepository } from './repository.js';
+import { administratorSchema, adminAuditEntrySchema, authorizationResultSchema } from './schemas.js';
 
 export interface InternalContext extends RpcContext {
   repo: AdminRepository;
@@ -37,28 +49,47 @@ export interface AdminRpcContext extends AdminAwareContext {
 
 const internalT = initTRPC.context<InternalContext>().create();
 
+/**
+ * `authorize` is the decision Gateway trusts on every `/admin/**` request. The same line in the admin
+ * router would put it behind a screen anyone with a session can reach.
+ */
+type InternalName = 'isActiveOwner' | 'authorize';
+type AdminName =
+  | 'session'
+  | 'listAdministrators'
+  | 'searchUsers'
+  | 'addAdministrator'
+  | 'updateAdministrator'
+  | 'listAudit'
+  | 'logout';
+
 export const internalRouter = internalT.router({
-  isActiveOwner: fromContract(adminContract.internal.isActiveOwner, internalT.procedure).query(
-    async ({ input, ctx }) => {
+  isActiveOwner: internalT.procedure
+    .input(z.object({ userId: idSchema }))
+    .output(z.object({ activeOwner: z.boolean() }))
+    .query(async ({ input, ctx }) => {
       const row = await ctx.repo.findByUserId(input.userId);
 
       return { activeOwner: row?.role === 'owner' && row.enabled };
-    },
-  ),
+    }),
 
   /**
-   * A query, because from Gateway's side this is a question asked on every `/admin/**` request,
-   * including plain page loads. It can write once — the very first call bootstraps the owner from
-   * Auth's first account when the registry is still empty — and that is the exception the registry
-   * exists to make, not a reason to call every authorization check a mutation.
+   * A query, because from Gateway's side it is a question asked on every `/admin/**` request. It can
+   * write once — the first call bootstraps the owner from Auth's first account when the registry is
+   * empty — and that is the exception the registry exists to make.
    */
-  authorize: fromContract(adminContract.internal.authorize, internalT.procedure).query(
-    ({ input, ctx }) => authorize(input, ctx),
-  ),
-});
+  authorize: internalT.procedure
+    .input(
+      z.object({
+        sessionToken: z.string().min(1).max(400).nullable(),
+        /** What is being opened; Gateway works it out from the URL. */
+        target: adminTargetSchema,
+      }),
+    )
+    .output(authorizationResultSchema)
+    .query(({ input, ctx }) => authorize(input, ctx)),
+} satisfies Record<InternalName, unknown>);
 
-const internalCoverage: 'ok' = contractCoverage(adminContract.internal, internalRouter);
-void internalCoverage;
 
 // --- panel surface --------------------------------------------------------------------------
 
@@ -110,7 +141,19 @@ function lastOwnerGuard(userId: string) {
 }
 
 export const adminRouter = adminT.router({
-  session: fromContract(adminContract.admin.session, adminProcedure).query(async ({ ctx }) => {
+  session: adminProcedure
+    .input(z.object({}))
+    .output(
+      z.object({
+        userId: idSchema,
+        email: emailSchema,
+        role: adminRoleSchema,
+        services: z.array(adminServiceIdSchema),
+        /** Whether this administrator may open the panel's database browser. Owners only. */
+        database: z.boolean(),
+      }),
+    )
+    .query(async ({ ctx }) => {
     const row = await ctx.repo.findByUserId(ctx.admin.userId);
     if (!row) throw new TRPCError({ code: 'FORBIDDEN', message: 'Не администратор' });
 
@@ -124,8 +167,10 @@ export const adminRouter = adminT.router({
     };
   }),
 
-  listAdministrators: fromContract(adminContract.admin.listAdministrators, ownerProcedure).query(
-    async ({ input, ctx }) => {
+  listAdministrators: ownerProcedure
+    .input(paginationInputSchema)
+    .output(pageOf(administratorSchema))
+    .query(async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.list(input.query, input.limit, input.offset);
       return {
         items: rows.map(toAdministrator),
@@ -133,12 +178,24 @@ export const adminRouter = adminT.router({
         limit: input.limit,
         offset: input.offset,
       };
-    },
-  ),
+    }),
 
   /** Adds an already registered user by email. Product users from Users are never listed here. */
-  searchUsers: fromContract(adminContract.admin.searchUsers, ownerProcedure).query(
-    async ({ input, ctx }) => {
+  searchUsers: ownerProcedure
+    .input(z.object({ query: z.string().min(1).max(200) }))
+    .output(
+      z.object({
+        users: z.array(
+          z.object({
+            userId: idSchema,
+            email: emailSchema,
+            /** Already in the registry, so adding them again would be refused. */
+            isAdministrator: z.boolean(),
+          }),
+        ),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
       const { identities } = await ctx.auth.searchIdentities.query({
         query: input.query,
         limit: 10,
@@ -155,11 +212,18 @@ export const adminRouter = adminT.router({
       );
 
       return { users };
-    },
-  ),
+    }),
 
-  addAdministrator: fromContract(adminContract.admin.addAdministrator, ownerMutation).mutation(
-    async ({ input, ctx }) => {
+  addAdministrator: ownerMutation
+    .input(
+      z.object({
+        email: emailSchema,
+        role: adminRoleSchema,
+        grants: z.array(assignableServiceIdSchema).default([]),
+      }),
+    )
+    .output(z.object({ ok: z.literal(true), administrator: administratorSchema }))
+    .mutation(async ({ input, ctx }) => {
       const { identity } = await ctx.auth.getIdentityByEmail.query({ email: input.email });
       if (!identity) {
         throw new TRPCError({
@@ -181,13 +245,19 @@ export const adminRouter = adminT.router({
       });
 
       return { ok: true as const, administrator: toAdministrator(row) };
-    },
-  ),
+    }),
 
-  updateAdministrator: fromContract(
-    adminContract.admin.updateAdministrator,
-    ownerMutation,
-  ).mutation(async ({ input, ctx }) => {
+  updateAdministrator: ownerMutation
+    .input(
+      z.object({
+        userId: idSchema,
+        role: adminRoleSchema.optional(),
+        enabled: z.boolean().optional(),
+        grants: z.array(assignableServiceIdSchema).optional(),
+      }),
+    )
+    .output(z.object({ ok: z.literal(true), administrator: administratorSchema }))
+    .mutation(async ({ input, ctx }) => {
     const existing = await ctx.repo.findByUserId(input.userId);
     if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Администратор не найден' });
 
@@ -213,8 +283,10 @@ export const adminRouter = adminT.router({
     return { ok: true as const, administrator: toAdministrator(row) };
   }),
 
-  listAudit: fromContract(adminContract.admin.listAudit, ownerProcedure).query(
-    async ({ input, ctx }) => {
+  listAudit: ownerProcedure
+    .input(paginationInputSchema)
+    .output(pageOf(adminAuditEntrySchema))
+    .query(async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.listAudit(input.query, input.limit, input.offset);
       return {
         items: rows.map((row) => ({
@@ -229,25 +301,19 @@ export const adminRouter = adminT.router({
         limit: input.limit,
         offset: input.offset,
       };
-    },
-  ),
+    }),
 
   /**
    * Logout is a server-side Auth operation.
    *
-   * Auth invalidates the session row in its own database; the cookie is cleared here, with the
-   * shared attributes, because this response is the one the browser receives. The order is the
-   * whole of it: clearing the cookie without invalidating the row leaves a session that still
-   * works, so a failure of the call must reach the caller instead of being turned into a clean
-   * sign-out — which is what an exception here does.
-   *
-   * It is an `adminMutation` and not an `adminProcedure`, and that closes something that was left
-   * open: the panel's browser client already listed `logout` among its mutations and sent a CSRF
-   * token with it, while the handler asked only for an administrator and ignored the token. A token
-   * that is sent and not checked is not a defence. Now the builder checks it, and the link attaches
-   * it because it knows the operation changes something.
+   * Auth invalidates the session row; the cookie is cleared here, because this response is the one
+   * the browser receives. The order is the whole of it: clearing the cookie without invalidating the
+   * row leaves a session that still works, so a failed call must reach the caller.
    */
-  logout: fromContract(adminContract.admin.logout, adminMutation).mutation(async ({ ctx }) => {
+  logout: adminMutation
+    .input(z.object({}))
+    .output(okSchema)
+    .mutation(async ({ ctx }) => {
     const token = parseCookies(ctx.request.headers.get('cookie'))[sessionCookieName()];
     if (!token) return { ok: true as const };
 
@@ -255,11 +321,9 @@ export const adminRouter = adminT.router({
     ctx.resHeaders.append('set-cookie', expiredSessionCookie());
 
     return { ok: true as const };
-  }),
-});
+    }),
+} satisfies Record<AdminName, unknown>);
 
-const adminCoverage: 'ok' = contractCoverage(adminContract.admin, adminRouter);
-void adminCoverage;
 
 /** The panel's browser client, Gateway and the composer are typed from these, and nothing else. */
 export type AdminInternalRouter = typeof internalRouter;

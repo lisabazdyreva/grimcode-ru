@@ -132,9 +132,13 @@ to it.
 
 ## Contracts, not conventions
 
-Modules talk over tRPC, and what they agree on is a set of Zod schemas kept in `contracts/`, paired
-as `{ input, output }`. That package depends on nothing but `zod`: a contract that imported the RPC
-library would tie every module to that library's lifetime.
+Modules talk over tRPC, and each declares the shape of every call it answers — a Zod schema on the
+input and one on the output, written at the procedure itself.
+
+What more than one module has to agree on lives in `shared/src/vocabulary.ts`: the primitives every
+schema is built from, which services exist, what an administrator's role is. That file imports `zod`
+and nothing else, and a check enforces it — browser bundles read it directly, and one import of the
+server's toolbox would follow it into a page.
 
 A module still may not import a neighbour's code — `scripts/check-boundaries.mjs` refuses a build
 where one does — with a single exception it names explicitly: `@template/<neighbour>/contract`, and
@@ -144,10 +148,25 @@ that re-exports router types and nothing else. `@template/auth` alone still reso
 and `dist/repository.js` resolves to nothing at all.
 
 That door is a projection of the implementation, not an agreement, and it is not what keeps a
-router honest. Two things do: `fromContract` builds every procedure with the contract's own
-`.input()` and `.output()` baked in, and `contractCoverage` refuses to compile a router that
-implements the wrong set — a missing procedure, an extra one, or the right name carrying another's
-schemas.
+router honest. Two things do, and both are ordinary TypeScript rather than machinery of ours.
+
+Every procedure declares `.output()`, so a response that does not match the schema fails instead of
+shipping. The tRPC documentation calls this optional — the client's type is inferred from the
+resolver anyway — and it is optional right up until the resolver returns a row read from a
+repository. Then the extra columns travel, and the compiler does not object, because excess property
+checks apply to object literals and not to variables.
+
+And every router is pinned to the names it is allowed to hold:
+
+```ts
+type PublicName = 'getOwnProfile' | 'updateOwnProfile';
+export const publicRouter = publicT.router({ … } satisfies Record<PublicName, unknown>);
+```
+
+The constraint lands on the object literal, which is exactly where TypeScript does check for
+properties that should not be there. What it buys is that a procedure cannot land on the wrong
+surface unnoticed — an admin procedure written into a public router is a compile error rather than
+an open endpoint.
 
 They kept talking that way after moving into one process, and that was a decision rather than
 inertia. A direct method call would be faster and would hide the two things that only ever show up

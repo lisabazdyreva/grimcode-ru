@@ -1,6 +1,5 @@
-import type { adminUserProfileSchema } from '@template/contracts';
 import * as React from 'react';
-import type { z } from 'zod';
+import type { AdminUserProfile } from '@template/users/contract';
 
 import { api } from '@/api';
 import { AdminPage, ErrorState } from '@/components/layout/admin-page';
@@ -18,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAsync, type Page } from '@/hooks/use-async';
 
-type Profile = z.infer<typeof adminUserProfileSchema>;
+type Profile = AdminUserProfile;
 
 const LIMIT = 25;
 

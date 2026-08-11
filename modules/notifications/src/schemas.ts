@@ -4,24 +4,11 @@ import {
   emailSchema,
   idSchema,
   isoDateTimeSchema,
+  NOTIFICATION_EVENT_TYPES,
   pageOf,
   paginationInputSchema,
-} from './common.js';
-
-/**
- * Notifications accepts only these known typed events. Anything else is rejected before it can
- * reach Email. The template ships the base auth events needed for registration, email
- * verification, recovery and email change.
- */
-export const NOTIFICATION_EVENT_TYPES = [
-  'auth.user.registered',
-  'auth.email.verification_requested',
-  'auth.password.reset_requested',
-  'auth.email.change_requested',
-  'auth.email.changed',
-] as const;
-
-export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];
+  type NotificationEventType,
+} from '@template/shared/vocabulary';
 
 const recipientSchema = z.object({
   identityId: idSchema,
@@ -113,3 +100,6 @@ export const notificationsContract = {
   internal: notificationsInternalContract,
   admin: notificationsAdminContract,
 };
+
+/** One event as the admin screen lists it: what arrived, where it went, and whether it got there. */
+export type StoredNotificationEvent = z.infer<typeof storedNotificationEventSchema>;

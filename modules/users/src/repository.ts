@@ -1,4 +1,4 @@
-import type { UserProfile } from '@template/contracts';
+import type { UserProfile } from './schemas.js';
 import { newId, type Pool } from '@template/shared';
 
 export interface ProfileRow {
