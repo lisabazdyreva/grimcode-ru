@@ -95,6 +95,8 @@ const importProblems = [];
 const poolProblems = [];
 const envProblems = [];
 const doorProblems = [];
+const emitProblems = [];
+const unbuiltDoors = [];
 const browserProblems = [];
 
 function inspect(file) {
@@ -183,7 +185,10 @@ function inspect(file) {
     ts.forEachChild(node, visit);
   };
 
-  if (DOOR_FILE.test(relative)) inspectDoor(relative, source, at);
+  if (DOOR_FILE.test(relative)) {
+    inspectDoor(relative, source, at);
+    inspectDoorEmit(relative);
+  }
 
   if (BROWSER_SAFE_FILES.test(relative)) {
     for (const statement of source.statements) {
@@ -200,16 +205,16 @@ function inspect(file) {
   visit(source);
 }
 
-/**
- * Everything in the door must be a declaration. `export { AuthPublicRouter }` without `type` is the
- * case worth naming: it looks identical in the editor and type-checks, but the emitted file keeps
- * the re-export, so the door starts pulling `./routers/public.js` into whoever opened it.
- */
 /** The string of a module specifier node, or null when it is not a plain literal. */
 function literalOf(node) {
   return node && ts.isStringLiteralLike(node) ? node.text : null;
 }
 
+/**
+ * Everything in the door must be a declaration. `export { AuthPublicRouter }` without `type` is the
+ * case worth naming: it looks identical in the editor and type-checks, but the emitted file keeps
+ * the re-export, so the door starts pulling `./routers/public.js` into whoever opened it.
+ */
 function inspectDoor(relative, source, at) {
   const say = (node, what) => doorProblems.push(`${at(node)} ${what}`);
 
@@ -238,6 +243,37 @@ function inspectDoor(relative, source, at) {
       say(statement, 'exports a value — only types may leave through the door');
     }
   }
+}
+
+/**
+ * The same rule from the other side: not how the door is written, but what it emits.
+ *
+ * The check above reads the source and knows the forms that would carry code; this one knows none of
+ * them and asks the built file to be `export {};`. That covers what a list of forms cannot: a `const`
+ * nobody exports, written to derive a type from it, exports nothing and still emits the value.
+ *
+ * It runs after `build`, which is where it sits in `pnpm check`. Standing alone it refuses rather
+ * than skips: a check that quietly does nothing is worse than one that says it cannot run.
+ */
+function inspectDoorEmit(relative) {
+  const built = relative.replace('/src/', '/dist/').replace(/\.ts$/, '.js');
+  const full = path.join(repoRoot, built);
+
+  let emitted;
+  try {
+    emitted = readFileSync(full, 'utf8');
+  } catch {
+    unbuiltDoors.push(built);
+    return;
+  }
+
+  const code = emitted
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('//'))
+    .join(' ');
+
+  if (code !== 'export {};') emitProblems.push(`${built} emits ${JSON.stringify(code)}`);
 }
 
 const files = walk(repoRoot);
@@ -287,11 +323,35 @@ if (doorProblems.length > 0) {
   );
 }
 
+const earlierProblem = () =>
+  importProblems.length > 0 ||
+  poolProblems.length > 0 ||
+  envProblems.length > 0 ||
+  doorProblems.length > 0 ||
+  browserProblems.length > 0;
+
+if (emitProblems.length > 0) {
+  console.error(`${earlierProblem() ? '\n' : ''}Doors that carry code once built:`);
+  for (const problem of emitProblems) console.error(`- ${problem}`);
+  console.error(
+    '\nA door is allowed to emit `export {};` and nothing else. Whatever is left in it runs when ' +
+      'a neighbour loads the door, and travels into every bundle that follows the type.',
+  );
+}
+
+if (unbuiltDoors.length > 0) {
+  console.error(`${earlierProblem() || emitProblems.length > 0 ? '\n' : ''}Doors not built yet:`);
+  for (const door of unbuiltDoors) console.error(`- ${door}`);
+  console.error('\nWhat a door emits is only visible after pnpm build; run it and repeat.');
+}
+
 if (
   importProblems.length > 0 ||
   poolProblems.length > 0 ||
   envProblems.length > 0 ||
   doorProblems.length > 0 ||
+  emitProblems.length > 0 ||
+  unbuiltDoors.length > 0 ||
   browserProblems.length > 0
 ) {
   process.exit(1);
