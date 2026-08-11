@@ -1,10 +1,9 @@
 /**
  * The smallest HTTP client these tests need.
  *
- * They deliberately speak to the stack the way a browser does — over Gateway, with cookies — rather
- * than importing service code. A test that called a router directly would prove the router works
- * while saying nothing about whether Gateway lets the request through, which is the part that
- * actually protects anything.
+ * They speak to the stack the way a browser does — over Gateway, with cookies — rather than
+ * importing service code: a test that called a router directly would prove the router works and say
+ * nothing about whether Gateway lets the request through.
  */
 
 export const BASE_URL = (process.env.ACCEPTANCE_BASE_URL ?? 'http://127.0.0.1:63000').replace(
@@ -16,10 +15,8 @@ export const BASE_URL = (process.env.ACCEPTANCE_BASE_URL ?? 'http://127.0.0.1:63
 export class Session {
   private cookies = new Map<string, string>();
   /**
-   * One token per surface, because each issues its own cookie.
-   *
-   * A single cached token here would send the panel's token to a service admin and be refused —
-   * which is exactly the confusion the per-surface cookies exist to prevent.
+   * One token per surface, because each issues its own cookie: a single cached token would send the
+   * panel's to a service admin and be refused.
    */
   private csrf = new Map<string, string>();
 
@@ -83,11 +80,7 @@ export class Session {
     return (await this.fetch(path)).status;
   }
 
-  /**
-   * A token from the surface being called.
-   *
-   * Each surface issues its own, so the token is fetched from the same prefix the call goes to.
-   */
+  /** A token from the surface being called, fetched from the same prefix the call goes to. */
   private async csrfToken(prefix: string): Promise<string> {
     const cached = this.csrf.get(prefix);
     if (cached) return cached;

@@ -54,9 +54,15 @@ Security properties worth keeping when the template is extended:
 
 ### Internal surface
 
-`resolveSession`, `getFirstIdentity`, `getIdentityById`, `getIdentityByEmail`. Admin depends on
-these to resolve the current user and to bootstrap the first owner. A blocked identity resolves to
-no session at all, even if its session row has not expired.
+`resolveSession`, `revokeSessionByToken`, `getFirstIdentity`, `getIdentitiesByIds`,
+`searchIdentities`, `getIdentityByEmail`. Admin depends on these to resolve the current user, to
+sign one out of the panel and to bootstrap the first owner; Users reads a page of addresses through
+`getIdentitiesByIds`. A blocked identity resolves to no session at all, even if its session row has
+not expired.
+
+`revokeSessionByToken` ends one session and answers with nothing but an acknowledgement: the caller
+owns the response the browser sees, so the caller clears the cookie — with `expiredSessionCookie`
+from `shared`, which is the same cookie the public `logout` sends.
 
 ### Service admin
 
@@ -71,6 +77,14 @@ An administrator never sets or sees a password or a recovery token: recovery use
 time-limited flow through Notifications and Email as a user-initiated request. Blocking
 immediately revokes sessions and outstanding auth tokens. An owner cannot block their own
 identity, so the action can never remove the last working owner session.
+
+Nor can anyone block *another* active owner: blocking takes away every session, and Admin's own
+last-owner rule counts owners by its `enabled` flag and would not see it, so two owners could be
+reduced to none — one blocked here, the other stripped there. Whether an identity is an active
+owner is Admin's fact, and this service does not reach for it: the router declares what it needs
+as `IsActiveOwner` and [`src/index.ts`](src/index.ts) hands it an implementation. The dependency is
+required, never optional — a missing one is a compile error rather than a rule that quietly stops
+running.
 
 Every admin mutation requires both the Gateway-verified administrator context and a valid CSRF
 token, is written to the Auth audit, and takes effect from the next request. Identity operations

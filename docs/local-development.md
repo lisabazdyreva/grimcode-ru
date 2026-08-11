@@ -31,7 +31,7 @@ subnet of its own and never touches anyone else's.
 | --- | --- |
 | `pnpm start` / `pnpm stop` | Start and stop the stack |
 | `pnpm logs <service>` | Follow one service |
-| `pnpm check` | Lint, types, unit tests, production build, boundaries, service ids, Compose |
+| `pnpm check` | Lint, types, unit tests, production build, dependencies, boundaries, service ids, Compose |
 | `pnpm test:acceptance` | The HTTP checks, against the running stack |
 | `pnpm test:browser` | The Chromium checks, against the running stack |
 
@@ -104,7 +104,8 @@ node scripts/compose.mjs exec postgres psql -U template -d "${PROJECT_SLUG}_auth
 
 | Script | Refuses |
 | --- | --- |
-| `check-boundaries.mjs` | A service importing another service, type-only imports included |
+| `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver lives in `shared` and nowhere else; an `.npmrc` setting that would hoist every package into reach |
+| `check-boundaries.mjs` | A service importing another service, type-only imports included; a service opening a database that is not its own |
 | `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; Adminer being public or grantable |
 | `check-compose.mjs` | Anything but Gateway published locally; anything at all published in production; a PostgreSQL container in production |
 | `check-scripts.mjs` | A script named after a pnpm command — `pnpm up` would run pnpm's dependency update instead of starting the project |

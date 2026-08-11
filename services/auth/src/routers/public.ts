@@ -3,10 +3,12 @@ import { implement } from '@orpc/server';
 import { authPublicContract, type Identity } from '@template/contracts';
 import {
   createRateLimiter,
+  expiredSessionCookie,
   hashPassword,
   intEnv,
   parseCookies,
   publicSiteUrl,
+  sessionCookie,
   sessionCookieName,
   verifyPassword,
   type Logger,
@@ -14,12 +16,7 @@ import {
 
 import type { Notifier } from '../notifier.js';
 import type { AuthRepository, IdentityRow } from '../repository.js';
-import {
-  expiredSessionCookie,
-  newSessionToken,
-  sessionCookie,
-  SESSION_TTL_SECONDS,
-} from '../sessions.js';
+import { newSessionToken, SESSION_TTL_SECONDS } from '../sessions.js';
 import { toIdentity } from '../repository.js';
 
 export interface PublicContext {

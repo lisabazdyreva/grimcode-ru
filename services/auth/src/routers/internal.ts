@@ -22,6 +22,15 @@ export const internalRouter = os.router({
     return { identity: toIdentity(resolved.identity) };
   }),
 
+  /**
+   * The same revocation the public `logout` performs, without the cookie: whoever calls this owns
+   * the response the browser sees and clears the cookie there.
+   */
+  revokeSessionByToken: os.revokeSessionByToken.handler(async ({ input, context }) => {
+    await context.repo.revokeSessionByToken(input.sessionToken);
+    return { ok: true as const };
+  }),
+
   getFirstIdentity: os.getFirstIdentity.handler(async ({ context }) => {
     const row = await context.repo.findFirstIdentity();
     return { identity: row ? toIdentity(row) : null };

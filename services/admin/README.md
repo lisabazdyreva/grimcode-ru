@@ -71,9 +71,15 @@ token.
 
 ## Logout
 
-`logout` is a server-side Auth operation: Auth invalidates the session row in its own database and
-answers with the cookie-clearing header, which is forwarded to the browser. Deleting the cookie in
-client JavaScript alone would leave a usable session behind.
+`logout` is a server-side Auth operation: Admin calls `revokeSessionByToken` on Auth's internal
+surface, Auth invalidates the session row in its own database, and Admin clears the cookie on the
+response it is already answering with — `expiredSessionCookie` from `shared`, the same attributes
+Auth uses, because a cookie cleared with a different `Secure` or `Path` is a cookie the browser
+keeps.
+
+The order is the whole of it. Deleting the cookie in client JavaScript alone, or before the row is
+invalidated, would leave a usable session behind; a failed call therefore reaches the panel as an
+error rather than as a clean sign-out.
 
 ## Data
 

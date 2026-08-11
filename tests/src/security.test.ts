@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ADMIN, AUTH, Session, serviceAdmin, USERS, waitForStack } from './client.js';
+import { ADMIN, AUTH, BASE_URL, Session, serviceAdmin, USERS, waitForStack } from './client.js';
 import {
   createUser,
   PASSWORD,
@@ -94,6 +94,40 @@ describe('sessions', () => {
     const user = await createUser('cookie');
     await user.session.call(AUTH, 'logout');
     expect(user.session.hasSession).toBe(false);
+  });
+
+  /**
+   * The same session and the same rule, reached from another door: the panel has its own `logout`,
+   * and a version that only cleared the cookie would look identical to the person clicking it.
+   */
+  it('is invalidated by signing out of the admin panel too', async () => {
+    const admin = await createUser('panellogout');
+    await restore.remember(admin.userId);
+    await owner.call(
+      ADMIN,
+      'addAdministrator',
+      { email: admin.email, role: 'admin', grants: [] },
+      { csrf: true },
+    );
+
+    // The panel answers this session before it signs out.
+    await admin.session.call(ADMIN, 'session');
+
+    const cookie = admin.session.cookieHeader;
+    await admin.session.call(ADMIN, 'logout', {}, { csrf: true });
+
+    // The browser's copy is gone.
+    expect(admin.session.hasSession).toBe(false);
+
+    // And so is the session behind it: a copy of the cookie taken beforehand is refused as well.
+    const response = await fetch(`${BASE_URL}/service/auth/rpc/currentSession`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ json: {} }),
+    });
+
+    const body = (await response.json()) as { json: { identity: unknown } };
+    expect(body.json.identity).toBeNull();
   });
 });
 

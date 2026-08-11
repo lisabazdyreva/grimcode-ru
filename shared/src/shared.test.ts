@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { hashPassword, safeEqual, verifyPassword } from './crypto.js';
 import { serviceDatabaseName, serviceDatabaseUrl } from './env.js';
@@ -8,7 +8,13 @@ import {
   readAdminContext,
   stripAdminContextHeaders,
 } from './http/admin-context.js';
-import { clearCookie, parseCookies, serializeCookie } from './http/cookies.js';
+import {
+  clearCookie,
+  expiredSessionCookie,
+  parseCookies,
+  serializeCookie,
+  sessionCookie,
+} from './http/cookies.js';
 import { createRateLimiter } from './rate-limit.js';
 import { CSRF_HEADER, isCsrfValid, requiresCsrfCheck } from './http/csrf.js';
 import { applyTheme, normalizeServicePath } from './theme.js';
@@ -28,6 +34,39 @@ describe('cookies', () => {
 
   it('clears a cookie with Max-Age=0', () => {
     expect(clearCookie('s')).toContain('Max-Age=0');
+  });
+});
+
+/** The cookie belongs to `shared` because the panel signs out through a procedure of its own. */
+describe('session cookie', () => {
+  const originalPublicUrl = process.env.PUBLIC_SITE_URL;
+
+  afterEach(() => {
+    if (originalPublicUrl === undefined) delete process.env.PUBLIC_SITE_URL;
+    else process.env.PUBLIC_SITE_URL = originalPublicUrl;
+  });
+
+  it('is HttpOnly and SameSite=Lax so no script can read it', () => {
+    const cookie = sessionCookie('token-value', 60);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Lax');
+    expect(cookie).toContain('Max-Age=60');
+  });
+
+  /** The flag follows the public origin, not NODE_ENV: the local stack runs the images over http. */
+  it('is marked Secure for an https origin and not for a local http one', () => {
+    process.env.PUBLIC_SITE_URL = 'http://127.0.0.1:8080';
+    expect(sessionCookie('t', 60)).not.toContain('Secure');
+    process.env.PUBLIC_SITE_URL = 'https://example.com';
+    expect(sessionCookie('t', 60)).toContain('Secure');
+  });
+
+  it('clears with the same attributes, so the browser really drops it', () => {
+    process.env.PUBLIC_SITE_URL = 'https://example.com';
+    const cleared = expiredSessionCookie();
+    expect(cleared).toContain('Max-Age=0');
+    expect(cleared).toContain('HttpOnly');
+    expect(cleared).toContain('Secure');
   });
 });
 
@@ -98,11 +137,7 @@ describe('csrf', () => {
     expect(isCsrfValid(headers, 'panel')).toBe(false);
   });
 
-  /**
-   * The panel and each embedded service admin share an origin. One cookie name for all of them
-   * meant whichever asked last overwrote the others, and the surface that asked first was refused
-   * on its next change with nothing to explain it.
-   */
+  /** The surfaces share an origin, so one name for all of them means the last to ask wins. */
   it('does not accept another surface’s token', () => {
     const headers = new Headers({
       cookie: 'template_csrf_email=token-value',

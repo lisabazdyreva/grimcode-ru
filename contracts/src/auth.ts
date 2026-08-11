@@ -110,6 +110,21 @@ export const authInternalContract = {
     .output(z.object({ identity: identitySchema.nullable() })),
 
   /**
+   * Invalidates one session, named by the token the browser holds.
+   *
+   * Signing out of the admin panel is the same operation as signing out of the application, but it
+   * arrives at Admin rather than at Auth, and a module never touches a neighbour's database. The
+   * name says exactly which session goes: `revokeOwnSessions` on the public surface and
+   * `revokeSessions` on the admin one are already taken, and both take all of them.
+   *
+   * The caller clears the cookie itself — the answer carries no header, only the fact that the row
+   * is gone. Doing it in the other order, or not at all, leaves a session that still works.
+   */
+  revokeSessionByToken: oc
+    .input(z.object({ sessionToken: z.string().min(1).max(400) }))
+    .output(okSchema),
+
+  /**
    * Earliest registered identity in a deterministic order. Admin uses it to bootstrap the very
    * first owner; ownership follows registration order, not who opened the admin panel first.
    */

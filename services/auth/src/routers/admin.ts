@@ -1,22 +1,19 @@
 import { ORPCError } from '@orpc/client';
 import { implement } from '@orpc/server';
-import {
-  authAdminContract,
-  type AdminContext,
-  type adminInternalContract,
-  type ContractRouterClient,
-} from '@template/contracts';
-import {
-  createRpcClient,
-  internalServiceUrl,
-  isCsrfValid,
-  newToken,
-  publicSiteUrl,
-  type Logger,
-} from '@template/shared';
+import { authAdminContract, type AdminContext } from '@template/contracts';
+import { isCsrfValid, newToken, publicSiteUrl, type Logger } from '@template/shared';
 
 import type { Notifier } from '../notifier.js';
 import type { AuthRepository, IdentityRow } from '../repository.js';
+
+/**
+ * Whether this identity is an active owner of the admin panel.
+ *
+ * Ownership is Admin's fact, and Auth needs it for exactly one rule, so Auth declares what it
+ * needs and is handed an implementation — it does not reach for Admin itself. The direction of the
+ * call is then a decision of the wiring, which is the only place that knows about both.
+ */
+export type IsActiveOwner = (userId: string) => Promise<boolean>;
 
 export interface AdminRpcContext {
   repo: AuthRepository;
@@ -25,6 +22,13 @@ export interface AdminRpcContext {
   request: Request;
   /** Verified by Gateway. Absent means the request did not come through the admin route. */
   admin: AdminContext | null;
+  /**
+   * Required, never optional and never defaulted. A missing implementation has to be a compile
+   * error: a default of "assume not an owner" would turn one forgotten line in the wiring into a
+   * rule that silently stops running, and the rule is what keeps the panel from being left with no
+   * owner at all.
+   */
+  isActiveOwner: IsActiveOwner;
 }
 
 const RESET_TTL_SECONDS = 60 * 60;
@@ -66,13 +70,6 @@ async function adminIdentityOf(repo: AuthRepository, row: IdentityRow) {
     activeSessionCount: sessions.length,
     lastLoginAt: row.last_login_at?.toISOString() ?? null,
   };
-}
-
-/** Admin's internal endpoint, used for the facts Auth does not own. */
-function adminService(): ContractRouterClient<typeof adminInternalContract> {
-  return createRpcClient<ContractRouterClient<typeof adminInternalContract>>({
-    url: `${internalServiceUrl('admin')}/internal/rpc`,
-  });
 }
 
 export const adminRouter = os.router({
@@ -207,8 +204,7 @@ export const adminRouter = os.router({
      * outright: rights come off in Administrators first, and only then does blocking apply.
      */
     if (input.blocked) {
-      const { activeOwner } = await adminService().isActiveOwner({ userId: input.id });
-      if (activeOwner) {
+      if (await context.isActiveOwner(input.id)) {
         throw new ORPCError('CONFLICT', {
           message: 'Сначала снимите права владельца в разделе «Администраторы»',
         });

@@ -7,6 +7,7 @@ import {
 } from '@template/contracts';
 import {
   createRpcClient,
+  expiredSessionCookie,
   internalServiceUrl,
   isCsrfValid,
   parseCookies,
@@ -214,9 +215,11 @@ export const adminRouter = adminOs.router({
   /**
    * Logout is a server-side Auth operation.
    *
-   * Auth invalidates the session row in its own database and answers with the cookie-clearing
-   * header, which is forwarded to the browser. Removing the cookie in client JavaScript alone
-   * would leave a usable session behind, so the order matters.
+   * Auth invalidates the session row in its own database; the cookie is cleared here, with the
+   * shared attributes, because this response is the one the browser receives. The order is the
+   * whole of it: clearing the cookie without invalidating the row leaves a session that still
+   * works, so a failure of the call must reach the caller instead of being turned into a clean
+   * sign-out — which is what an exception here does.
    */
   logout: adminOs.logout.handler(async ({ context }) => {
     requireAdmin(context);
@@ -224,24 +227,8 @@ export const adminRouter = adminOs.router({
     const token = parseCookies(context.request.headers.get('cookie'))[sessionCookieName()];
     if (!token) return { ok: true as const };
 
-    const response = await fetch(`${internalServiceUrl('auth')}/service/auth/rpc/logout`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        cookie: `${sessionCookieName()}=${encodeURIComponent(token)}`,
-        [REQUEST_ID_HEADER]: context.requestId,
-      },
-      body: JSON.stringify({ json: {} }),
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!response.ok) {
-      throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Не удалось выйти' });
-    }
-
-    for (const cookie of response.headers.getSetCookie()) {
-      context.resHeaders.append('set-cookie', cookie);
-    }
+    await context.auth.revokeSessionByToken({ sessionToken: token });
+    context.resHeaders.append('set-cookie', expiredSessionCookie());
 
     return { ok: true as const };
   }),

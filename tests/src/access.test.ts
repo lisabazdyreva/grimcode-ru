@@ -6,9 +6,8 @@ import { createUser, RegistryRestore, resolveOwner, type TestUser } from './fixt
 /**
  * Who can open what.
  *
- * Every check goes through Gateway over HTTP, because that is where the decision is actually made.
- * The interface hiding a link is not what these tests are about: they open the protected URL
- * directly, which is what an attacker would do.
+ * Every check goes through Gateway over HTTP, because that is where the decision is made. They open
+ * the protected URL directly, which is what an attacker would do.
  */
 
 let owner: Session;

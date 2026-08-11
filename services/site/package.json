@@ -3,6 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./server": {
+      "types": "./server/index.d.mts",
+      "import": "./server/index.mjs"
+    }
+  },
   "files": [
     "dist",
     "server"

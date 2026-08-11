@@ -4,6 +4,13 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
     "dist",
     "web/dist"
@@ -24,7 +31,6 @@
     "@template/shared": "workspace:*",
     "hono": "4.12.32",
     "html-to-text": "10.0.0",
-    "pg": "8.22.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "4.4.3"

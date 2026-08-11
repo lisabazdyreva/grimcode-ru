@@ -52,7 +52,7 @@ export default tseslint.config(
   // Browser code: the admin shells and the product surfaces. Each of them owns its own copy of the
   // shadcn components, which are upstream source and are linted as they are shipped.
   {
-    files: ['**/web/src/**/*.{ts,tsx}', 'services/site/app/**/*.{ts,tsx}'],
+    files: ['**/web/src/**/*.{ts,tsx}', 'services/site/src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     languageOptions: { globals: globals.browser },
     rules: {

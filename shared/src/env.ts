@@ -66,11 +66,9 @@ export function sessionCookieName(): string {
 }
 
 /**
- * Name of the CSRF cookie of one admin surface.
- *
- * The panel and each embedded service admin issue their own, because they share an origin: one
- * name for all of them means whichever asked last overwrites the others' cookie, and the surface
- * that asked first is refused on its next change with nothing to explain it.
+ * Name of the CSRF cookie of one admin surface. The panel and each embedded service admin issue
+ * their own, because they share an origin: one name for all of them means whichever asked last
+ * overwrites the others' cookie, and the first is refused on its next change with nothing to say why.
  */
 export function csrfCookieName(scope: string): string {
   return `${projectSlug()}_csrf_${scope}`;
