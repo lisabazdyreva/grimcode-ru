@@ -19,6 +19,7 @@ this process reads the path off the very same `Request`.
 | Incoming path | Target | Gateway check |
 | --- | --- | --- |
 | `/admin/embed/service/:name/**` | admin surface of that module | session, admin role, grant on `:name` |
+| `/admin/embed/database/**` | Adminer, the panel's database browser | session and the `owner` role |
 | `/admin/**` | `admin` | session and an admin role |
 | `/service/:name/**` | module from the public allowlist | none — the module secures itself |
 | `/app/**` | `app` | none — App verifies the user session itself |
@@ -28,13 +29,19 @@ this process reads the path off the very same `Request`.
 [`src/registry.ts`](src/registry.ts):
 
 - **public** — `auth`, `users`;
-- **admin** — `auth`, `users`, `notifications`, `email`, `adminer`.
+- **admin** — `auth`, `users`, `notifications`, `email`.
 
-Adminer is deliberately absent from the public list. An unknown name has no entry, so nothing is
-proxied and Admin is not even asked about it — the answer is 404.
+An unknown name has no entry, so nothing is proxied and Admin is not even asked about it — the answer
+is 404.
 
-`scripts/check-service-ids.mjs` reconciles these lists with `shared/src/vocabulary.ts` and the central Admin
-shell, so a service can never be reachable here while being invisible in the shell.
+Adminer is in neither list, and not because it was forgotten: it is not a module of this template but
+a third-party application the panel embeds, and it reads every module's data at once. So it has no
+`:name` and no grant can name it — it is reached only by its own path above, which the owner alone
+passes.
+
+`scripts/check-service-ids.mjs` reconciles these lists with `shared/src/vocabulary.ts` and the central
+Admin shell, so a service can never be reachable here while being invisible in the shell — and it
+rejects `adminer` in either list outright, for the reason just given.
 
 ## Admin authorization
 
@@ -52,14 +59,37 @@ very next request.
 | `awaiting-first-user` | 403 explaining that nobody has registered yet |
 | unreachable | **503**, fail-closed — an outage is never reported as "no rights" |
 
+One more failure is not in that table because it is not an answer from Admin: if the target itself
+does not answer, the reply is **502**. Worth keeping apart from the 503 above — 503 means the access
+check could not be made, 502 means it was made and passed, and then the service behind it went
+missing.
+
 ### The administrator context is a trust boundary
 
 Before deciding anything, Gateway deletes every `x-template-admin-*` and `x-template-request-id`
-header from the incoming request — on **all** routes, including public ones. It writes them again
-only from a verified `allowed` result. A browser can therefore never forge an administrator
-context, and a service can trust the headers precisely because only Gateway can reach it.
+header from the incoming request — on **all** routes, including public ones. A browser can therefore
+never forge an administrator context, and a service can trust the headers precisely because only
+Gateway can reach it.
+
+What comes back is not symmetrical. The three `x-template-admin-*` headers are written again only
+from a verified `allowed` result. `x-template-request-id` is written on **every** route, from
+Gateway's own id for the request — a public service still gets one to log, it just can never be the
+value the client sent.
+
+### Every refusal comes in the caller's own format
+
+An error from Gateway itself — 403, 404, 502, 503 — is an HTML page when the request's `accept`
+mentions `text/html`, and otherwise `{ "error": …, "message": … }` as JSON. Both are always
+`cache-control: no-store`. That is why a browser gets a readable page and an API client gets a code
+it can branch on, from the same refusal.
 
 ## Responses and encoding
+
+Forwarding rewrites a small, fixed set of headers. `host` is dropped, and `x-forwarded-host` and
+`x-forwarded-proto` are set from the address the browser actually asked for. `x-forwarded-for` is
+neither set nor removed: Gateway does not know the real client address, and a module must not learn
+it from here — that is the edge proxy's job, which is also why the attempt counter in `shared` limits
+per account rather than per address.
 
 The proxy runtime decodes compressed responses transparently, so Gateway asks upstream for
 `accept-encoding: identity` and removes `content-encoding` and `content-length` from what it
@@ -76,12 +106,16 @@ also sets its own session cookie.
 | --- | --- |
 | `PROJECT_SLUG` | Session cookie name Gateway reads to find the session token |
 | `PUBLIC_SITE_URL` | External origin, used in the sign-in link of the 403 page |
-| `SERVICE_URL_*` | Optional overrides of a module's base address — the way back out to a real service |
+| `SERVICE_URL_ADMINER` | Where Adminer lives — the one address Gateway still resolves for itself |
 
 Gateway does not hold addresses any more: the composer builds every module and hands the whole set
 over as `targets`. A target may be an application in this process or a URL, and Gateway does not
 care which — Adminer is a URL today, and a module that has to be moved back out into a service of its
 own becomes one without touching this package.
+
+Which is why only Adminer's variable is listed above. The other `SERVICE_URL_<MODULE>` overrides still
+exist, but they are read by whoever builds that module's client — not here. Pointing
+`SERVICE_URL_AUTH` somewhere else changes nothing about Gateway's routing.
 
 The process's listening port is fixed inside the image. Locally the published host port comes from
 `GATEWAY_PORT` in `.env`; in production nothing is published at all.

@@ -50,7 +50,8 @@ allowlist, so no browser can emit an event.
 
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door and no other: `@template/notifications/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types and nothing else, while
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types, the `NotificationEvent`
+Auth builds and the `StoredNotificationEvent` the admin screen renders — and nothing else, while
 `@template/notifications` still resolves to `createApp` alone. The repository and the routing to
 Email are reachable by no specifier at all.
 
@@ -59,11 +60,15 @@ in the type. What keeps the type honest is the `.output()` schema every procedur
 `satisfies` line beside each router, which refuses to compile when the router holds a name the
 surface is not allowed to hold.
 
-The admin surface issues a CSRF cookie like every other, and no call currently carries a token —
-because nothing on it changes anything. An event is a record of what happened, and a log that can
-be edited is not a record. The browser client no longer keeps a list of which procedures are
-mutations; the link reads the operation's own type, so the day a mutation is added here the token
-travels with it without anyone remembering to add a name to a list.
+The admin surface issues a CSRF cookie like every other, and no call carries a token — because
+nothing on it changes anything. An event is a record of what happened, and a log that can be edited
+is not a record.
+
+There is no code here that would send one either. Adding a mutation to this surface therefore means
+adding both halves by hand: `requireCsrf` on the procedure, and a `headers` option on the browser
+client that sends the token on mutations — [`modules/email/web/src/api.ts`](../email/web/src/api.ts)
+is the working pattern. Neither half arrives on its own, and nothing here fails if they are
+forgotten, which is why it is written down.
 
 ## Data
 
@@ -77,6 +82,7 @@ name. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are a
 | --- | --- |
 | `DATABASE_URL` | Base connection; Notifications uses `<PROJECT_SLUG>_notifications` |
 | `PROJECT_SLUG` | Database naming |
+| `SERVICE_URL_EMAIL` | Email's address, used to build the request this module's client sends — the way back out if Email becomes a service of its own |
 
 ## Commands
 

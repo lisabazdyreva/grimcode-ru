@@ -3,8 +3,8 @@
 Common technical utilities every module is allowed to use.
 
 Business logic and per-module repositories never live here — those belong to the owning module.
-A module may import its own folder, `shared/` and external packages, and nothing
-else.
+A module may import its own folder, `shared/`, external packages and a neighbour's declared
+`@template/<name>/contract`, and nothing else.
 
 ## Runtime modules
 
@@ -14,10 +14,12 @@ else.
 | `service-urls.ts` | The port the process listens on, and the addresses a module's client is built from |
 | `logger.ts` | JSON-line logger with request-scoped child loggers |
 | `crypto.ts` | Ids, single-use tokens, scrypt password hashing, constant-time comparison |
+| `rate-limit.ts` | Fixed-window attempt counter, in memory on purpose — one account's password, not volumetric limits |
 | `http/cookies.ts` | Cookie parsing and serialization, including the expired logout cookie |
 | `http/admin-context.ts` | The verified administrator context headers and their strip/apply/read helpers |
 | `http/csrf.ts` | Double-submit CSRF token issuing and validation |
 | `http/service-app.ts` | Shared Hono app: request ids, access log, health endpoint, fail-closed 503 |
+| `http/spa.ts` | Serving a built SPA with deep-link fallback, and the endpoint that issues its CSRF token |
 | `db/admin-pool.ts` | `createAdminPool`, reachable only as `@template/shared/admin` — the owner's connection, used by `db-init` and nothing else |
 | `rpc.ts` | What a call to a neighbour needs whichever library carries it: `FetchLike`, the deadline, `ServiceUnavailableError` |
 | `trpc/mount.ts` | Mounting a tRPC router on a path prefix, merging `set-cookie` from procedures |

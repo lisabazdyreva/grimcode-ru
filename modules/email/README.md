@@ -80,16 +80,16 @@ the same message twice.
 ## Delivery log
 
 Every message is recorded **before** the transport runs, so nothing can leave the system without
-being in the log. A row holds the immutable snapshot of exactly what was sent: subject, full HTML,
-full plain text, recipient, time, transport and the known provider status.
+being in the log. A row holds the snapshot of what was sent: subject, HTML, plain text, recipient,
+time, transport and the known provider status. One thing is blunted on the way in — a `token=` in a
+link is stored as `token=***`, so the log cannot become a second copy of a one-time key.
 
 The list never carries message bodies; a body is fetched one record at a time. The log reads only
 the Email database, and its contents are never handed to the central Admin bundle or to another
 service. In the admin interface the HTML is shown both as escaped source and as a preview in a
 sandboxed iframe without scripts and without access to the admin origin.
 
-A test send is a real send: it goes through the transport and is recorded with the exact content
-that left the system.
+A test send is a real send: it goes through the transport and is recorded like any other.
 
 ## Surfaces
 
@@ -97,6 +97,7 @@ that left the system.
 | --- | --- | --- |
 | `/internal/rpc` | never routed by Gateway; in-process only | Notifications |
 | `/admin/embed/service/email/rpc` | through Gateway's admin route | administrators granted Email |
+| `/admin/embed/service/email/csrf` | through Gateway's admin route | the admin screen, before every mutation |
 | `/admin/embed/service/email/**` | through Gateway's admin route | the built service admin |
 
 Email has **no public surface**: it is absent from Gateway's public allowlist.
@@ -105,8 +106,9 @@ Email has **no public surface**: it is absent from Gateway's public allowlist.
 
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door and no other: `@template/email/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types and nothing else, while
-`@template/email` still resolves to `createApp` alone. The repository, the transport and the
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types and `EditorDocument`, the
+stored document the editor screen reads — and nothing else, while `@template/email` still resolves to
+`createApp` alone. The repository, the transport and the
 renderer are reachable by no specifier at all — which matters here more than elsewhere, because
 `@maily-to/render` is the one CPU-bound dependency in the process.
 
@@ -121,11 +123,18 @@ Database `<PROJECT_SLUG>_email`, opened as the role of the same name and reachab
 module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
 `migrate` command, which also creates the seed templates.
 
+`email_audit` records who changed what — a template created or updated, a draft made, a version
+published, a test sent — with the administrator and their role. It is a record for the database
+console and not a log in the panel: nothing here reads it back, deliberately, because the delivery log
+is what answers questions about mail. Auth and Admin do surface their own audits, so expect the
+difference.
+
 ## Environment
 
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Base connection; Email uses `<PROJECT_SLUG>_email` |
+| `PROJECT_SLUG` | Database naming |
 | `EMAIL_PROVIDER` | `log` locally, `unisender` in production |
 | `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` | Sender identity |
 | `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | UniSender Go credentials |

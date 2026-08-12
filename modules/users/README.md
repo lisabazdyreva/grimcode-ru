@@ -28,7 +28,8 @@ unique index on `identity_id` makes concurrent first requests converge on the sa
 
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door: `@template/users/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types and nothing else, while
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types and the two profile
+shapes the bundles render — `UserProfile` and `AdminUserProfile` — and nothing else, while
 `@template/users` still resolves to `createApp` alone. Two bundles use it: the App's, for the public
 surface, and this module's own admin panel, which takes the same route rather than reaching into
 `src` by a relative path.
@@ -47,19 +48,29 @@ what protects the data.
 
 ### Public procedures
 
-`getOwnProfile`, `updateOwnProfile`, `updateOwnPreferences`.
+`getOwnProfile`, `updateOwnProfile`.
 
 These back the App's single settings section — the part owned by Users.
 Account, security and session management belong to Auth and are not duplicated here.
 
+Preferences — a language, a theme, a time zone — are deliberately absent. Only the product knows what
+shape they take, and a template that guessed would make every project delete the guess before adding
+its own; a product adds them together with the procedure that changes them.
+
 ### Service admin
 
-`listProfiles`, `getProfile`. Read-only: a profile belongs to the person it describes. This is the product user list; the administrator
-registry is a separate thing owned by Admin and is never shown here. Mutations require the
-Gateway-verified administrator context and a valid CSRF token.
+`listProfiles`, `getProfile`. Read-only, because a profile belongs to the person it describes. This is
+the product user list; the administrator registry is a separate thing owned by Admin and is never
+shown here.
 
-The `email` field of an admin profile row is intentionally `null`: the address belongs to Auth, and
-Users does not mirror it.
+Read-only also means there is no admin mutation here and no builder that checks a CSRF token. The
+browser client already sends one on mutations, so adding a changing procedure needs the server half
+with it — a builder that calls `requireCsrf` — or the token travels and nothing verifies it.
+
+The `email` of an admin profile row is not stored by Users: the address belongs to Auth, and it is
+filled in per request, one call for the whole page. It is `null` only when Auth no longer has that
+identity, which is how a profile left behind by a deleted account shows up rather than looking like
+an ordinary one.
 
 ## Environment
 
@@ -67,6 +78,7 @@ Users does not mirror it.
 | --- | --- |
 | `DATABASE_URL` | Base connection; Users uses `<PROJECT_SLUG>_users` |
 | `PROJECT_SLUG` | Database and cookie naming |
+| `SERVICE_URL_AUTH` | Auth's address, used to build the requests Users' client sends — the session check on every protected call, and the addresses for the admin list |
 
 ## Commands
 

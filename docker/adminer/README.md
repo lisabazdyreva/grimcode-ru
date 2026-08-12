@@ -6,6 +6,12 @@ neutralized PHP wrapper. It reads `DATABASE_URL` or explicit connection-level
 owner-only route. The wrapper connects at PostgreSQL server level and lets Adminer discover
 available databases; it does not contain a service-to-database registry.
 
+**There is no login screen.** The wrapper authenticates itself with those credentials and connects at
+server level, so Gateway's owner-only route is the only gate in front of the database. It also removes
+the `X-Frame-Options: deny` the base image sends, because otherwise the panel could not embed it at
+all. Both are safe for the same reason: that route is reachable by the owner alone, and a
+`SameSite=Lax` session cookie is never sent into a cross-site frame.
+
 The wrapper keeps the reference DOM adjustments used by the stylesheet, including the current-page
 pagination marker. It also applies central Admin's light, dark or system theme through the
 same-origin frame bridge. Its selectors and bridge must be browser-tested whenever the pinned

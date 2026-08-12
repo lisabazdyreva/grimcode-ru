@@ -17,6 +17,7 @@ Reachable without a session:
 | `/app/reset-password` | Ask for a recovery link |
 | `/app/reset-password/confirm` | Choose a new password from that link |
 | `/app/verify-email` | Confirm an address from its link |
+| `/app/confirm-email-change` | Finish moving the account to a new address, from the link sent there |
 
 Everything else — the dashboard and settings — needs one.
 

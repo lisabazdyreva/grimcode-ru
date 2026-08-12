@@ -18,11 +18,16 @@ every service's data at once, which is the whole reason it belongs to the owner 
 
 ## The single authorization method
 
-Gateway calls `admin.authorize` on **every** `/admin/**` request — HTML, API and assets alike. It
-passes the session cookie and the **target**: the panel itself, one service's admin, or the database
-area. Gateway works the target out from the URL and knows nothing about who may reach it.
+Gateway calls `admin.authorize` on every `/admin/**` request it is willing to route — HTML, API and
+assets alike. It passes the session cookie and the **target**: the panel itself, one service's admin,
+or the database area. Gateway works the target out from the URL and knows nothing about who may reach
+it.
+
+A path that names nothing real — an unknown service, or `/admin/embed/` followed by neither `service`
+nor `database` — is Gateway's own 404, and Admin is never asked.
 
 ```
+target names an unknown service   → denied: unknown-service
 no session                        → denied: no-session
 session Auth no longer knows      → denied: no-session
 registry empty, Auth empty        → awaiting-first-user
@@ -34,6 +39,10 @@ owner                             → allowed
 admin with the grant              → allowed
 admin without the grant           → denied: no-grant
 ```
+
+The first line is checked before the session, so a name that is not an admin service is refused
+whoever asks — though Gateway 404s such a path before asking, which makes that branch a guard against
+a caller that is not Gateway.
 
 Gateway computes nothing itself, keeps no copy of the rights and caches no result, which is why a
 changed role or grant takes effect on the very next request.
@@ -94,12 +103,13 @@ in the Auth database, which Admin may never read or reference.
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | never routed by Gateway; in-process only | Gateway, for `authorize` |
+| `/internal/rpc` | never routed by Gateway; in-process only | Gateway for `authorize`, the composer for `isActiveOwner` |
 | `/admin/rpc` | through Gateway's admin route | the central Admin shell |
+| `/admin/csrf` | through Gateway's admin route | the shell, before every mutation |
 | `/admin/**` | through Gateway's admin route | the built shell assets |
 
 `/admin/embed/**` is proxied by Gateway to the embedded applications rather than to this service:
-`services/:id` to that service's admin, `database` to the database browser. See
+`service/:name` to that service's admin, `database` to the database browser. See
 [the admin panel](../../docs/admin-panel.md).
 
 ### Who may do what, and where that is written
@@ -116,13 +126,15 @@ builder **is** the rule:
 
 Two axes and not one — administrator against owner, read against change — which is why this module
 has four while the others have at most two. The owner half stays here and is not lifted into
-`shared`: no other module has an owner-only surface.
+`shared`: Admin is the only module with enough owner-only procedures for a builder to pay for itself.
+Auth has exactly one — blocking an identity — and guards it inside that mutation's body.
 
 ### What a neighbour may see of this module
 
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door: `@template/admin/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types and nothing else, while
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types and
+`AuthorizationResult` — the shape of the decision Gateway acts on — and nothing else, while
 `@template/admin` still resolves to `createApp` alone. It matters more here than anywhere else —
 this module *is* the registry of who may do what, and the rights, the last-owner rule and the audit
 log all live behind `repository.ts`, which no specifier reaches.
@@ -141,9 +153,12 @@ Three callers use that door: Gateway for `authorize` on every `/admin/**` reques
 | --- | --- |
 | `DATABASE_URL` | Base connection; Admin uses `<PROJECT_SLUG>_admin` |
 | `PROJECT_SLUG` | Database and cookie naming |
+| `PUBLIC_SITE_URL` | Decides `Secure` on the cookie `logout` clears — it has to match what Auth set |
+| `SERVICE_URL_AUTH` | Auth's address, used to build the request Admin's client sends — the way back out if Auth becomes a service of its own |
 
 ## Commands
 
 ```bash
 pnpm --filter @template/admin test
+pnpm --filter @template/admin dev:web   # vite dev server for the shell
 ```

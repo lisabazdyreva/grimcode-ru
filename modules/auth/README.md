@@ -38,8 +38,9 @@ the very first registered user is when it bootstraps the first owner.
 
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door: `@template/auth/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the three router types and nothing else,
-while `@template/auth` still resolves to `createApp` alone.
+[`src/contract.ts`](src/contract.ts), which re-exports the three router types and the four shapes
+neighbours and browsers name by hand — `Identity`, `AdminIdentity`, `SessionSummary`,
+`AuthAuditEntry` — and nothing else, while `@template/auth` still resolves to `createApp` alone.
 
 Auth has more callers than any other module — Admin, Users in two separate places, and the
 application's own browser bundle — and holds the password hashes, the session rows and the one-time
@@ -51,8 +52,10 @@ in the type. What keeps the type honest is the `.output()` schema every procedur
 `satisfies` line beside each router, which refuses to compile when the router holds a name the
 surface is not allowed to hold — see [shared/README.md](../../shared/README.md) for how a procedure is added.
 
-The two admin builders here check the CSRF token under the scope `'auth'`, not `'panel'`: every
-admin surface issues its own cookie, so a token minted for the shell is refused here on purpose.
+The admin **mutations** here check the CSRF token under the scope `'auth'`, not `'panel'`: every admin
+surface issues its own cookie, so a token minted for the shell is refused here on purpose. The reads —
+`listIdentities`, `getIdentity`, `listAudit` — are built on the other builder and check the verified
+administrator context alone.
 The public surface has no CSRF token at all and is not meant to — it is the application's own
 surface, and the session cookie's `SameSite=Lax` is what guards it.
 
@@ -65,9 +68,17 @@ surface, and the session cookie's `SameSite=Lax` is what guards it.
 Security properties worth keeping when the template is extended:
 
 - **Recovery does not reveal whether an address exists.** `requestPasswordReset` always answers
-  `ok`. `register` and `requestEmailChange` do not confirm that an address is taken either.
+  `ok`, and `requestEmailChange` answers `ok` for an address already taken.
+- **`register` is the deliberate exception.** It does say that an address is taken, because a form
+  that silently pretends to succeed leaves someone who forgot they had an account with no idea what
+  happened. Sign-in and recovery are the flows that must not disclose, and they do not; a project
+  that needs registration not to either mails the existing account instead — see
+  [docs/admin-access.md](../../docs/admin-access.md).
 - **Login is not an existence oracle.** When no identity matches, a fixed dummy hash is still
   verified so both branches take comparable time.
+- **Guessing one password is not free.** Failed sign-ins are counted per address and refused past the
+  limit, with the same message everyone else gets. Per address rather than per client on purpose:
+  the real client address is known only to the proxy in front of Gateway.
 - **Links work exactly once.** Tokens are consumed in a single atomic statement, so a double click
   cannot use one twice, and issuing a new token of the same purpose invalidates the previous one.
 - **Changing a password ends every session**, including one an attacker may be holding.
@@ -95,7 +106,8 @@ Search and list identities with verification state, blocking state and active se
 - send the ordinary one-time recovery link;
 - resend the verification link of an unverified address;
 - revoke all sessions of a user;
-- **owner only** — block or unblock sign-in.
+- **owner only** — block or unblock sign-in;
+- read this module's own audit log, on a screen of its own.
 
 An administrator never sets or sees a password or a recovery token: recovery uses exactly the same
 time-limited flow through Notifications and Email as a user-initiated request. Blocking
@@ -117,8 +129,9 @@ are never moved into Users.
 ## Outgoing calls
 
 Auth owns no email templates and no delivery. It reports typed events to Notifications, which
-routes them to Email. The recipient locale is a product preference, so it is read from Users
-through its contract — never from its database — and falls back to `en`.
+routes them to Email. It sends no locale with them: the recipient's language is a product preference
+this template does not have, and mail ships in one language. A product that adds preferences reads the
+language here and puts it in the event.
 
 A failed hand-off to Notifications never fails a security flow; it is logged instead.
 
@@ -128,9 +141,14 @@ A failed hand-off to Notifications never fails a security flow; it is logged ins
 | --- | --- |
 | `DATABASE_URL` | Base connection; Auth uses `<PROJECT_SLUG>_auth` on that server |
 | `PROJECT_SLUG` | Database and cookie naming |
-| `PUBLIC_SITE_URL` | Origin used to build verification and recovery links |
+| `PUBLIC_SITE_URL` | Origin of verification and recovery links, and what decides `Secure` on the session cookie |
 | `AUTH_SESSION_TTL_SECONDS` | Session lifetime, 30 days by default |
-| `NODE_ENV` | `production` marks the session cookie `Secure` |
+| `AUTH_LOGIN_ATTEMPT_LIMIT` | Failed sign-ins allowed per address inside one window, 10 by default |
+| `AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS` | Length of that window, 15 minutes by default |
+| `SERVICE_URL_NOTIFICATIONS` | Notifications' address, used to build the request Auth's client sends |
+
+`Secure` follows that origin and **not** `NODE_ENV`, which this module never reads: the local stack
+runs the very same production images over plain http, and a `Secure` cookie would never come back.
 
 ## Commands
 
