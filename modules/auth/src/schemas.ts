@@ -44,20 +44,5 @@ export const authAuditEntrySchema = z.object({
 
 export const passwordSchema = z.string().min(12, 'Password must contain at least 12 characters').max(200);
 
-/**
- * Public Auth surface. Reachable through Gateway as `/service/auth/rpc`.
- * Gateway performs no authorization here: securing these endpoints is Auth's own responsibility.
- */
-
-/**
- * Internal Auth surface. Mounted on the internal RPC path only and never proxied by Gateway,
- * so it stays reachable exclusively from inside the Docker network.
- */
-
-/**
- * Auth service admin surface. Reachable as `/admin/embed/service/auth/rpc` only after Gateway has
- * verified the session, the admin role and the grant on Auth.
- */
-
 /** One line of the audit log, as this module's own panel renders it. */
 export type AuthAuditEntry = z.infer<typeof authAuditEntrySchema>;

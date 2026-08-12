@@ -16,10 +16,10 @@ export interface AdminServiceEntry {
 /**
  * The central Admin shell's own explicit list of admin services.
  *
- * It is declared here rather than derived from `contracts/` or from Gateway at runtime, exactly as
- * Gateway declares its own allowlist. `scripts/check-service-ids.mjs` reconciles the three
- * declarations, so a service can never be reachable through Gateway while being invisible here, or
- * appear here without being routable.
+ * It is declared here rather than derived from anything at runtime, exactly as Gateway declares its
+ * own allowlist. `scripts/check-service-ids.mjs` reconciles the three declarations, so a service can
+ * never be reachable through Gateway while being invisible here, or appear here without being
+ * routable.
  *
  * What an administrator actually sees is filtered by the server: `admin.session` returns only the
  * services their role and grants allow. Hiding an entry is interface only — the direct URL passes

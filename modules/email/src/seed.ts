@@ -1,4 +1,4 @@
-import type { EditorDocument } from './types.js';
+import type { EditorDocument } from './schemas.js';
 
 /**
  * Seed templates.

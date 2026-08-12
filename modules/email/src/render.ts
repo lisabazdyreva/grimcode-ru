@@ -1,5 +1,5 @@
 import { Maily } from '@maily-to/render';
-import type { EditorDocument } from './types.js';
+import type { EditorDocument } from './schemas.js';
 import { convert } from 'html-to-text';
 
 const MAX_HTML_LENGTH = 5_000_000;

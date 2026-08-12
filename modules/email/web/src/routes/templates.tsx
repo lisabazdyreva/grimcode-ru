@@ -23,7 +23,8 @@ const LIMIT = 25;
  * The messages the product can send.
  *
  * A template has a stable key the code refers to, a human name, and the list of variables its
- * document may use. Content itself lives in versions, one series per language.
+ * document may use. Content itself lives in versions — one series per template, because there is one
+ * language.
  *
  * There is no way to create one from here on purpose. A template only means something once code
  * sends it, and its key and variables are that code's side of the agreement — inventing them in a

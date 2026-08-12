@@ -5,8 +5,6 @@ import {
   idSchema,
   isoDateTimeSchema,
   NOTIFICATION_EVENT_TYPES,
-  pageOf,
-  paginationInputSchema,
   type NotificationEventType,
 } from '@template/shared/vocabulary';
 
@@ -65,41 +63,6 @@ export const storedNotificationEventSchema = z.object({
   createdAt: isoDateTimeSchema,
   routedAt: isoDateTimeSchema.nullable(),
 });
-
-export const notificationsInternalContract = {
-  /**
-   * Accepts one typed event. `dedupeKey` makes repeated delivery of the same event harmless:
-   * the second call reports the original event instead of routing it again.
-   */
-  emit: {
-    input: z.object({ event: notificationEventSchema, dedupeKey: z.string().min(1).max(200) }),
-    output: z.object({
-      ok: z.literal(true),
-      eventId: idSchema,
-      deduplicated: z.boolean(),
-    }),
-  },
-};
-
-export const notificationsAdminContract = {
-  listEvents: {
-    input: paginationInputSchema.extend({
-      type: z.enum(NOTIFICATION_EVENT_TYPES).optional(),
-      status: z.enum(['accepted', 'routed', 'failed']).optional(),
-    }),
-    output: pageOf(storedNotificationEventSchema),
-  },
-
-  getEvent: {
-    input: z.object({ id: idSchema }),
-    output: z.object({ event: storedNotificationEventSchema }),
-  },
-};
-
-export const notificationsContract = {
-  internal: notificationsInternalContract,
-  admin: notificationsAdminContract,
-};
 
 /** One event as the admin screen lists it: what arrived, where it went, and whether it got there. */
 export type StoredNotificationEvent = z.infer<typeof storedNotificationEventSchema>;

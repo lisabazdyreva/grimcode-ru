@@ -16,7 +16,7 @@ import {
 } from './render.js';
 import { SEED_TEMPLATES } from './seed.js';
 import { createLogTransport, createUniSenderTransport } from './transport.js';
-import type { EditorDocument } from './types.js';
+import type { EditorDocument } from './schemas.js';
 
 const logger = {
   debug: () => undefined,

@@ -2,7 +2,7 @@ import { EDITOR_FORMAT } from './schemas.js';
 import { newId, withTransaction, type Pool, type PoolClient } from '@template/shared';
 
 import { SEED_TEMPLATES } from './seed.js';
-import type { EditorDocument } from './types.js';
+import type { EditorDocument } from './schemas.js';
 
 export interface TemplateRow {
   id: string;
