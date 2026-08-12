@@ -10,7 +10,8 @@ export function safeReturnPath(value: string | undefined | null): string | null 
 
   // `//evil.test` and `/\evil.test` are both read as another host by browsers.
   if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null;
-  if (/^\/app\/(login|register|reset-password|verify-email)\b/.test(value)) return null;
+  if (/^\/app\/(login|register|reset-password|verify-email|confirm-email-change)\b/.test(value))
+    return null;
   if (value !== '/app' && !value.startsWith('/app/')) return null;
 
   // A control character would be stripped by the browser and could change where this points.
