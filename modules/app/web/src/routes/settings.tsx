@@ -21,7 +21,7 @@ type SessionRow = SessionSummary;
  *
  * "Profile", "Settings" and "Account" as separate destinations only make a person guess which of
  * the three holds the thing they came for. The sections below are split by who owns the data:
- * Users owns the profile and preferences, Auth owns the account, its security and its sessions.
+ * Users owns the profile, Auth owns the account, its security and its sessions.
  */
 export function SettingsScreen() {
   return (

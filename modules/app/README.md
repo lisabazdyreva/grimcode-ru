@@ -46,7 +46,7 @@ There is no separate Profile, Settings and Account. Three top-level destinations
 guess which of them holds what they came for. There is one screen with sections, split by who owns
 the data:
 
-- **Profile** — display name, language, email preferences. Owned by Users.
+- **Profile** — the display name, which is the whole of the profile today. Owned by Users.
 - **Account** — the sign-in address, its confirmation, changing it. Owned by Auth.
 - **Security** — password, and every browser holding a session. Owned by Auth.
 

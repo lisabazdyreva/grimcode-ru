@@ -40,7 +40,8 @@ A tRPC client is typed from the server's router, so the type has to cross the mo
 crosses through one named door: `@template/auth/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the three router types and the four shapes
 neighbours and browsers name by hand — `Identity`, `AdminIdentity`, `SessionSummary`,
-`AuthAuditEntry` — and nothing else, while `@template/auth` still resolves to `createApp` alone.
+`AuthAuditEntry` — and nothing else, while the bare `@template/auth` resolves to `createApp` and
+`migrations` and nothing besides.
 
 Auth has more callers than any other module — Admin, Users in two separate places, and the
 application's own browser bundle — and holds the password hashes, the session rows and the one-time
@@ -72,8 +73,8 @@ Security properties worth keeping when the template is extended:
 - **`register` is the deliberate exception.** It does say that an address is taken, because a form
   that silently pretends to succeed leaves someone who forgot they had an account with no idea what
   happened. Sign-in and recovery are the flows that must not disclose, and they do not; a project
-  that needs registration not to either mails the existing account instead — see
-  [docs/admin-access.md](../../docs/admin-access.md).
+  that needs registration not to either answers `ok` and mails the existing account a "someone tried
+  to register" message instead of answering the form.
 - **Login is not an existence oracle.** When no identity matches, a fixed dummy hash is still
   verified so both branches take comparable time.
 - **Guessing one password is not free.** Failed sign-ins are counted per address and refused past the

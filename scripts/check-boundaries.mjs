@@ -43,8 +43,10 @@ const POOL_FUNCTIONS = ['createPool', 'createAdminPool'];
 
 /**
  * Areas forbidden to read the environment directly — the one boundary the move genuinely weakened,
- * because roles say nothing about credentials read out of `process.env` and connected with as the
- * owner. The second line is in the composer, which deletes them once handed out.
+ * because roles say nothing about credentials read out of `process.env`: a neighbour's
+ * `DB_PASSWORD_<MODULE>` opens that neighbour's database, and `DATABASE_URL` opens every one of them
+ * as the role that owns the server. The second line is in the composer, which deletes both once
+ * handed out.
  */
 const ENV_FORBIDDEN_AREAS = ['modules/*'];
 

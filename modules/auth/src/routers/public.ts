@@ -113,8 +113,8 @@ export const publicRouter = t.router({
          * This does tell the caller that the address is taken, and there is no way around it that a
          * person would forgive: a form that silently pretends to succeed leaves someone who forgot
          * they had an account with no idea what happened. Sign-in and recovery are the flows that
-         * must not disclose, and they do not; a project that needs this one not to either sends the
-         * existing account a "someone tried to register" message — see docs/admin-access.md.
+         * must not disclose, and they do not; a project that needs this one not to either answers
+         * `ok` and sends the existing account a "someone tried to register" message instead.
          */
         throw new TRPCError({ code: 'CONFLICT', message: 'Этот адрес уже занят' });
       }

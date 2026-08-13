@@ -30,18 +30,20 @@ branch: a console account gets `CONNECT` only if a deployment created one, owner
 first time a role appears, an unknown module name is refused. The rule above is about the wiring —
 that is what carries the widest permission.
 
-## Two entry points, and they are not the same thing
+One of those branches names a module rather than a state, and it is the one worth being explicit
+about: `migrate` seeds the email templates for `email` alone. That is operational work of the same
+kind — it needs the schema just applied, it is idempotent, and it renders every template through
+`@maily-to/render`, which is why it belongs to a command that runs once rather than to every start.
 
-- The **entry of the program** is `src/index.ts`. It starts first and builds everything.
-- The **entry for traffic** is Gateway, in `modules/gateway`. It is the only application mounted on
-  the public listener, so every request from outside reaches it before it reaches anything else.
-
-The Compose service is called `server` — the whole process. The module inside it that traffic enters
-through is called `gateway`.
+## Only Gateway is mounted
 
 Mounting anything else on that listener out of convenience — `app.route('/', authApp)` — would put
 the internal surfaces on the public port and let the panel's own admin shadow the four embedded
 ones. No error, no failing build, just a boundary that is gone.
+
+Why the entry of the program and the entry for traffic are different things, and why the Compose
+service `server` is not the module `gateway`, is in
+[docs/architecture.md](../docs/architecture.md).
 
 ## The calls between modules
 
@@ -62,6 +64,18 @@ A module may keep the function it is handed, and may not call it while it is bei
 filled in one module at a time, and the neighbour a cycle points at is not there yet: Auth is built
 before Admin, so calling `isActiveOwner` from inside `createApp` reads `undefined`. Nothing catches
 that — the types are right, the boundaries are unbroken, and the error only says `undefined`.
+
+## The list of secrets is kept by hand
+
+`forgetSecrets` deletes each single-module secret from `process.env` once it has been handed out,
+because one process means one environment and a neighbour's credentials read out of it would open a
+database that is not theirs. Three of its four rules are shapes of a name — `DATABASE_URL`,
+`DATABASE_URL_*`, `DB_PASSWORD_*` — and the fourth is one variable of one module,
+`UNISENDER_GO_API_KEY`.
+
+So a new secret has to be added there by hand, and nothing will remind you: no check reads that list,
+and a forgotten name simply stays readable to every module in the process. It is the one line in the
+wiring that needs maintaining when a module gains a credential of its own.
 
 ## Files
 

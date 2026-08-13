@@ -1,5 +1,5 @@
 /**
- * What a neighbour may see of this module: `@template/email` resolves to `createApp`,
+ * What a neighbour may see of this module: `@template/email` resolves to `createApp`, `migrations` and `seedTemplates`,
  * `@template/email/contract` to here, `dist/repository.js` to nothing at all. Types and only
  * types, and Email is where a leak would hurt most: `@maily-to/render` is the one CPU-bound
  * dependency in the process, and a neighbour must not reach it by following a type.

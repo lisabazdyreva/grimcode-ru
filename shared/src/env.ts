@@ -1,8 +1,10 @@
 /**
  * Typed access to the environment.
  *
- * Every value comes from the single root `.env` documented in `.env.example`. A service only ever
- * reads the variables that are declared for it in the Compose file.
+ * Every value comes from the single root `.env` documented in `.env.example`, declared in one place
+ * to one container. A module never reaches for any of it — `check-boundaries` refuses `process.env`
+ * inside `modules/*` — so every caller here is the composer, its two commands, or `shared` itself on
+ * their behalf.
  */
 
 export class MissingEnvError extends Error {

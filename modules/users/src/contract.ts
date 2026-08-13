@@ -1,5 +1,5 @@
 /**
- * What a neighbour may see of this module: `@template/users` resolves to `createApp`,
+ * What a neighbour may see of this module: `@template/users` resolves to `createApp` and `migrations`,
  * `@template/users/contract` to here, `dist/repository.js` to nothing at all. Types and only
  * types — one value and the `exports` key becomes a formality while the whole module leaks through.
  *

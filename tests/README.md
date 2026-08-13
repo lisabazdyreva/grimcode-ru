@@ -1,11 +1,11 @@
 # Acceptance tests
 
-Fifty-seven checks that run against a **running stack**, over HTTP, through Gateway.
+Fifty-eight checks that run against a **running stack**, over HTTP, through Gateway.
 
 They deliberately do not import module code. A test that called a router directly would prove the
 router works while saying nothing about whether Gateway lets the request through — and Gateway is
-where access is actually decided. So every check here speaks to the stack the way a browser does:
-one URL, one cookie jar, one answer.
+where access is actually decided. So they speak to the stack the way a browser does: one URL, one
+cookie jar, one answer.
 
 Two checks are the exception and speak to PostgreSQL instead: that a module's credentials are
 refused a neighbour's database, and that they open its own. They have to — that refusal arrives on
@@ -36,24 +36,35 @@ administrator opens what they were granted and nothing else; a change or revocat
 effect on the next request; a disabled administrator loses everything. Adminer is owner-only, cannot
 be granted to anyone at all, and has no public route. The admin **assets** are protected too, not
 only its pages — serving them would hand out the panel itself. Forged `x-template-admin-*` headers
-are replaced by Gateway.
+are replaced by Gateway, and a service that is not on the public allowlist answers 404 while the two
+that are on it answer for themselves. A change sent without a CSRF token is refused with a 403, and
+the registry will not let the last active owner be demoted or disabled — 409, naming the reason,
+rather than a silent no-op.
 
 **Security flows** — [`security.test.ts`](src/security.test.ts)
 
 Revoking a session closes protected endpoints immediately. Signing out invalidates the session on
 the server, so a copied cookie is worthless afterwards, and the cookie is cleared as well. Recovery
 answers identically for a known and an unknown address, and an administrator triggering it never
-receives the token. Blocking is owner-only, prevents signing in, is reversible, and an owner cannot
-block themselves.
+receives the token. Guessing a password stops being answered after enough failures, and the correct
+one is refused too for the rest of the window — otherwise the limit would only slow down a guess that
+had already failed. A second address is unaffected while that lasts. Blocking is owner-only, prevents
+signing in, is reversible, refuses another owner who still holds the rights, and an owner cannot block
+themselves.
 
 **Across services** — [`flows.test.ts`](src/flows.test.ts)
 
-A password reset in Auth becomes an event in Notifications and a stored message in Email, whose
-snapshot carries the real one-time link and no unresolved placeholder. Publishing refuses a document
-using an undeclared variable and names it. A published document keeps its `{{name}}` placeholders,
-because the values are per recipient. Each service admin returns only its own service's data, no
-internal surface is reachable through Gateway, the editor is absent from the central Admin bundle,
-the real Adminer survives its own redirect and cookie, and the public site renders on the server.
+A password reset in Auth becomes an event in Notifications and a stored message in Email. The
+snapshot is checked from both sides: it carries the address that actually sets a password rather than
+the form asking for another link, it has no unresolved placeholder left in it, and the token inside
+that link is `***` — the log is a record, not a second copy of a one-time key. Publishing refuses a
+document using an undeclared variable and names it. A published document keeps its `{{name}}`
+placeholders, because the values are per recipient. Each service admin returns only its own service's
+data, no internal surface is reachable through Gateway, the editor is absent from the central Admin
+bundle and from the Email admin's first chunk, and the real Adminer survives its own redirect and
+cookie. The public site renders on the server, answers an unknown address with a real 404, and keeps
+`/app/`, `/admin/` and the placeholder pages out of `robots.txt` and the sitemap. The owner already
+in place stays the owner, and registering promotes nobody.
 
 ## What they leave behind
 
@@ -72,8 +83,11 @@ one fixture template rather than a hundred.
 pnpm test:browser
 ```
 
-Twenty-eight checks in Chromium, for the questions an HTTP request cannot answer. Each one also fails
-on any console error or uncaught exception, so a bundle that renders but throws does not pass.
+Twenty-eight checks in Chromium, for the questions an HTTP request cannot answer. Ten of them also
+fail on any console error or uncaught exception, so a bundle that renders but throws does not pass. It
+is asked for per check, with `collectPageErrors`, and which ones ask is a choice rather than a rule —
+the three Adminer checks do not, because that page is server-rendered PHP and what they are about is
+the colour it ends up.
 
 **The shell** — [`admin-shell.spec.ts`](browser/admin-shell.spec.ts). The panel loads and renders;
 the owner sees every service; the owner-only screens open. The theme applies, survives a reload
@@ -92,10 +106,15 @@ editor opens on its own route and runs, a delivery shows its stored message as a
 source, and the preview frame is fully sandboxed — Chromium refusing to run anything inside it is
 expected and is not counted as an error.
 
-**The application** — [`app.spec.ts`](browser/app.spec.ts). An anonymous visitor is sent to sign in
-and never sees the protected interface, not even for a moment; the page they wanted is remembered;
-an external URL, a protocol-relative one, the admin panel and the login page itself are all refused
-as return paths. Signing in returns them where they were going, and signing out puts them back out.
+**The application, and the site beside it** — [`app.spec.ts`](browser/app.spec.ts). An anonymous
+visitor is sent to sign in and never sees the protected interface, not even for a moment; the page
+they wanted is remembered; an external URL, a protocol-relative one, the admin panel and the login
+page itself are all refused as return paths. Signing in returns them where they were going, and
+signing out puts them back out.
+
+The same file carries two more blocks. A recovery link opens the screen that sets a new password, and
+one arriving without a token says so instead of pretending. The public site renders, links into the
+application, and answers an unknown address with a not-found page of its own.
 
 Chromium is installed once with:
 

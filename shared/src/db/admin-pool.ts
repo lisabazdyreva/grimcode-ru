@@ -15,7 +15,8 @@ import type { Pool } from './pool.js';
 export function createAdminPool(connectionString: string): Pool {
   const pool = new pg.Pool({
     connectionString,
-    // One caller, a handful of statements, and it exits when it is done.
+    // Two callers, a handful of statements each, and both exit when they are done: `db-init`, and
+    // the acceptance check that a module's credentials are refused a neighbour's database.
     max: 2,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,

@@ -29,10 +29,10 @@ unique index on `identity_id` makes concurrent first requests converge on the sa
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door: `@template/users/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the two router types and the two profile
-shapes the bundles render — `UserProfile` and `AdminUserProfile` — and nothing else, while
-`@template/users` still resolves to `createApp` alone. Two bundles use it: the App's, for the public
-surface, and this module's own admin panel, which takes the same route rather than reaching into
-`src` by a relative path.
+shapes the bundles render — `UserProfile` and `AdminUserProfile` — and nothing else, while the bare
+`@template/users` resolves to `createApp` and `migrations` and nothing besides. Two bundles use it:
+the App's, for the public surface, and this module's own admin panel, which takes the same route
+rather than reaching into `src` by a relative path.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
 in the type. What keeps the type honest is the `.output()` schema every procedure declares and the

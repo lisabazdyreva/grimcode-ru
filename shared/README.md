@@ -3,8 +3,9 @@
 Common technical utilities every module is allowed to use.
 
 Business logic and per-module repositories never live here — those belong to the owning module.
-A module may import its own folder, `shared/`, external packages and a neighbour's declared
-`@template/<name>/contract`, and nothing else.
+A module may import its own folder, `shared/`, a neighbour's declared `@template/<name>/contract`, and
+external packages — except the ones that open a door out of the process. The database driver is the
+only one so far, and it is declared here.
 
 ## Runtime modules
 
@@ -18,9 +19,9 @@ A module may import its own folder, `shared/`, external packages and a neighbour
 | `http/cookies.ts` | Cookie parsing and serialization, including the expired logout cookie |
 | `http/admin-context.ts` | The verified administrator context headers and their strip/apply/read helpers |
 | `http/csrf.ts` | Double-submit CSRF token issuing and validation |
-| `http/service-app.ts` | Shared Hono app: request ids, access log, health endpoint, fail-closed 503 |
-| `http/spa.ts` | Serving a built SPA with deep-link fallback, and the endpoint that issues its CSRF token |
-| `db/admin-pool.ts` | `createAdminPool`, reachable only as `@template/shared/admin` — the owner's connection, used by `db-init` and nothing else |
+| `http/service-app.ts` | Shared Hono app: request ids, access log, `/healthz`; and `serveService`, which puts one on its port |
+| `http/spa.ts` | Serving a built SPA with deep-link fallback, refusing any path that would escape the build directory, and the endpoint that issues its CSRF token |
+| `db/admin-pool.ts` | `createAdminPool`, reachable only as `@template/shared/admin` — the owner's connection, for `db-init` and for the one acceptance check that proves a module's credentials are refused a neighbour's database |
 | `rpc.ts` | What a call to a neighbour needs whichever library carries it: `FetchLike`, the deadline, `ServiceUnavailableError` |
 | `trpc/mount.ts` | Mounting a tRPC router on a path prefix, merging `set-cookie` from procedures |
 | `trpc/builders.ts` | The context every procedure has, and the two guards admin surfaces are built from |
@@ -29,6 +30,7 @@ A module may import its own folder, `shared/`, external packages and a neighbour
 | `db/migrator.ts` | Versioned migrations with recorded versions, checksums and advisory locks |
 | `theme.ts` | The same-origin `postMessage` protocol between Admin shell and service iframes |
 | `vocabulary.ts` | The words the whole template shares: schema primitives, service ids, admin roles, the verified admin context |
+| `index.ts` | The barrel, and what it leaves out: `vocabulary.ts` and `db/admin-pool.ts` have subpaths of their own, so neither arrives by importing `@template/shared` |
 
 ### Admin context is a trust boundary
 
@@ -44,7 +46,7 @@ again changes nothing. Editing an already released migration is an error — add
 
 ## Adding a procedure
 
-Two files, and the second step is the one that is easy to skip.
+Two places in the same file, and the second is the one that is easy to skip.
 
 1. **Write the procedure in the module's router**, schemas and all:
 
@@ -65,8 +67,12 @@ Two files, and the second step is the one that is easy to skip.
    type AdminName = 'listIdentities' | 'getIdentity' | 'revokeSession';
    ```
 
-   Forget it and the build fails, naming the procedure. That is the point of the list: it is what
-   stops an admin procedure from being written into a public router, where anyone could call it.
+   Forget it and `tsc` fails, naming the procedure:
+   `'revokeSession' does not exist in type 'Record<AdminName, unknown>'`.
+
+   That is the point of the list — it is what stops an admin procedure from being written into a
+   public router, where anyone could call it — and it is the compiler that enforces it, not a script
+   of ours. `check-procedures.mjs` never reads the names; it would count the stray procedure and pass.
 
 ### Two things here are not the tRPC from the documentation
 
@@ -82,20 +88,23 @@ object literals, not to the row you read from a repository.
 contract to be complete against. The list is a plain type and `satisfies` is a plain keyword; what
 it buys is that a procedure cannot land on the wrong surface unnoticed.
 
-Both are deliberate, and both cost a line. If a check ever refuses your router, it is one of these
-two — not a bug.
+Both are deliberate, and both cost a line — but only the first is what `check-procedures.mjs` looks
+for. That script refuses three things, and a router it turns down is failing one of them rather than
+hitting a bug: a procedure with no `.output()`; an admin procedure that changes something while built
+on a builder that does not pipe `requireCsrf` in; and a router nobody mounts, because an unmounted
+surface is one it cannot judge.
 
 ## No shared UI
 
-There is no shared stylesheet and no shared component. Each service admin vendors its own shadcn
-source and its own palette, and Adminer keeps a stylesheet of its own — the same values written out
-in three places on purpose, so one service restyling itself cannot restyle its neighbours.
+There is no shared stylesheet and no shared component — nothing in this package renders anything.
+Each admin vendors its own shadcn source and its own copy of the tokens, and Adminer keeps a
+stylesheet of its own: six copies of the same values on purpose, so one service restyling itself
+cannot restyle its neighbours.
 
 What is shared is the *convention*: `light` and `dark` are explicit through `[data-theme]`, and
-`system` is the absence of the attribute, which is exactly what the shell's theme bridge sends.
-
-The kit exists for server-rendered or third-party admin surfaces only. React admins use the real
-checked-in shadcn source components from the central Admin and share nothing but the tokens.
+`system` is the absence of the attribute, which is exactly what the shell's theme bridge sends. The
+one line of code behind it is `applyTheme` in `theme.ts`, and the Adminer wrapper implements the same
+rule in PHP rather than importing it.
 
 ## Commands
 

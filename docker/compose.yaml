@@ -2,7 +2,7 @@
 #
 # Local development runs `docker/compose.local.yaml` instead, through `pnpm start`.
 #
-# Two containers of ours and one job that runs to completion. `server` is the whole application —
+# Two containers of ours and two jobs that run to completion. `server` is the whole application —
 # every module in one process — and `adminer` is a third-party console the panel embeds. Nothing is
 # reachable from outside except through `server`. PostgreSQL is not here: in production the database
 # is a managed resource of the deployment platform, reached through DATABASE_URL, so the application
@@ -19,6 +19,11 @@
 
 name: ${PROJECT_SLUG:?PROJECT_SLUG is required}
 
+# Kept apart from `x-app` because Adminer has a build of its own and still wants the same limits.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '3' }
+
 # One image, three uses: the application, and two jobs that run to completion before it starts.
 # Pinning `image` means it is built once and the two jobs reuse it rather than each building a copy.
 x-app: &app
@@ -26,13 +31,15 @@ x-app: &app
   build:
     context: ..
     dockerfile: docker/Dockerfile
-  logging:
-    driver: json-file
-    options: { max-size: '10m', max-file: '3' }
+  logging: *logging
 
-# What every module needs to open its own database, and nothing that belongs to only one of them.
-# Each module connects as `<PROJECT_SLUG>_<module>` with its own password; the role, not the code,
-# is what makes a neighbour's database unopenable.
+# What all three of our containers need, and nothing that belongs to only one of them: the mail
+# settings are declared on `server` alone, the console account on `db-init` alone.
+#
+# Per-module variables do belong here, because all three read them — the composer to open the five
+# pools, `migrate` to apply migrations, `db-init` to create the roles. Each module connects as
+# `<PROJECT_SLUG>_<module>` with its own password; the role, not the code, is what makes a
+# neighbour's database unopenable.
 x-app-environment: &app-environment
   PROJECT_SLUG: ${PROJECT_SLUG}
   LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -80,7 +87,6 @@ services:
     <<: *app
     environment:
       <<: *app-environment
-      PROJECT_SLUG: ${PROJECT_SLUG}
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:?PUBLIC_SITE_URL is required}
       AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-2592000}
       AUTH_LOGIN_ATTEMPT_LIMIT: ${AUTH_LOGIN_ATTEMPT_LIMIT:-10}
@@ -119,9 +125,7 @@ services:
     # else. It never gets a host port, in any environment.
     expose: ['8080']
     networks: [internal]
-    logging:
-      driver: json-file
-      options: { max-size: '10m', max-file: '3' }
+    logging: *logging
 
 networks:
   internal:

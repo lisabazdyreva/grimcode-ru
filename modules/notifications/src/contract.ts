@@ -1,5 +1,5 @@
 /**
- * What a neighbour may see of this module: `@template/notifications` resolves to `createApp`,
+ * What a neighbour may see of this module: `@template/notifications` resolves to `createApp` and `migrations`,
  * `@template/notifications/contract` to here, `dist/repository.js` to nothing at all. Types and
  * only types — one value and the `exports` key becomes a formality while the module leaks through.
  *

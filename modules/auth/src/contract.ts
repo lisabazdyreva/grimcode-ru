@@ -1,5 +1,5 @@
 /**
- * What a neighbour may see of this module: `@template/auth` resolves to `createApp`,
+ * What a neighbour may see of this module: `@template/auth` resolves to `createApp` and `migrations`,
  * `@template/auth/contract` to here, `dist/repository.js` to nothing at all. Auth has the most
  * callers and holds password hashes, session rows and one-time tokens; all three live behind
  * `repository.ts`, which no specifier reaches.
