@@ -77,6 +77,13 @@ So a new secret has to be added there by hand, and nothing will remind you: no c
 and a forgotten name simply stays readable to every module in the process. It is the one line in the
 wiring that needs maintaining when a module gains a credential of its own.
 
+Deleting them is safe because of where they are read. Everything that comes out of the environment is
+read at the top of `compose()` — the pools, and the mail settings handed to Email — and this runs at
+the bottom, after every module has been built. A module reading a secret of its own instead would
+make its credentials depend on where in that order it happens to be built, and an emptied key does
+not announce itself: UniSender Go would simply refuse every message, one delivery recorded `failed`
+at a time.
+
 ## Files
 
 | File | What is in it |

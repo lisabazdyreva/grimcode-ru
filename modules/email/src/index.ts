@@ -15,13 +15,23 @@ import {
 import { EmailRepository } from './repository.js';
 import { renderMessage } from './render.js';
 import { adminRouter, internalRouter } from './routers.js';
-import { createTransport } from './transport.js';
+import { createTransport, type MailSettings } from './transport.js';
 
 export { migrations } from './db/migrations.js';
+export type { MailSettings } from './transport.js';
 
-export interface EmailDeps {
+/**
+ * What seeding needs, and no transport: it renders templates and writes rows, it never sends. Kept
+ * separate so the `migrate` job does not have to carry mail settings it has no use for.
+ */
+export interface EmailSeedDeps {
   logger: Logger;
   pool: Pool;
+}
+
+export interface EmailDeps extends EmailSeedDeps {
+  /** The mail settings, read from the environment by the composer and handed over here. */
+  mail: MailSettings;
 }
 
 /**
@@ -33,7 +43,7 @@ export interface EmailDeps {
  * renders every template through `@maily-to/render`. It belongs to the `migrate` command, where it
  * stops running on every restart of the process.
  */
-export async function seedTemplates(deps: EmailDeps): Promise<number> {
+export async function seedTemplates(deps: EmailSeedDeps): Promise<number> {
   const repo = new EmailRepository(deps.pool);
 
   const seeded = await repo.ensureSeedTemplates((document, subject) =>
@@ -46,7 +56,7 @@ export async function seedTemplates(deps: EmailDeps): Promise<number> {
 
 export function createApp(deps: EmailDeps): ServiceApp {
   const repo = new EmailRepository(deps.pool);
-  const transport = createTransport(deps.logger);
+  const transport = createTransport(deps.mail, deps.logger);
   const app = createServiceApp('email', deps.logger);
 
   mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({

@@ -18,7 +18,17 @@ import { SEED_TEMPLATES } from './seed.js';
 import { RPC_TIMEOUT_MS } from '@template/shared';
 
 import { createLogTransport, createUniSenderTransport, PROVIDER_TIMEOUT_MS } from './transport.js';
+import type { MailSettings } from './transport.js';
 import type { EditorDocument } from './schemas.js';
+
+/** Settings of a configured provider, as the composer would hand them over. */
+const configured: MailSettings = {
+  provider: 'unisender',
+  apiKey: 'test-key',
+  apiUrl: '',
+  fromAddress: 'no-reply@example.com',
+  fromName: '',
+};
 
 const logger = {
   debug: () => undefined,
@@ -224,19 +234,18 @@ describe('transports', () => {
   });
 
   it('refuses to send through UniSender Go without credentials', async () => {
-    delete process.env.UNISENDER_GO_API_KEY;
-    const transport = createUniSenderTransport(async () => new Response('{}'));
+    const transport = createUniSenderTransport(
+      { ...configured, apiKey: '' },
+      async () => new Response('{}'),
+    );
     await expect(
       transport.send({ dedupeKey: 'k', to: 'a@example.com', subject: 's', html: '', text: '' }),
     ).rejects.toThrow(/not configured/);
   });
 
   it('passes the dedupe key to the provider as its idempotency key', async () => {
-    process.env.UNISENDER_GO_API_KEY = 'test-key';
-    process.env.EMAIL_FROM_ADDRESS = 'no-reply@example.com';
-
     let body: unknown;
-    const transport = createUniSenderTransport(async (_url, init) => {
+    const transport = createUniSenderTransport(configured, async (_url, init) => {
       body = JSON.parse(String((init as RequestInit).body));
       return new Response(JSON.stringify({ status: 'success', job_id: 'job-1' }), { status: 200 });
     });
@@ -251,9 +260,6 @@ describe('transports', () => {
 
     expect(result.providerMessageId).toBe('job-1');
     expect(body).toMatchObject({ message: { idempotence_key: 'delivery-42', track_links: 0 } });
-
-    delete process.env.UNISENDER_GO_API_KEY;
-    delete process.env.EMAIL_FROM_ADDRESS;
   });
 
   /**
@@ -267,10 +273,8 @@ describe('transports', () => {
   });
 
   it('reports a rejected recipient as a failure', async () => {
-    process.env.UNISENDER_GO_API_KEY = 'test-key';
-    process.env.EMAIL_FROM_ADDRESS = 'no-reply@example.com';
-
     const transport = createUniSenderTransport(
+      configured,
       async () =>
         new Response(JSON.stringify({ status: 'success', failed_emails: { 'a@example.com': 'invalid' } })),
     );
@@ -278,9 +282,6 @@ describe('transports', () => {
     await expect(
       transport.send({ dedupeKey: 'k', to: 'a@example.com', subject: 's', html: '', text: '' }),
     ).rejects.toThrow(/rejected the recipient/);
-
-    delete process.env.UNISENDER_GO_API_KEY;
-    delete process.env.EMAIL_FROM_ADDRESS;
   });
 });
 

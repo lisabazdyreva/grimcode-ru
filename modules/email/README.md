@@ -107,10 +107,11 @@ Email has **no public surface**: it is absent from Gateway's public allowlist.
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door and no other: `@template/email/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the two router types and `EditorDocument`, the
-stored document the editor screen reads — and nothing else, while `@template/email` still resolves to
-`createApp` alone. The repository, the transport and the
-renderer are reachable by no specifier at all — which matters here more than elsewhere, because
-`@maily-to/render` is the one CPU-bound dependency in the process.
+stored document the editor screen reads — and nothing else. `@template/email` is the other entry and
+belongs to the composer, not to a neighbour: `createApp`, `migrations`, `seedTemplates` for the
+migrate job, and `MailSettings`, the shape of what `createApp` is handed. The repository, the
+transport and the renderer are reachable by no specifier at all — which matters here more than
+elsewhere, because `@maily-to/render` is the one CPU-bound dependency in the process.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
 in the type. What keeps the type honest is the `.output()` schema every procedure declares and the
@@ -131,13 +132,17 @@ difference.
 
 ## Environment
 
+Nothing in this module reads it. The composer opens the database and reads the mail settings, and
+hands both to `createApp` as `pool` and `mail`; the API key is a secret of this one module, and the
+composer deletes it from the environment once it has been handed over. What follows is what a
+deployment sets on this module's behalf.
+
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Base connection; Email uses `<PROJECT_SLUG>_email` |
-| `PROJECT_SLUG` | Database naming |
-| `EMAIL_PROVIDER` | `log` locally, `unisender` in production |
-| `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` | Sender identity |
-| `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | UniSender Go credentials |
+| `DATABASE_URL`, `PROJECT_SLUG` | The composer opens `<PROJECT_SLUG>_email` from these |
+| `EMAIL_PROVIDER` | `log` locally, `unisender` in production; anything else, empty included, records without sending |
+| `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` | Sender identity; UniSender Go refuses to send without an address |
+| `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | UniSender Go credentials; an unset URL means the provider's own |
 
 ## Commands
 

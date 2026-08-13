@@ -1,4 +1,4 @@
-import { optionalEnv, RPC_TIMEOUT_MS, type Logger } from '@template/shared';
+import { RPC_TIMEOUT_MS, type Logger } from '@template/shared';
 
 /**
  * Deadline on the one outbound call this module makes.
@@ -12,6 +12,32 @@ import { optionalEnv, RPC_TIMEOUT_MS, type Logger } from '@template/shared';
 export const PROVIDER_TIMEOUT_MS = RPC_TIMEOUT_MS - 2_000;
 
 export type TransportName = 'log' | 'unisender';
+
+/** Where UniSender Go answers when a deployment does not name another address. */
+const UNISENDER_API_URL = 'https://go1.unisender.ru/ru/transactional/api/v1';
+
+/**
+ * Everything the mail transport needs, handed over by the composer.
+ *
+ * The module does not read the environment: the API key is a secret of this one module, and the
+ * composer deletes it from `process.env` once it has been handed out. Reading it here instead would
+ * make the key depend on where in `compose()` this module happens to be built.
+ *
+ * The values arrive as they were written, unset ones as empty strings, and what empty means is
+ * decided here — one per field, and each on purpose. `provider` is not narrowed to `TransportName`
+ * for the same reason: it comes from a person editing a file, and anything that is not `unisender`
+ * is the log transport, so a misspelt provider records messages instead of mailing them.
+ */
+export interface MailSettings {
+  /** Anything but `unisender`, empty included, selects the log transport. */
+  provider: string;
+  apiKey: string;
+  /** Empty means the provider's own address above. */
+  apiUrl: string;
+  /** Empty is not a default but a refusal: UniSender Go will not send without a sender. */
+  fromAddress: string;
+  fromName: string;
+}
 
 export interface OutboundMessage {
   /** Reused as the provider's idempotency key, so a retry cannot send twice. */
@@ -67,15 +93,15 @@ export class TransportConfigurationError extends Error {
  * A concrete project adds another provider by implementing this small interface, which is an
  * ordinary code change rather than a configuration matrix.
  */
-export function createUniSenderTransport(fetchFn: typeof fetch = fetch): Transport {
-  const apiKey = optionalEnv('UNISENDER_GO_API_KEY', '');
-  const apiUrl = optionalEnv(
-    'UNISENDER_GO_API_URL',
-    'https://go1.unisender.ru/ru/transactional/api/v1',
-  ).replace(/\/+$/, '');
-  const fromEmail = optionalEnv('EMAIL_FROM_ADDRESS', '');
-  const fromName = optionalEnv('EMAIL_FROM_NAME', '');
+export function createUniSenderTransport(
+  settings: MailSettings,
+  fetchFn: typeof fetch = fetch,
+): Transport {
+  const { apiKey, fromAddress: fromEmail, fromName } = settings;
+  const apiUrl = (settings.apiUrl === '' ? UNISENDER_API_URL : settings.apiUrl).replace(/\/+$/, '');
 
+  // The message names the variables rather than the fields, though this module reads neither: what
+  // it is asking for is an edit to a deployment's environment, and that is where the names are.
   const missing = [
     ...(apiKey === '' ? ['UNISENDER_GO_API_KEY'] : []),
     ...(fromEmail === '' ? ['EMAIL_FROM_ADDRESS'] : []),
@@ -130,9 +156,14 @@ export function createUniSenderTransport(fetchFn: typeof fetch = fetch): Transpo
   };
 }
 
-export function createTransport(logger: Logger, fetchFn: typeof fetch = fetch): Transport {
-  return optionalEnv('EMAIL_PROVIDER', 'log') === 'unisender'
-    ? createUniSenderTransport(fetchFn)
+/** Which transport the settings ask for. The choice stays here; the values come from outside. */
+export function createTransport(
+  settings: MailSettings,
+  logger: Logger,
+  fetchFn: typeof fetch = fetch,
+): Transport {
+  return settings.provider === 'unisender'
+    ? createUniSenderTransport(settings, fetchFn)
     : createLogTransport(logger);
 }
 

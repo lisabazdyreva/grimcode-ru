@@ -6,7 +6,11 @@ import {
   migrations as authMigrations,
   type IsActiveOwner,
 } from '@template/auth';
-import { createApp as createEmailApp, migrations as emailMigrations } from '@template/email';
+import {
+  createApp as createEmailApp,
+  migrations as emailMigrations,
+  type MailSettings,
+} from '@template/email';
 import { createApp as createGatewayApp, type GatewayTargets } from '@template/gateway';
 import {
   createApp as createNotificationsApp,
@@ -17,6 +21,7 @@ import {
   createPool,
   createTrpcClient,
   internalServiceUrl,
+  optionalEnv,
   publicSiteUrl,
   serviceDatabaseName,
   waitForDatabase,
@@ -74,6 +79,13 @@ export async function compose(): Promise<Composition> {
     DATABASE_MODULES.map((name) => [name, createPool(name)]),
   ) as Record<DatabaseModule, Pool>;
 
+  /*
+   * The pools above and this line are everything that reads the environment, and `forgetSecrets`
+   * runs below every module. Between those two points no module has to be built in any particular
+   * order for the credentials it was handed to still be there.
+   */
+  const mail = mailSettings();
+
   // Cold local starts race the PostgreSQL container; five waits at once cost the same as one.
   await Promise.all(DATABASE_MODULES.map((name) => waitForDatabase(pools[name])));
 
@@ -120,7 +132,7 @@ export async function compose(): Promise<Composition> {
     return (await admin.isActiveOwner.query({ userId })).activeOwner;
   };
 
-  apps.email = createEmailApp({ logger: moduleLogger('email'), pool: pools.email });
+  apps.email = createEmailApp({ logger: moduleLogger('email'), pool: pools.email, mail });
 
   apps.notifications = createNotificationsApp({
     logger: moduleLogger('notifications'),
@@ -177,14 +189,34 @@ export async function compose(): Promise<Composition> {
 }
 
 /**
+ * The mail settings of the Email module, read here because a module does not read the environment.
+ *
+ * Every one of them is read the same way and forwarded as written — unset reads as empty, and not
+ * one of these lines says what empty then means. That belongs to the module: an empty provider is
+ * the log transport, an empty address is a provider that refuses to send. Written here instead,
+ * `EMAIL_PROVIDER` misspelt in a `.env` would be this file's decision about whether to mail people.
+ */
+function mailSettings(): MailSettings {
+  return {
+    provider: optionalEnv('EMAIL_PROVIDER', ''),
+    apiKey: optionalEnv('UNISENDER_GO_API_KEY', ''),
+    apiUrl: optionalEnv('UNISENDER_GO_API_URL', ''),
+    fromAddress: optionalEnv('EMAIL_FROM_ADDRESS', ''),
+    fromName: optionalEnv('EMAIL_FROM_NAME', ''),
+  };
+}
+
+/**
  * Removes from the environment everything that belonged to one module, once it has been handed out.
  *
  * The second line behind "a module does not read the environment", now that one process shares one
  * `process.env`.
  *
- * **The order is the whole of it.** `env.ts` reads lazily, and the pools and the mail transport take
- * their secrets above. Move this call one line earlier and the transport gets an empty key — with no
- * error, because an empty key is what "no provider configured" looks like.
+ * **The order still matters, but it is one rule in one file:** everything that reads the environment
+ * happens at the top of `compose()` — the pools and the mail settings — and this runs at the bottom.
+ * Reading a secret anywhere between the two is what would break, and the failure is quiet enough to
+ * be worth the rule: an emptied key leaves UniSender Go refusing every message, and the refusal
+ * surfaces as a delivery recorded `failed` rather than as anything at start-up.
  */
 function forgetSecrets(logger: Logger): void {
   const forgotten = Object.keys(process.env).filter(
