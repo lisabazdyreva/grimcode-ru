@@ -2,12 +2,14 @@
 
 # Architecture
 
-A modular monolith: eight modules in one process, each owning its own data and its own interface,
-plus the database browser the admin panel embeds, which stays a container of its own.
+A modular monolith: eight modules in one process, each owning its own interface and — where it keeps
+state — its own database, plus the database browser the admin panel embeds, which stays a container
+of its own.
 
-Modules are still modules. Separate packages of the workspace, separate databases, talking to each
-other through contracts and nothing else. What changed is where they run, not what they are allowed
-to know about each other.
+Modules are still modules. Separate packages of the workspace, and on the server they call each other
+through `@template/<name>/contract` and nothing else — `check-boundaries` refuses a build where one
+reaches for anything more. What changed is where they run, not what they are allowed to know about
+each other.
 
 ## The shape of it
 
@@ -20,16 +22,20 @@ flowchart LR
 
     gateway -->|/| site[Site]
     gateway -->|/app/| app[App]
-    gateway -->|/service/auth| auth[Auth]
-    gateway -->|/service/users| users[Users]
+    gateway -->|/service/:name| auth[Auth]
+    gateway -->|/service/:name| users[Users]
     gateway -->|/admin| admin[Admin]
-    gateway -->|/admin/embed/service/*| serviceAdmins[Service admins]
+    gateway -->|/admin/embed/service/:name| auth
+    gateway -->|/admin/embed/service/:name| users
+    gateway -->|/admin/embed/service/:name| notifications[Notifications]
+    gateway -->|/admin/embed/service/:name| email[Email]
 
     gateway -.->|authorize| admin
-    admin -.->|revokeSessionByToken| auth
+    admin -.->|sessions, identities| auth
+    users -.->|session, addresses| auth
     auth -.->|isActiveOwner| admin
-    auth -.->|emit| notifications[Notifications]
-    notifications -.->|send| email[Email]
+    auth -.->|emit| notifications
+    notifications -.->|send| email
   end
 
   gateway -->|/admin/embed/database| adminer[(Database browser)]
@@ -42,11 +48,16 @@ flowchart LR
 ```
 
 Solid lines are requests arriving from outside; dotted lines are calls modules make to each other.
-Both are the same thing now — a `Request` answered by a module's own application — and they still go
-through the contracts, so what crosses a boundary is exactly what crossed it over the network.
+Both are the same thing now — a `Request` answered by a module's own application — but they are not
+the same kind of traffic. A dotted one goes through the contract, so what crosses a boundary is
+exactly what crossed it over the network. A solid one Gateway forwards without reading: it routes by
+path and rewrites nothing, and the only contract call it makes is `authorize`.
 
-Adminer is outside the box on purpose: it is the one target that is still a real address over a real
-network.
+A dotted label names the procedure where there is only one of them, and the subject where there are
+several — the callee's own README lists which procedures each neighbour calls.
+
+Adminer is outside the box on purpose: it is the one target Gateway routes to that is still a real
+address over a real network.
 
 ## Two entry points, and they are not the same thing
 
@@ -61,15 +72,14 @@ The Compose service is called `server` — the whole process. The module inside 
 through is called `gateway`. Neither name is the other.
 
 The composer is allowed to know every module, which makes it the widest permission in the
-repository. It can afford that only while it contains no decisions at all — just the order of calls.
-The moment it starts deciding something, that permission becomes the hole the decision is made
-through.
+repository. It can afford that only while the wiring holds no decisions — just the order of calls.
+The moment one moves in, that permission becomes the hole the decision is made through.
 
 ## Why it is split this way
 
-Each module owns one thing completely, including its database. Nothing reads another module's
-tables — a module that did would break the moment the other changed a column, and there would be no
-way to replace one of them without replacing both.
+Each module owns one thing completely, including the database it keeps that thing in, where it has
+one. Nothing reads another module's tables — a module that did would break the moment the other
+changed a column, and there would be no way to replace one of them without replacing both.
 
 Sharing a process does not soften that. A module connects as a role of its own and `PUBLIC` has no
 `CONNECT`, so a module handed a neighbour's database name is refused while connecting, before a
@@ -78,10 +88,10 @@ neighbour's table: to every check that reads code, SQL is a string and not a str
 
 | Module | Owns | Deliberately does not know |
 | --- | --- | --- |
-| **gateway** | The public surface: routing, allowlists, the admin decision | Any business rule |
+| **gateway** | The public surface: routing, allowlists, enforcing the admin decision | Any business rule, and who is allowed — it asks Admin |
 | **site** | Public pages | Anything about a signed-in person |
-| **app** | The interface behind sign-in | Any data; it asks Auth and Users |
-| **auth** | Identity, passwords, sessions, security events | Who is an administrator; product data |
+| **app** | The interface behind sign-in | Any data; its pages ask Auth and Users |
+| **auth** | Identity, passwords, sessions, security events | Who is an administrator — it asks Admin; product data |
 | **users** | The product profile | Passwords, sessions, admin rights |
 | **admin** | Who may open the panel and what they may reach | How anyone signs in |
 | **notifications** | Typed events and where they go | How a message is written or sent |
@@ -92,7 +102,8 @@ profile is *who they are inside the product*. Keeping them apart is what lets a 
 profile fields freely without touching anything that guards an account.
 
 Admin is a third thing again: being an administrator is not a property of an identity, it is a
-separate record. That is why deleting an administrator entry never touches the account.
+separate record. That is why disabling an administrator, which is what the registry offers instead of
+a delete, never touches the account.
 
 ## One way in
 
@@ -143,9 +154,11 @@ server's toolbox would follow it into a page.
 A module still may not import a neighbour's code — `scripts/check-boundaries.mjs` refuses a build
 where one does — with a single exception it names explicitly: `@template/<neighbour>/contract`, and
 that specifier only. The exception exists because a tRPC client is typed from the server's router,
-so the type has to cross the boundary; the door is one `exports` key per module, resolving to a file
-that re-exports router types and nothing else. `@template/auth` alone still resolves to `createApp`,
-and `dist/repository.js` resolves to nothing at all.
+so the type has to cross the boundary; the door is one `exports` key — `./contract`, on each of the
+five modules a neighbour has to see into — resolving to a file that carries types and nothing but
+types: the router types, and the shapes inferred from that module's schemas. The bare
+`@template/auth` still resolves to `createApp` and `migrations`, and `dist/repository.js` resolves to
+nothing at all.
 
 That door is a projection of the implementation, not an agreement, and it is not what keeps a
 router honest. Two things do, and both are ordinary TypeScript rather than machinery of ours.
@@ -200,8 +213,10 @@ restart loop.
 
 Credentials are handed to a module and never read by it. The composer reads the environment, opens
 the five pools, gives each module the one that is its own, and then deletes the single-module secrets
-from `process.env` — because in one process that variable is shared by everyone in it, and a
-neighbour's credentials read out of it would connect as the owner, past the roles entirely.
+from `process.env` — because in one process that variable is shared by everyone in it. Two different
+things are in there: a neighbour's `DB_PASSWORD_<MODULE>`, which opens that neighbour's database as
+its role, and `DATABASE_URL` itself, which is the role that owns the server and goes past the roles
+entirely.
 
 In production the server is a managed resource of the deployment platform, reached through
 `DATABASE_URL`. Locally it is a container in the same Compose project, so the whole thing has one
@@ -213,12 +228,14 @@ Isolation of failure, and it is worth naming rather than glossing. When every mo
 an out-of-memory kill or a rendering job that would not finish took down that container alone. In one
 process it takes down everything, the public site included.
 
-Two answers are kept ready. The first is that the one piece of CPU-bound work on the path — rendering
-email templates — no longer runs on start-up at all; it belongs to the `migrate` command. The second
-is the way out: `SERVICE_URL_<MODULE>` pointed at a real address, with the network `fetch` handed to
-that module's client, moves a module back out into a service of its own without changing a line of
-its code. The contracts are what make that possible, which is most of why the calls still go through
-them.
+Two answers are kept ready. The first is that the CPU-bound work is off the start-up path: rendering
+the seed email templates belongs to the `migrate` command, so a cold start no longer renders anything.
+Rendering has not left the process — publishing a template, previewing a version and a test send all
+call `@maily-to/render` on an admin request — but those are an administrator's own actions, not
+something a visitor or a restart can trigger. The second is the way out: `SERVICE_URL_<MODULE>`
+pointed at a real address, with the network `fetch` handed to that module's client, moves a module
+back out into a service of its own without changing a line of its code. The contracts are what make
+that possible, which is most of why the calls still go through them.
 
 ## Further reading
 

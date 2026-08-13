@@ -19,22 +19,28 @@ Each module has a README beside its code, describing what only that module knows
 [auth](../modules/auth/README.md), [users](../modules/users/README.md),
 [notifications](../modules/notifications/README.md), [email](../modules/email/README.md).
 
-The [composer](../composition/README.md) is what builds them all and wires them together, and the
-[acceptance tests](../tests/README.md) describe what is verified against a running stack.
+Four more READMEs sit outside `modules/`: the [composer](../composition/README.md), which builds them
+all and wires them together; [shared](../shared/README.md), the toolbox every module may use and where
+adding a procedure is explained; the [acceptance tests](../tests/README.md), which describe what is
+verified against a running stack; and the [database browser](../docker/adminer/README.md), a container
+rather than a package, whose README covers the wrapper around the one third-party application the
+panel embeds.
 
 ## What this template decides for you
 
 A template is only useful where it has taken a position. These are the positions, each with the
 reason, so a project can disagree with one on purpose rather than by accident.
 
-**One way in.** Gateway is the only application on the public listener, and the process publishes
-one port. Nothing else is reachable from outside in any environment — a module that could be reached
-directly would make Gateway's checks optional.
+**One way in.** Gateway is the only application on the public listener: locally the process publishes
+one port, in production none at all — the platform routes the domain to the container's internal port.
+Nothing else is reachable from outside in either case — a module that could be reached directly would
+make Gateway's checks optional.
 
-**Modules, in one process.** Eight of them, each its own package with its own database, talking to
-each other through contracts. They ran as eight containers before and can again: the point of the
-contracts is that where a module runs is not what decides what it may know. What one process costs is
-isolation of failure, and that is the price this template chose to pay.
+**Modules, in one process.** Eight of them, each its own package, and a database of its own for the
+five that store anything, talking to each other through contracts. They ran as eight containers
+before and can again: the point of the contracts is that where a module runs is not what decides
+what it may know. What one process costs is isolation of failure, and that is the price this
+template chose to pay.
 
 **Each module owns its data, and cannot reach anyone else's.** Not by agreement — by a role that has
 no `CONNECT` on a neighbour's database. Every other boundary here is about code, and no check that
@@ -52,10 +58,12 @@ over a small `postMessage` protocol. The shell never imports their code, so a mo
 admin without rebuilding the panel.
 
 **Nothing is decided by the interface.** Hiding a menu entry is presentation; the server refuses the
-same request either way, and every check is a real HTTP request through Gateway in the tests.
+same request either way, and the tests ask over HTTP through Gateway rather than by calling a router —
+the two exceptions speak to PostgreSQL, because the refusal they are about never becomes a response.
 
-**Email is stored, not re-rendered.** Publishing produces the HTML and text; delivery sends exactly
-that. A library upgrade cannot change a message someone already approved.
+**Email is stored, not re-rendered.** Publishing produces the HTML and text; delivery fills in the
+values that are only known per recipient and sends that, without ever calling the renderer again. A
+library upgrade cannot change a message someone already approved.
 
 **One language.** Several are a real feature, but which language to send in depends on what a
 product knows about a person — a guess here would be unpicked by every project.

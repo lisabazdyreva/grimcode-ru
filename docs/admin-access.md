@@ -11,7 +11,8 @@ the panel. They are different things, deliberately:
 
 - adding an administrator does not create an account — the person must already have one;
 - removing administrator access does not touch their account;
-- the administrator list is not "all users"; it holds only people who were explicitly added.
+- the administrator list is not "all users": it holds the people an owner added by hand, plus the one
+  row the first-owner bootstrap writes by itself.
 
 ## Two roles
 
@@ -21,10 +22,13 @@ the panel. They are different things, deliberately:
 | Service admins | all of them | only what was granted |
 | The database area | yes | **never** |
 | Managing administrators | yes | no |
-| The audit log | yes | no |
+| The panel's own audit log | yes | no |
+
+A service's own log is a different thing and follows its grant: an administrator who may open the Auth
+admin reads Auth's security log there.
 
 An ordinary administrator sees only the services they were granted. That filtering is presentation:
-the protected URL of a hidden service passes the very same Gateway check, and Gateway refuses it.
+the protected URL of a hidden service goes through the very same Gateway check, which refuses it.
 
 ## The database is a section of the panel, not a service
 
@@ -35,13 +39,15 @@ something it is not.
 It is therefore a **section** of the panel, at `/admin/database`, next to the administrator registry
 and the audit log. Nothing in the system calls it a service:
 
-- it is absent from `ADMIN_SERVICE_IDS`, so no grant can name it and none ever could;
+- it is absent from `ASSIGNABLE_SERVICE_IDS`, which is what every grant is validated against, and
+  from `ADMIN_SERVICE_IDS` as well — and `check-service-ids.mjs` refuses a build where `adminer`
+  appears in either of them, or in Gateway's public allowlist;
 - Gateway asks Admin about a **target** — `panel`, `service` or `database` — rather than about a
   service name that might be one of those things or might not;
 - the sidebar shows it under «Админка», with the panel's own sections.
 
-The application behind it is still Adminer, still a container of its own, still reached only through
-Gateway with no host port anywhere. What changed is what the system calls it.
+The application behind it is Adminer, a container of its own, reached only through Gateway and with no
+host port in any environment.
 
 ## The first owner
 
@@ -53,9 +59,11 @@ Ownership follows registration order in Auth, not who reached the panel first. I
 opens it before the first one does, the first Auth account still becomes owner and that request is
 refused.
 
-The bootstrap runs inside a transaction that takes a lock, so two requests arriving together produce
-one owner and one audit entry, not two of either. If Auth has no accounts at all, the panel reports
-that it is waiting for the first user rather than promoting whoever knocked.
+The bootstrap is a conditional insert inside a transaction, and what makes two requests arriving
+together converge is a partial unique index — `administrators_single_bootstrap_idx`, over the
+`bootstrap` flag — so the second insert does nothing, and only the request that really created the
+row writes the audit entry. One owner and one entry, not two of either. If Auth has no accounts at
+all, the panel reports that it is waiting for the first user rather than promoting whoever knocked.
 
 ## Grants take effect immediately
 
@@ -68,13 +76,18 @@ there is no window where a stale decision still applies.
 The last active owner can neither be demoted nor disabled. A project that could lock itself out of
 its own admin panel would need database access to recover, which is the thing the panel guards.
 
-An owner can promote a second owner and then step down — the rule only refuses to leave zero.
+An owner can promote a second owner and then step down — the rule only refuses to leave zero. This is
+where the lock is: changing a role, the `enabled` flag or a set of grants holds the whole table
+(`LOCK TABLE administrators IN SHARE ROW EXCLUSIVE MODE`) while it counts the other enabled owners,
+because two simultaneous requests each seeing one other owner would otherwise leave none. Adding an
+administrator takes no lock and needs none: an insert cannot lower that count.
 
 Blocking is Auth's side of the same rule. A blocked identity loses every session and every token, so
 a blocked owner is an owner the panel can no longer let in — and the registry, which counts owners by
-its own flag, would not notice. Auth therefore refuses to block anyone who currently holds owner
-rights, whether it is the caller or another owner: the rights come off in **Администраторы** first,
-and only then does blocking apply.
+its own flag, would not notice. Auth therefore refuses to block another owner while they still hold
+the rights, with a 409 that says so: the rights come off in **Администраторы** first, and only then
+does blocking apply. Blocking yourself is refused outright instead, and no order of steps gets around
+it — only an owner may block at all, so giving up the role gives up the ability along with it.
 
 ## What is recorded
 
@@ -99,4 +112,4 @@ is the ordinary flow a person would go through themselves: a recovery link, whic
 works once, and whose token is never shown to the administrator who sent it.
 
 An administrator can sign someone out everywhere and — if they are the owner — block an account.
-Blocking prevents signing in and is reversible. An owner cannot block their own identity.
+Blocking prevents signing in and is reversible.

@@ -6,7 +6,9 @@ What a deployment supplies, what it must not, and what happens on the way up.
 
 ## What a person actually decides
 
-Two things: the **domain** and the **database**. Everything else is fixed in the images.
+Five things, and they are the five below the next heading: the **domain**, the **database**, a
+**project slug**, an **address to send mail from**, and **five database passwords**. The pieces a
+deployment usually expects to configure are not among them:
 
 | | Where it comes from |
 | --- | --- |
@@ -25,7 +27,7 @@ worse than a run that refuses to start, so Compose fails on a missing one and na
 | --- | --- |
 | `PROJECT_SLUG` | Names the Compose project and the databases. Changing it points every service at a different database. **At most 49 characters of `[a-z0-9_]`** — PostgreSQL truncates identifiers to 63 bytes silently, and `<slug>_notifications` adds fourteen. |
 | `PUBLIC_SITE_URL` | The public origin as a visitor sees it. Links in email are built from it, and it decides whether the session cookie is marked `Secure`. |
-| `DATABASE_URL` | The managed database, as the role that owns the server. `db-init` uses it to create the module roles and hand them ownership, so it needs `CREATE ROLE` and the ability to transfer ownership of objects to those roles — a superuser, or a member of them. |
+| `DATABASE_URL` | The managed database, as the role that owns the server. `db-init` uses it to create each module's database and role and hand ownership over, so it needs **`CREATEDB` and `CREATEROLE`**, and membership of the roles it creates — a superuser has all three. `CREATEROLE` alone is not enough: the role is created and the very next statement fails with `permission denied to create database`. |
 | `EMAIL_FROM_ADDRESS` | Who messages come from. |
 | `DB_PASSWORD_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One password per module. **Generate five random strings and store them as five secrets** — the values in `.env.example` are local placeholders and must not reach a deployment. There is no default and no fallback to the credentials in `DATABASE_URL`: each module connects as its own role `<PROJECT_SLUG>_<module>`, and a leaked one opens that module's database and no other. |
 
@@ -53,7 +55,8 @@ owner-only route. It never gets a host port in any environment.
 
 ## What happens on start
 
-Three containers, in order, and the first two run to completion before the third starts.
+Four containers. Three of them are our image, in order, and the first two run to completion before
+the third starts; Adminer is the fourth and only has to be started, which is what `server` waits for.
 
 1. **`db-init`** creates any missing module database and role, hands each role ownership of its
    database and of the objects inside it, and revokes `CONNECT` from `PUBLIC` so that a module
@@ -68,6 +71,12 @@ Three containers, in order, and the first two run to completion before the third
 
 Then the first person to register becomes the owner of the admin panel — see
 [administrator access](admin-access.md).
+
+`GET /healthz` is what a platform can watch: `{"ok":true,"service":"gateway"}` and a 200, on the same
+port as everything else, with no session needed. It checks nothing itself, and does not need to — the
+listener only starts after the composer has opened all five pools, waited for the databases and asked
+each one `SELECT current_database()`, so an answer at all means the start-up sequence completed. It
+says nothing about a database that goes away later.
 
 ## Email will not send until it is told to
 
@@ -85,33 +94,40 @@ The session cookie is `HttpOnly` and `SameSite=Lax`, and is marked `Secure` when
 is `https`. That follows the origin rather than an environment name, because the same production
 images also run locally over plain http, where a `Secure` cookie would never come back.
 
-`AUTH_SESSION_TTL_SECONDS` is thirty days by default.
-
 ## Rate limits
 
 Auth counts failed sign-ins per address — `AUTH_LOGIN_ATTEMPT_LIMIT` attempts inside
 `AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS`, ten in fifteen minutes by default — and a successful sign-in
-clears the count. Recovery mail is deduplicated per identity for fifteen minutes, so asking for a
-reset over and over does not turn the form into a way to mail someone repeatedly.
+clears the count. Recovery mail is collapsed onto one message per identity per fifteen-minute
+bucket, so asking for a reset over and over does not turn the form into a way to mail someone
+repeatedly. Buckets are wall-clock, not a window since the last request: two requests either side of
+a boundary are two messages, which is the price of not keeping state for it.
 
-Both are counted in the process's own memory. That is exact for the topology here — one process —
-and it doubles the allowance for every extra copy of the application, so it stops being exact the
-moment a deployment runs more than one. It is also all a service can
-honestly do on its own: limits per client address need the real client address, and only the proxy
-in front of Gateway has it. A deployment that expects hostile traffic puts volumetric limits there —
-requests per address for `/service/*/rpc` and `/admin/**` — and Auth's counter stays as the last
-line for one account under attack.
+**The two are kept in different places, and only one of them doubles.** The sign-in counter lives in
+the process's own memory: exact for the topology here — one process — and one full allowance per
+extra copy of the application, so it stops being exact the moment a deployment runs more than one.
+The mail dedupe does not: the bucketed key is what Auth sends to Notifications, which stores it
+under a unique index, so a second copy of the application and a restart both change nothing.
+
+The counter is also all a service can honestly do on its own: limits per client address need the real
+client address, and only the proxy in front of Gateway has it. A deployment that expects hostile
+traffic puts volumetric limits there — requests per address for `/service/*/rpc` and `/admin/**` —
+and Auth's counter stays as the last line for one account under attack.
 
 ## Building images
 
-One Dockerfile, one image, three uses: the application and the two jobs above. It contains the
-production dependency closure of the composer — `pnpm deploy --prod` — which is the union of what all
-eight modules need at runtime, and no build tooling.
+Our application is one Dockerfile and one image, used three times: the server and the two jobs above.
+It contains the production dependency closure of the composer — `pnpm deploy --prod` — which is the
+union of what all eight modules need at runtime, and no build tooling.
+
+Adminer is the second image, built from `docker/adminer/Dockerfile`: the upstream
+`adminer:5.4.2-standalone` release, the wrapper that logs it in and themes it, and a router script in
+`CMD` without which PHP's built-in server would answer 404 to every proxied path.
 
 ## Upgrading
 
-Migrations are forward-only and versioned. `migrate` runs as its own step before the new application
-starts, so a schema that fails to move stops the deploy rather than the application.
+Migrations are forward-only and versioned, and `migrate` is a step of its own — which is what makes a
+failed schema change stop the deploy, as the start-up sequence above describes.
 
-A rollback is a matter for the change itself: a migration that dropped something cannot be undone by
-starting an older image.
+A rollback is therefore a matter for the change itself: a migration that dropped something cannot be
+undone by starting an older image.

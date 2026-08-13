@@ -10,16 +10,18 @@ cp .env.example .env
 pnpm start
 ```
 
-`.env` is the only local configuration and nothing generates it: the values shipped in
-`.env.example` run as they are. `PROJECT_SLUG` is worth setting before the first run — it names the
-Compose project, the cookies and the databases.
+`.env` is the only local configuration, and you copy it yourself — the values shipped in
+`.env.example` run as they are. Only a worktree gets it written for it, derived from this one.
+`PROJECT_SLUG` is worth setting before the first run — it names the Compose project, the cookies and
+the databases.
 
-**Keep it to 49 characters of `[a-z0-9_]`.** PostgreSQL truncates identifiers to 63 bytes and does
-it silently, and the longest name built from the slug is `<slug>_notifications` — fourteen
-characters on top. A slug past 49 leaves databases called `myproject_no` and `myproject_us`, which
-work and read like nothing; past that, two of them truncate to the same name, and two modules would
-share one database. `db-init` refuses that last case and nothing catches the first, so the number is
-worth respecting rather than discovering.
+**Keep it to 49 characters of `[a-z0-9_]`.** PostgreSQL truncates identifiers to 63 bytes and does it
+silently, and the longest name built from the slug is `<slug>_notifications` — fourteen characters on
+top, which is where 49 comes from. At 50 one name quietly loses its last letter; at 60 the suffixes
+are down to `_ad`, `_au`, `_em`, `_no`, `_us`, which work and read like nothing; at 61 `admin` and
+`auth` both truncate to `…_a` and two modules would share one database. `db-init` refuses that last
+case and nothing catches the ones before it, so the number is worth respecting rather than
+discovering.
 
 Ports come from one range, `PORT_RANGE_START..PORT_RANGE_END`. Its first port is the main checkout's
 and nothing else may take it; `GATEWAY_PORT` names it and `PUBLIC_SITE_URL` follows, which is what
@@ -39,7 +41,7 @@ subnet of its own and never touches anyone else's.
 | `pnpm start` / `pnpm stop` | Start and stop the stack |
 | `pnpm db-init` / `pnpm migrate` | Create the databases and roles; apply the migrations |
 | `pnpm logs server` | Follow the application |
-| `pnpm check` | Lint, types, unit tests, production build, dependencies, boundaries, service ids, Compose |
+| `pnpm check` | Lint, types, unit tests, production build, then the six scripts below: dependencies, boundaries, procedures, service ids, Compose, script names |
 | `pnpm test:acceptance` | The HTTP checks, against the running stack |
 | `pnpm test:browser` | The Chromium checks, against the running stack |
 
@@ -52,7 +54,7 @@ needs no running stack.
 full rebuild — around forty seconds. The second mode skips Docker for the application entirely:
 
 ```bash
-node scripts/compose.mjs up -d postgres adminer
+node scripts/compose.mjs up -d postgres
 pnpm db-init && pnpm migrate
 pnpm dev
 ```
@@ -68,9 +70,11 @@ network, and the published port differs per worktree.
 
 Four things this mode does not give you:
 
-- **`/admin/database` does not work.** Adminer answers at `adminer:8080`, a name that exists only
-  inside the Compose network, and it may never be given a host port — that is a documented rule
-  `check-compose.mjs` enforces. Everything else in the panel works.
+- **`/admin/database` does not work**, which is why the line above starts PostgreSQL alone. Adminer
+  answers at `adminer:8080`, a name that exists only inside the Compose network, and it may never be
+  given a host port — that is a documented rule `check-compose.mjs` enforces. Starting the container
+  changes nothing: the name still does not resolve from the machine, and the area answers 502 either
+  way. Everything else in the panel works.
 - **Error bodies carry a stack.** `NODE_ENV` is not `production` outside the container, so an RPC
   failure answers with more detail than a deployment would.
 - **It is your machine's Node.** The image pins one; here you get whatever `node -v` says, which is
@@ -126,8 +130,14 @@ pnpm bootstrap:worktree --refresh-databases
 A day's work in a worktree cannot be wiped by re-running it out of habit.
 
 This is the one place a script still writes `.env` for you, and the reason is that a worktree's
-values are derived rather than chosen: the main checkout's file is the starting point, and what
-must differ — the slug, the ports, the database credentials — is replaced.
+values are derived rather than chosen: the main checkout's file is the starting point, and what must
+differ is replaced — the slug, the two ports, `PUBLIC_SITE_URL` built from the picked port, and
+`ACCEPTANCE_BASE_URL` dropped so the suites do not aim at the main checkout.
+
+The database passwords are **not** among them: they carry over from the main checkout as they are.
+Nothing is lost by that — each worktree has a PostgreSQL container of its own, so the same password
+on two servers isolates as well as two would. What the slug changes is the role and database names,
+which is where the isolation actually lives.
 
 ## The database
 
@@ -152,17 +162,19 @@ and `pg` in a module. The role adds the two things those cannot — one leaked m
 one database rather than five, and it is the only layer here that is not a script of ours, so it
 still refuses when every check above has been edited away.
 
-The role above is the owner of the server, from `DATABASE_URL`, which is what `db-init` uses and
-what `psql` is convenient with.
+The `template` account in the `psql` line above is a different thing: it owns the server, comes from
+`DATABASE_URL`, and is what `db-init` uses to create the module roles — which is also why it is the
+convenient one to poke around with.
 
 ## The checks, and what each is for
 
 | Script | Refuses |
 | --- | --- |
 | `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver lives in `shared` and nowhere else; an `.npmrc` setting that would hoist every package into reach |
-| `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool opened outside the wiring; a module reading the environment |
-| `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; Adminer being public or grantable |
-| `check-compose.mjs` | Anything but the application published locally; anything at all published in production; a PostgreSQL container in production |
+| `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool opened outside the wiring; a module reading the environment; a door that would carry code, in its source and in what it emits; a browser-facing file of `shared` importing anything but `zod` |
+| `check-procedures.mjs` | A procedure that declares no `.output()`; an admin procedure that changes something without asking for a CSRF token — the builder is followed to its definition rather than trusted by its name; a router nobody mounts |
+| `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; a grantable service that is not an admin service; Adminer being public or grantable |
+| `check-compose.mjs` | A host port on anything but `server` or `postgres` locally, and on anything at all in production; a bind beyond loopback on anything but `server`; a PostgreSQL container in production; a service present in one topology and missing from the other |
 | `check-scripts.mjs` | A script named after a pnpm command — `pnpm up` would run pnpm's dependency update instead of starting the project |
 
 They exist because each protects a rule that is easy to break by accident and hard to notice.
@@ -174,12 +186,18 @@ They exist because each protects a rule that is easy to break by accident and ha
 2. The same package exporting `createApp(deps)` and — if it stores anything — its
    `migrations`, plus an entry in the composer's `MIGRATIONS` list, which is what gives it a pool, a
    database and a role.
-3. Its id in `ADMIN_SERVICE_IDS` in [`shared/src/vocabulary.ts`](../shared/src/vocabulary.ts) and —
-   only if it should be reachable without a session — in Gateway's public allowlist.
-4. Its entry in the Admin shell's [`services.ts`](../modules/admin/web/src/services.ts).
+3. Its id in `ADMIN_SERVICE_IDS` and, unless only the owner should reach it, in
+   `ASSIGNABLE_SERVICE_IDS` — both in [`shared/src/vocabulary.ts`](../shared/src/vocabulary.ts).
+4. Its id in Gateway's `ADMIN_SERVICES` allowlist, and — only if it should be reachable without a
+   session — in `PUBLIC_SERVICES` as well; plus its entry in the Admin shell's
+   [`services.ts`](../modules/admin/web/src/services.ts).
 5. Its password variable `DB_PASSWORD_<MODULE>` in `.env.example` and in the Compose environment
-   anchor. Nothing else in `docker/compose.yaml` changes: a module is not a container any more.
+   anchor, next to a `DATABASE_URL_<MODULE>` line if that module's database should be movable
+   elsewhere. Nothing else in `docker/compose.yaml` changes: a module is not a container any more.
 
-`check-service-ids.mjs` will tell you if you missed one of the three places ids live.
+`check-service-ids.mjs` will tell you if you missed one of the three places ids live —
+`ADMIN_SERVICE_IDS`, Gateway's `ADMIN_SERVICES`, the shell's `services.ts`. `ASSIGNABLE_SERVICE_IDS`
+is the one it cannot tell you about: leaving a service out of it is a legitimate choice, so the
+result is a service nobody but the owner can be given.
 
 For a module's admin interface, see [the admin panel](admin-panel.md).
