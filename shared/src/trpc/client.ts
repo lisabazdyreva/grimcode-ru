@@ -30,10 +30,19 @@ export interface TrpcClientOptions {
  * `app.fetch`, so in one process a hung handler would otherwise be waited on forever — and every
  * fail-closed branch above this depends on the wait actually ending.
  */
+/**
+ * How long a caller waits for a neighbour by default.
+ *
+ * Exported because it is a budget, not a detail: anything the neighbour does on its way to answering
+ * has to fit inside it. A step that takes longer leaves the caller recording a failure for work that
+ * actually succeeded, and nothing downstream can reconcile the two.
+ */
+export const RPC_TIMEOUT_MS = 10_000;
+
 export function createTrpcClient<TRouter extends AnyTRPCRouter>(
   options: TrpcClientOptions,
 ): TRPCClient<TRouter> {
-  const timeoutMs = options.timeoutMs ?? 10_000;
+  const timeoutMs = options.timeoutMs ?? RPC_TIMEOUT_MS;
   const answer = options.fetch;
 
   const link = httpLink({

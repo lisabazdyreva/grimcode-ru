@@ -1,4 +1,15 @@
-import { optionalEnv, type Logger } from '@template/shared';
+import { optionalEnv, RPC_TIMEOUT_MS, type Logger } from '@template/shared';
+
+/**
+ * Deadline on the one outbound call this module makes.
+ *
+ * Derived rather than written out, because what matters is that it stays **below** the budget the
+ * caller waits with: Notifications gives up at `RPC_TIMEOUT_MS`, and a provider answering after that
+ * would leave the delivery recorded as sent while the event that asked for it is recorded as failed —
+ * with nothing able to reconcile the two afterwards. The margin covers the rest of the request:
+ * filling the values in, two queries and the log write.
+ */
+export const PROVIDER_TIMEOUT_MS = RPC_TIMEOUT_MS - 2_000;
 
 export type TransportName = 'log' | 'unisender';
 
@@ -77,7 +88,7 @@ export function createUniSenderTransport(fetchFn: typeof fetch = fetch): Transpo
 
       const response = await fetchFn(`${apiUrl}/email/send.json`, {
         method: 'POST',
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',

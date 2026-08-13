@@ -36,6 +36,13 @@ cannot send the same message twice.
 If Email cannot be reached, the event is kept with status `failed` and the error message. It shows
 up in the service admin instead of disappearing into a log line.
 
+**`failed` means the routing was not confirmed, not that no message was sent.** A deadline is one way
+to get it: the client here gives up after `RPC_TIMEOUT_MS`, and Email's own call to the mail provider
+is deliberately given less than that, so the answer arrives while there is still someone waiting for
+it. What that buys is the two logs agreeing; it does not make a timeout mean nothing was sent —
+a provider can accept a message and answer too late to say so. When an event is `failed` with a
+timeout rather than a refusal, the delivery log in Email is what says whether anything went out.
+
 ## Surfaces
 
 | Mount | Reachable as | Callers |
@@ -51,9 +58,9 @@ allowlist, so no browser can emit an event.
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door and no other: `@template/notifications/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the two router types, the `NotificationEvent`
-Auth builds and the `StoredNotificationEvent` the admin screen renders — and nothing else, while
-`@template/notifications` still resolves to `createApp` alone. The repository and the routing to
-Email are reachable by no specifier at all.
+Auth builds and the `StoredNotificationEvent` the admin screen renders — and nothing else, while the
+bare `@template/notifications` resolves to `createApp` and `migrations` and nothing besides. The
+repository and the routing to Email are reachable by no specifier at all.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
 in the type. What keeps the type honest is the `.output()` schema every procedure declares and the

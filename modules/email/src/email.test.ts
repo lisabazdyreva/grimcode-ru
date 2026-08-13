@@ -15,7 +15,9 @@ import {
   TemplateRenderError,
 } from './render.js';
 import { SEED_TEMPLATES } from './seed.js';
-import { createLogTransport, createUniSenderTransport } from './transport.js';
+import { RPC_TIMEOUT_MS } from '@template/shared';
+
+import { createLogTransport, createUniSenderTransport, PROVIDER_TIMEOUT_MS } from './transport.js';
 import type { EditorDocument } from './schemas.js';
 
 const logger = {
@@ -252,6 +254,16 @@ describe('transports', () => {
 
     delete process.env.UNISENDER_GO_API_KEY;
     delete process.env.EMAIL_FROM_ADDRESS;
+  });
+
+  /**
+   * The one thing about this deadline that must not drift: it has to expire before the caller stops
+   * waiting. The other way round, a slow provider leaves the delivery recorded as sent and the event
+   * that asked for it recorded as failed, and nothing reconciles the two.
+   */
+  it('gives the provider less time than the caller waits for an answer', () => {
+    expect(PROVIDER_TIMEOUT_MS).toBeLessThan(RPC_TIMEOUT_MS);
+    expect(PROVIDER_TIMEOUT_MS).toBeGreaterThan(0);
   });
 
   it('reports a rejected recipient as a failure', async () => {
