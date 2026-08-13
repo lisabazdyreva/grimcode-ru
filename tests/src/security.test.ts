@@ -88,7 +88,7 @@ describe('sessions', () => {
     const cookie = user.session.cookieHeader;
     await user.session.call(AUTH, 'logout');
 
-    const response = await fetch(`${process.env.ACCEPTANCE_BASE_URL}/service/auth/rpc/currentSession`, {
+    const response = await fetch(`${BASE_URL}/service/auth/rpc/currentSession`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
       body: JSON.stringify({}),
