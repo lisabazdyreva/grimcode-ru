@@ -237,6 +237,15 @@ pointed at a real address, with the network `fetch` handed to that module's clie
 back out into a service of its own without changing a line of its code. The contracts are what make
 that possible, which is most of why the calls still go through them.
 
+**And transactions across a module boundary**, which follows from one database per module. A
+transaction lives in one connection to one database and no module can open a neighbour's, so two
+modules changing something together is two calls, and the second can fail after the first has
+committed. Foreign keys go the same way: `profiles.identity_id` and `administrators.user_id` both
+name an Auth identity and neither is one. What the template does instead is make the second step safe
+to repeat — Notifications and Email each deduplicate by a key of their own, so the same hand-off
+arriving twice sends one message. What it has no answer for is a hand-off that fails: the event stays
+`failed`, and the admin surface of Notifications is read-only. A project that needs a retry adds one.
+
 ## Further reading
 
 - [The admin panel](admin-panel.md) — what it contains and how it is composed.
