@@ -19,9 +19,12 @@ export interface TrpcRequestContext {
  * table itself: `/service/<name>/rpc` is public, `/admin/embed/service/<name>/rpc` needs the admin
  * grant, and Gateway routes nothing at all to `/internal/rpc`.
  *
- * **`resHeaders` is merged by hand.** tRPC has no notion of a response header from inside a
- * procedure; the context carries a `Headers` and this merges it into the answer. Miss it and signing
- * in stops setting the session cookie — with no error anywhere, because the procedure succeeded.
+ * **`resHeaders` is merged by hand, and that is a choice rather than a necessity.** The fetch adapter
+ * keeps a `Headers` of its own, hands it to `createContext` beside `req` and returns it as the
+ * response headers — taking it from there instead would make the merge below unnecessary. This mount
+ * carries its own object so that what a procedure receives is decided here and not by the adapter's
+ * option shape. Either way the merge is load-bearing while it exists: removed, signing in stops
+ * setting the session cookie, and the acceptance suite fails on its first call with a 403.
  *
  * **`allowMethodOverride` lets a query arrive as POST.** Without it a query sent by POST answers
  * 405, and staying on POST keeps request bodies out of URLs — off the length limit, and out of the
