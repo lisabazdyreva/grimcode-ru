@@ -21,6 +21,11 @@
  * Which surface a router answers on is not guessed from its variable name either: it is read from
  * the `mountTrpc` call that mounts it. A router nobody mounts is reported rather than skipped,
  * because an unmounted surface is one this check cannot judge.
+ *
+ * The same rule applies inside a router. `{ name: builder… }` and `{ name }` beside a `const` are
+ * one procedure written two ways, and both are followed; a form that is neither is reported. Before
+ * that, the shorthand passed through in silence — with no `.output()` demanded, no CSRF demanded and
+ * the procedure missing from the count, which is the one outcome worse than a red run.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -35,6 +40,7 @@ const CSRF_GUARD = 'requireCsrf';
 const outputProblems = [];
 const csrfProblems = [];
 const unmountedRouters = [];
+const unreadable = [];
 
 /** Source files of one module, minus its browser bundle and its tests. */
 function moduleSources(dir) {
@@ -180,11 +186,30 @@ for (const entry of readdirSync(MODULES, { withFileTypes: true })) {
           }
 
           for (const property of literal.properties) {
-            if (!ts.isPropertyAssignment(property)) continue;
-            const name = property.name.getText(tree);
-            const { methods, base } = chainOf(property.initializer);
             const line =
               tree.getLineAndCharacterOfPosition(property.getStart(tree)).line + 1;
+
+            /*
+             * `{ listEvents: … }` and `{ listEvents }` are the same procedure to tRPC and two
+             * different nodes to the parser, so the shorthand is followed to the `const` it names.
+             * Anything else — a spread, a method, a name declared in another file — is reported
+             * rather than skipped: an entry this check cannot read is an entry it cannot judge.
+             */
+            const initializer = ts.isPropertyAssignment(property)
+              ? property.initializer
+              : ts.isShorthandPropertyAssignment(property)
+                ? declarations.get(property.name.text)
+                : undefined;
+
+            if (initializer === undefined) {
+              unreadable.push(`${relative}:${line} ${property.getText(tree).split('\n')[0]}`);
+              continue;
+            }
+
+            const name = ts.isPropertyAssignment(property)
+              ? property.name.getText(tree)
+              : property.name.text;
+            const { methods, base } = chainOf(initializer);
             const where = `${relative}:${line} ${name}`;
 
             procedures += 1;
@@ -229,6 +254,17 @@ if (csrfProblems.length > 0) {
   );
 }
 
+if (unreadable.length > 0) {
+  const earlier = outputProblems.length > 0 || csrfProblems.length > 0;
+  console.error(`${earlier ? '\n' : ''}Router entries this check could not read:`);
+  for (const entry of unreadable) console.error(`- ${entry}`);
+  console.error(
+    '\nA procedure is written as `name: builder…`, or as `{ name }` beside a `const` in the same ' +
+      'file. Anything else — a spread, a method, a name from another module — leaves the two rules ' +
+      'above unchecked, and silence would look exactly like passing.',
+  );
+}
+
 if (unmountedRouters.length > 0) {
   const earlier = outputProblems.length > 0 || csrfProblems.length > 0;
   console.error(`${earlier ? '\n' : ''}Routers that are never mounted:`);
@@ -239,7 +275,12 @@ if (unmountedRouters.length > 0) {
   );
 }
 
-if (outputProblems.length > 0 || csrfProblems.length > 0 || unmountedRouters.length > 0) {
+if (
+  outputProblems.length > 0 ||
+  csrfProblems.length > 0 ||
+  unreadable.length > 0 ||
+  unmountedRouters.length > 0
+) {
   process.exit(1);
 }
 
