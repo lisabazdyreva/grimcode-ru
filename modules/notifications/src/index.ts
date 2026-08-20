@@ -44,8 +44,7 @@ export function createModule(deps: NotificationsDeps) {
       createInternalCallerFactory({
         repo,
         logger: deps.logger.child({ requestId: call.requestId }),
-        requestId: call.requestId,
-        callEmail: deps.callEmail,
+        email: deps.callEmail(call),
       }),
       'notifications',
       RPC_TIMEOUT_MS,
@@ -57,8 +56,7 @@ export function createModule(deps: NotificationsDeps) {
   mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
     repo,
     logger: hono.get('logger'),
-    requestId: hono.get('requestId'),
-    callEmail: deps.callEmail,
+    email: deps.callEmail({ requestId: hono.get('requestId') }),
     request,
     resHeaders,
   }));

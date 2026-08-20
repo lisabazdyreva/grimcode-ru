@@ -35,7 +35,7 @@ export function createApp(deps: UsersDeps): ServiceApp {
     repo,
     request,
     resHeaders,
-    identity: await resolveIdentity(request, hono.get('requestId'), deps.callAuth),
+    identity: await resolveIdentity(request, deps.callAuth({ requestId: hono.get('requestId') })),
   }));
 
   mountTrpc(
@@ -46,8 +46,7 @@ export function createApp(deps: UsersDeps): ServiceApp {
       repo,
       request,
       resHeaders,
-      callAuth: deps.callAuth,
-      requestId: hono.get('requestId'),
+      auth: deps.callAuth({ requestId: hono.get('requestId') }),
       logger: hono.get('logger'),
       admin: readAdminContext(request.headers),
     }),

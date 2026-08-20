@@ -10,13 +10,10 @@ import { parseCookies, sessionCookieName } from '@template/shared';
  */
 export async function resolveIdentity(
   request: Request,
-  requestId: string,
-  callAuth: (call: { requestId: string }) => AuthInternalCaller,
+  auth: AuthInternalCaller,
 ): Promise<Identity | null> {
   const token = parseCookies(request.headers.get('cookie'))[sessionCookieName()];
   if (!token) return null;
-
-  const auth = callAuth({ requestId });
 
   const { identity } = await auth.resolveSession({ sessionToken: token });
   return identity;

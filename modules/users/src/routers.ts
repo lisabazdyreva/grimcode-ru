@@ -22,17 +22,12 @@ import { toProfile, type ProfileRow, type UsersRepository } from './repository.j
  * does not know stays `null`, which is how a profile left by a deleted account is visible as one.
  * The `catch` below is why the deadline Auth puts on its own caller matters.
  */
-async function withEmails(
-  rows: ProfileRow[],
-  ctx: Pick<AdminRpcContext, 'callAuth' | 'requestId' | 'logger'>,
-) {
+async function withEmails(rows: ProfileRow[], ctx: Pick<AdminRpcContext, 'auth' | 'logger'>) {
   const profiles = rows.map((row) => ({ ...toProfile(row), email: null as string | null }));
   if (profiles.length === 0) return profiles;
 
   try {
-    const auth = ctx.callAuth({ requestId: ctx.requestId });
-
-    const { identities } = await auth.getIdentitiesByIds({
+    const { identities } = await ctx.auth.getIdentitiesByIds({
       ids: [...new Set(rows.map((row) => row.identity_id))],
     });
 
@@ -55,9 +50,8 @@ export interface PublicContext extends RpcContext {
 
 export interface AdminRpcContext extends AdminAwareContext {
   repo: UsersRepository;
-  /** Reaches Auth's internal surface; the profile list needs the sign-in address from it. */
-  callAuth: (call: { requestId: string }) => AuthInternalCaller;
-  requestId: string;
+  /** Auth's internal surface, built for this request; the profile list needs the address from it. */
+  auth: AuthInternalCaller;
   logger: Logger;
 }
 

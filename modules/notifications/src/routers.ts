@@ -20,9 +20,8 @@ import {
 export interface InternalContext {
   repo: NotificationsRepository;
   logger: Logger;
-  requestId: string;
-  /** Answers Email's internal surface. */
-  callEmail: (call: { requestId: string }) => EmailInternalCaller;
+  /** Email's internal surface, built for this request by whoever assembled the context. */
+  email: EmailInternalCaller;
 }
 
 export interface AdminRpcContext extends AdminAwareContext {
@@ -90,13 +89,10 @@ export const internalRouter = internalT.router({
 
       try {
         /*
-         * The caller is made per request, which is what keeps this module's request id on the lines
-         * Email writes. Email puts the deadline on it, so an Email that hung cannot hang the event —
+         * Email puts the deadline on its own caller, so an Email that hung cannot hang the event —
          * without that the `catch` below would never be reached.
          */
-        const email = ctx.callEmail({ requestId: ctx.requestId });
-
-        const result = await email.send({
+        const result = await ctx.email.send({
           templateKey,
           to: event.recipient.email,
           variables: variablesOf(event),
