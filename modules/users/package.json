@@ -32,6 +32,7 @@
     "@trpc/client": "11.18.0",
     "@trpc/server": "11.18.0",
     "hono": "4.12.32",
+    "pg": "8.22.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

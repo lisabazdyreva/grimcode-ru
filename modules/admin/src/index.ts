@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
@@ -9,20 +10,18 @@ import {
   readAdminContext,
   RPC_TIMEOUT_MS,
   withDeadlineOn,
-  type Logger,
-  type Pool,
 } from '@template/shared';
 
 import type { AuthInternalCaller } from '@template/auth/contract';
 
+import type { AdminEnv } from './env.js';
+import { createDatabase } from './db/database.js';
 import { AdminRepository } from './repository.js';
 import { adminRouter, createInternalCallerFactory, internalRouter } from './routers.js';
 
-export { migrations } from './db/migrations.js';
+export type { AdminEnv } from './env.js';
 
 export interface AdminDeps {
-  logger: Logger;
-  pool: Pool;
   /**
    * Reaches Auth's internal surface: who the session belongs to, and who the first identity is.
    * A caller per request, so the id travels with it.
@@ -32,38 +31,42 @@ export interface AdminDeps {
 
 /**
  * Both shapes a composer needs — an application for what Gateway routes here, a caller for Gateway's
- * authorization check — from one factory, so the repository is built once.
+ * authorization check — from one factory, so the pool is opened once between them. The caller takes
+ * the environment as well as the request: a direct call has no `c.env` to read.
  */
 export function createModule(deps: AdminDeps) {
-  const repo = new AdminRepository(deps.pool);
+  const logger = createLogger('admin');
+  const app = createServiceApp<AdminEnv>('admin', logger);
 
-  const internalCaller = (call: { requestId: string }) =>
+  // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
+  const database = createDatabase(logger);
+  const repository = async (env: AdminEnv) => new AdminRepository(await database(env));
+
+  const internalCaller = (env: AdminEnv, call: { requestId: string }) =>
     withDeadlineOn(
-      createInternalCallerFactory({
-        repo,
+      createInternalCallerFactory(async () => ({
+        repo: await repository(env),
         auth: deps.callAuth(call),
-        logger: deps.logger.child({ requestId: call.requestId }),
-      }),
+        logger: logger.child({ requestId: call.requestId }),
+      })),
       'admin',
       RPC_TIMEOUT_MS,
     );
-
-  const app = createServiceApp('admin', deps.logger);
 
   /**
    * The single authorization method Gateway calls on every `/admin/**` request. It is mounted on
    * the internal path only, which Gateway never routes to, so no browser can reach it.
    */
-  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
-    repo,
+  mountTrpc(app, '/internal/rpc', internalRouter, async ({ request, resHeaders, hono }) => ({
+    repo: await repository(hono.env),
     auth: deps.callAuth({ requestId: hono.get('requestId') }),
     logger: hono.get('logger'),
     request,
     resHeaders,
   }));
 
-  mountTrpc(app, '/admin/rpc', adminRouter, ({ request, resHeaders, hono }) => ({
-    repo,
+  mountTrpc(app, '/admin/rpc', adminRouter, async ({ request, resHeaders, hono }) => ({
+    repo: await repository(hono.env),
     auth: deps.callAuth({ requestId: hono.get('requestId') }),
     request,
     resHeaders,

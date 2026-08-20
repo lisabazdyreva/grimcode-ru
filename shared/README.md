@@ -11,7 +11,7 @@ only one so far, and it is declared here.
 
 | Module | Purpose |
 | --- | --- |
-| `env.ts` | Typed environment access, project slug, per-module database URLs and roles, cookie names |
+| `env.ts` | Typed environment access, project slug, the public origin, cookie names |
 | `service-urls.ts` | The port the process listens on, and the addresses a module's client is built from |
 | `logger.ts` | JSON-line logger with request-scoped child loggers |
 | `crypto.ts` | Ids, single-use tokens, scrypt password hashing, constant-time comparison |
@@ -19,9 +19,8 @@ only one so far, and it is declared here.
 | `http/cookies.ts` | Cookie parsing and serialization, including the expired logout cookie |
 | `http/admin-context.ts` | The verified administrator context headers and their strip/apply/read helpers |
 | `http/csrf.ts` | Double-submit CSRF token issuing and validation |
-| `http/service-app.ts` | Shared Hono app: request ids, access log, `/healthz`; and `serveService`, which puts one on its port |
+| `http/service-app.ts` | Shared Hono app: request ids, access log, `/healthz`. Opening a port is not here — the program does that, so a module cannot |
 | `http/spa.ts` | Serving a built SPA with deep-link fallback, refusing any path that would escape the build directory, and the endpoint that issues its CSRF token |
-| `db/admin-pool.ts` | `createAdminPool`, reachable only as `@template/shared/admin` — the owner's connection, for `db-init` and for the one acceptance check that proves a module's credentials are refused a neighbour's database |
 | `rpc.ts` | What a call to a neighbour needs whichever library carries it: `FetchLike`, the deadline and `withDeadlineOn`, which puts it on every procedure of a caller, `ServiceUnavailableError` |
 | `trpc/mount.ts` | Mounting a tRPC router on a path prefix, merging `set-cookie` from procedures |
 | `trpc/builders.ts` | The context every procedure has, and the two guards admin surfaces are built from |

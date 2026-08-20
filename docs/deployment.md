@@ -15,7 +15,7 @@ deployment usually expects to configure are not among them:
 | The internal port | Fixed in the image and Compose. Nobody sets it. |
 | The public port | There is none. The platform routes the domain to the container's internal port. |
 | PostgreSQL | A managed resource, reached through `DATABASE_URL`. |
-| Per-module databases and roles | Created on first deploy as `<PROJECT_SLUG>_<module>`. |
+| Per-module databases | `<PROJECT_SLUG>_<module>`, created by each module itself on its first request. |
 
 ## What a deployment supplies
 
@@ -27,9 +27,8 @@ worse than a run that refuses to start, so Compose fails on a missing one and na
 | --- | --- |
 | `PROJECT_SLUG` | Names the Compose project and the databases. Changing it points every service at a different database. **At most 49 characters of `[a-z0-9_]`** — PostgreSQL truncates identifiers to 63 bytes silently, and `<slug>_notifications` adds fourteen. |
 | `PUBLIC_SITE_URL` | The public origin as a visitor sees it. Links in email are built from it, and it decides whether the session cookie is marked `Secure`. |
-| `DATABASE_URL` | The managed database, as the role that owns the server. `db-init` uses it to create each module's database and role and hand ownership over, so it needs **`CREATEDB` and `CREATEROLE`**, and membership of the roles it creates — a superuser has all three. `CREATEROLE` alone is not enough: the role is created and the very next statement fails with `permission denied to create database`. |
+| `DATABASE_URL` | The managed database. Every module connects through it, swapping in its own database name, and creates that database when it is missing — so the account needs **`CREATEDB`**. It does not need `CREATEROLE`: there are no per-module roles any more. Consequence worth naming: one account opens all five databases, so which module works where is enforced by the wiring and a check at startup, not by PostgreSQL. |
 | `EMAIL_FROM_ADDRESS` | Who messages come from. |
-| `DB_PASSWORD_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One password per module. **Generate five random strings and store them as five secrets** — the values in `.env.example` are local placeholders and must not reach a deployment. There is no default and no fallback to the credentials in `DATABASE_URL`: each module connects as its own role `<PROJECT_SLUG>_<module>`, and a leaked one opens that module's database and no other. |
 
 | Optional | |
 | --- | --- |
@@ -37,9 +36,8 @@ worse than a run that refuses to start, so Compose fails on a missing one and na
 | `EMAIL_FROM_NAME`, `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | The transport's own settings. |
 | `AUTH_SESSION_TTL_SECONDS` | How long a session lasts. Thirty days by default. |
 | `LOG_LEVEL` | `debug`, `info`, `warn` or `error`. `info` by default; anything below the level is not written at all. |
-| `AUTH_LOGIN_ATTEMPT_LIMIT`, `AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS` | Failed sign-ins allowed per address, and the window they are counted in. Ten in fifteen minutes by default. |
 | `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. A full override, taken exactly as written. |
-| `ADMINER_SERVER`, `ADMINER_USERNAME`, `ADMINER_PASSWORD` | The database console's own connection, which is how it gets fewer rights than the application has. `db-init` grants `ADMINER_USERNAME` the right to **connect** to each database — without it the console cannot log in at all, since `PUBLIC` no longer may. It grants no right to **read**: how much data the console sees is decided by whoever created that account, and granting it here would silently undo what a deployment narrowed on purpose. Empty means the console reuses `DATABASE_URL` and sees everything. |
+| `ADMINER_SERVER`, `ADMINER_USERNAME`, `ADMINER_PASSWORD` | The database console's own connection, which is how it gets fewer rights than the application has. Nothing grants it anything now that `PUBLIC` keeps its `CONNECT`: what the console sees is decided entirely by whoever created that account. Empty means it reuses `DATABASE_URL` and sees everything. |
 
 ```bash
 docker compose --env-file .env.production -f docker/compose.yaml up -d --build
@@ -55,19 +53,21 @@ owner-only route. It never gets a host port in any environment.
 
 ## What happens on start
 
-Four containers. Three of them are our image, in order, and the first two run to completion before
-the third starts; Adminer is the fourth and only has to be started, which is what `server` waits for.
+Two containers: our image, and Adminer beside it.
 
-1. **`db-init`** creates any missing module database and role, hands each role ownership of its
-   database and of the objects inside it, and revokes `CONNECT` from `PUBLIC` so that a module
-   presented with a neighbour's database is refused while connecting. Safe on every later deploy: it
-   only adds what is absent and re-states what is already true.
-2. **`migrate`** applies each module's versioned migrations, in order, recording what it applied, and
-   creates the seed email templates that are missing while leaving edited ones alone. A failure here
-   stops the deploy with a non-zero exit code naming the module — the application never starts on a
-   half-migrated database.
-3. **`server`** builds every module, hands each its pool, deletes the single-module secrets from its
-   own environment, and mounts Gateway on the port.
+1. **`server`** builds every module, hands each the connection string of its own database and mounts
+   Gateway on the port. No database work happens here,
+   and nothing waits for PostgreSQL: the process is listening in under a second.
+2. **Each module prepares its own storage on the first request that needs it** — creates its database
+   if it is missing, applies its versioned migrations, checks that the connection landed on the
+   database it was meant to open, and keeps the pool for the life of the process. Email creates the
+   seed templates that are missing at the same moment, leaving edited ones alone.
+
+**What that trade means for a deploy.** There is no step that can stop it any more: a broken migration
+is not a failed deployment, it is a 500 to the first person through the door, with the reason in the
+logs of the module that refused (`module database unavailable`). Watch the logs of the first minutes,
+not the exit code of a job. In return there is nothing to keep in step: one image, one command, and no
+ordering between them to get wrong.
 
 Then the first person to register becomes the owner of the admin panel — see
 [administrator access](admin-access.md).
@@ -96,8 +96,8 @@ images also run locally over plain http, where a `Secure` cookie would never com
 
 ## Rate limits
 
-Auth counts failed sign-ins per address — `AUTH_LOGIN_ATTEMPT_LIMIT` attempts inside
-`AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS`, ten in fifteen minutes by default — and a successful sign-in
+Auth counts failed sign-ins per address — ten in fifteen minutes, constants in the module rather than
+settings, because a defence that can be configured can be weakened — and a successful sign-in
 clears the count. Recovery mail is collapsed onto one message per identity per fifteen-minute
 bucket, so asking for a reset over and over does not turn the form into a way to mail someone
 repeatedly. Buckets are wall-clock, not a window since the last request: two requests either side of
@@ -126,8 +126,9 @@ Adminer is the second image, built from `docker/adminer/Dockerfile`: the upstrea
 
 ## Upgrading
 
-Migrations are forward-only and versioned, and `migrate` is a step of its own — which is what makes a
-failed schema change stop the deploy, as the start-up sequence above describes.
+Migrations are forward-only and versioned, and each module applies its own on the first request after
+a deploy. A failed schema change therefore does not stop the deploy — it answers 500 until it is fixed,
+which is the trade described in the start-up sequence above.
 
 A rollback is therefore a matter for the change itself: a migration that dropped something cannot be
 undone by starting an older image.

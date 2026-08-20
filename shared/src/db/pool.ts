@@ -1,38 +1,7 @@
-import pg from 'pg';
-
-import { serviceDatabaseUrl } from '../env.js';
+import type pg from 'pg';
 
 export type Pool = pg.Pool;
 export type PoolClient = pg.PoolClient;
-
-/**
- * PostgreSQL pool for one module database.
- *
- * A module may only ever open its own database. Reading or writing another module's database is
- * forbidden; data crosses a boundary through the contracts.
- *
- * `max` is per pool and there are five of them in one process, so the ceiling that matters is the
- * sum. Ten each — the figure from when every module was its own container — would ask one server
- * for fifty connections before doing anything unusual.
- */
-export function createPool(service: string): Pool {
-  const pool = new pg.Pool({
-    connectionString: serviceDatabaseUrl(service),
-    max: 5,
-    idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 10_000,
-    application_name: `${service}-service`,
-  });
-
-  // A pool-level error must not take the process down: the pool discards the broken client.
-  pool.on('error', (error) => {
-    process.stderr.write(
-      `${JSON.stringify({ level: 'error', service, message: 'idle pool client failed', error: error.message })}\n`,
-    );
-  });
-
-  return pool;
-}
 
 /** Runs `handler` inside a transaction, rolling back on any thrown error. */
 export async function withTransaction<T>(

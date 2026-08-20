@@ -70,8 +70,10 @@ An owner adds an **already registered** user by email, enables or disables them,
 and grants access to services. The product user list from Users is never shown here.
 
 - Administrators are never deleted. Disabling keeps the history.
-- The last active owner can neither be demoted nor disabled. The check runs inside the transaction
-  that performs the change, so two simultaneous requests cannot both believe another owner remains.
+- The last owner who can still enter can neither be demoted nor disabled. Being blocked in Auth is
+  part of that: an owner enabled here but blocked there cannot sign in, so Admin asks Auth which of
+  the remaining owners are blocked before counting them. The count runs inside the transaction that
+  performs the change, so two simultaneous requests cannot both believe another owner remains.
 - An owner may change their own role or disable themselves only while another active owner exists.
 - Every change is written to the audit.
 
@@ -92,9 +94,9 @@ error rather than as a clean sign-out.
 
 ## Data
 
-Database `<PROJECT_SLUG>_admin`, opened as the role of the same name and reachable by no other
-module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
-`migrate` command, not on start.
+Database `<PROJECT_SLUG>_admin`, created and opened by this module itself and touched by no other
+module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by this module
+itself, on the first request that opens its pool — as is creating the database if it is missing.
 
 `administrators.user_id` refers to an Auth identity and carries **no foreign key**: identities live
 in the Auth database, which Admin may never read or reference.
@@ -103,7 +105,7 @@ in the Auth database, which Admin may never read or reference.
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | never routed by Gateway; in-process only | the composer, for `isActiveOwner` alone — Gateway calls `authorize` directly |
+| `/internal/rpc` | never routed by Gateway; in-process only | nothing by this path — Gateway calls `authorize` directly |
 | `/admin/rpc` | through Gateway's admin route | the central Admin shell |
 | `/admin/csrf` | through Gateway's admin route | the shell, before every mutation |
 | `/admin/**` | through Gateway's admin route | the built shell assets |
@@ -145,8 +147,8 @@ in the type. What keeps the type honest is the `.output()` schema every procedur
 `satisfies` line beside each router, which refuses to compile when the router holds a name the
 surface is not allowed to hold — see [shared/README.md](../../shared/README.md) for how a procedure is added.
 
-Three callers use that door: Gateway for `authorize` on every `/admin/**` request, the composer for
-`isActiveOwner`, and the panel's own browser bundle for the surface above.
+Two callers use that door: Gateway for `authorize` on every `/admin/**` request, and the panel's own
+browser bundle for the surface above.
 
 ## Environment
 
@@ -155,7 +157,6 @@ Three callers use that door: Gateway for `authorize` on every `/admin/**` reques
 | `DATABASE_URL` | Base connection; Admin uses `<PROJECT_SLUG>_admin` |
 | `PROJECT_SLUG` | Database and cookie naming |
 | `PUBLIC_SITE_URL` | Decides `Secure` on the cookie `logout` clears — it has to match what Auth set |
-| `SERVICE_URL_AUTH` | Auth's address, used to build the request Admin's client sends — the way back out if Auth becomes a service of its own |
 
 ## Commands
 

@@ -81,9 +81,9 @@ forgotten, which is why it is written down.
 
 ## Data
 
-Database `<PROJECT_SLUG>_notifications`, single `events` table, opened as the role of the same
-name. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
-`migrate` command, not on start.
+Database `<PROJECT_SLUG>_notifications`, single `events` table, created and opened by this module
+itself. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
+module itself, on the first request that opens its pool.
 
 ## Environment
 
@@ -91,7 +91,6 @@ name. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are a
 | --- | --- |
 | `DATABASE_URL` | Base connection; Notifications uses `<PROJECT_SLUG>_notifications` |
 | `PROJECT_SLUG` | Database naming |
-| `SERVICE_URL_EMAIL` | Email's address, used to build the request this module's client sends — the way back out if Email becomes a service of its own |
 
 ## Commands
 

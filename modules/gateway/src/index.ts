@@ -1,5 +1,5 @@
 import type { AdminInternalCaller } from '@template/admin/contract';
-import { createServiceApp, type Logger, type ServiceApp } from '@template/shared';
+import { createLogger, createServiceApp, type ServiceApp } from '@template/shared';
 
 import { routeRequest } from './router.js';
 import type { GatewayTargets } from './registry.js';
@@ -7,7 +7,6 @@ import type { GatewayTargets } from './registry.js';
 export type { GatewayTargets } from './registry.js';
 
 export interface GatewayDeps {
-  logger: Logger;
   /** Every module Gateway may route to, built and handed over by the composer. */
   targets: GatewayTargets;
   /** Asks Admin for the decision; `targets.admin` is where an allowed request then goes. */
@@ -23,7 +22,8 @@ export interface GatewayDeps {
  * the repository handed to the narrowest job.
  */
 export function createApp(deps: GatewayDeps): ServiceApp {
-  const app = createServiceApp('gateway', deps.logger);
+  const logger = createLogger('gateway');
+  const app = createServiceApp('gateway', logger);
 
   app.all('*', (c) =>
     routeRequest(c.req.raw, c.get('requestId'), c.get('logger'), deps.targets, deps.callAdmin),

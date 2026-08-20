@@ -33,22 +33,15 @@ x-app: &app
     dockerfile: docker/Dockerfile
   logging: *logging
 
-# What all three of our containers need, and nothing that belongs to only one of them: the mail
-# settings are declared on `server` alone, the console account on `db-init` alone.
+# What the container needs.
 #
-# Per-module variables do belong here, because all three read them — the composer to open the five
-# pools, `migrate` to apply migrations, `db-init` to create the roles. Each module connects as
-# `<PROJECT_SLUG>_<module>` with its own password; the role, not the code, is what makes a
-# neighbour's database unopenable.
+# There is one process now: each module creates its own database on its first request, migrates it and
+# opens it, so there is no deployment step to declare variables to. `DATABASE_URL` is the account that
+# owns the server, because creating a database needs one.
 x-app-environment: &app-environment
   PROJECT_SLUG: ${PROJECT_SLUG}
   LOG_LEVEL: ${LOG_LEVEL:-info}
   DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-  DB_PASSWORD_ADMIN: ${DB_PASSWORD_ADMIN:?DB_PASSWORD_ADMIN is required}
-  DB_PASSWORD_AUTH: ${DB_PASSWORD_AUTH:?DB_PASSWORD_AUTH is required}
-  DB_PASSWORD_USERS: ${DB_PASSWORD_USERS:?DB_PASSWORD_USERS is required}
-  DB_PASSWORD_NOTIFICATIONS: ${DB_PASSWORD_NOTIFICATIONS:?DB_PASSWORD_NOTIFICATIONS is required}
-  DB_PASSWORD_EMAIL: ${DB_PASSWORD_EMAIL:?DB_PASSWORD_EMAIL is required}
   # Set any of these to put one module's database on another server or under other credentials.
   DATABASE_URL_ADMIN: ${DATABASE_URL_ADMIN:-}
   DATABASE_URL_AUTH: ${DATABASE_URL_AUTH:-}
@@ -57,31 +50,6 @@ x-app-environment: &app-environment
   DATABASE_URL_EMAIL: ${DATABASE_URL_EMAIL:-}
 
 services:
-  # Gives each module a database and a role that can open nothing else, then hands ownership of
-  # the objects inside over to it. Runs on every deploy and changes nothing when there is nothing
-  # to change.
-  db-init:
-    <<: *app
-    restart: 'no'
-    environment:
-      <<: *app-environment
-      # The console account, if a deployment created one, needs CONNECT back on every database.
-      ADMINER_USERNAME: ${ADMINER_USERNAME:-}
-    command: ['node', 'dist/bin/db-init.js']
-    networks: [internal]
-
-  # Applies the migrations and seeds what a fresh installation needs. A failure here stops the
-  # deploy with a non-zero exit code instead of leaving the application in a restart loop.
-  migrate:
-    <<: *app
-    restart: 'no'
-    environment: *app-environment
-    command: ['node', 'dist/bin/migrate.js']
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-    networks: [internal]
-
   # The application: every module in one process. Gateway is the only one mounted on the port.
   server:
     <<: *app
@@ -89,8 +57,6 @@ services:
       <<: *app-environment
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:?PUBLIC_SITE_URL is required}
       AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-2592000}
-      AUTH_LOGIN_ATTEMPT_LIMIT: ${AUTH_LOGIN_ATTEMPT_LIMIT:-10}
-      AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS: ${AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS:-900}
       # A production deployment that leaves this on `log` sends nothing: messages are recorded and
       # stay put. That is a deliberate default — a misconfigured transport should not mail people.
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-log}
@@ -102,8 +68,6 @@ services:
     # application on the host's network instead of behind whatever terminates TLS.
     expose: ['8080']
     depends_on:
-      migrate:
-        condition: service_completed_successfully
       adminer:
         condition: service_started
     restart: unless-stopped

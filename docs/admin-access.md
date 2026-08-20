@@ -73,21 +73,26 @@ there is no window where a stale decision still applies.
 
 ## The last owner
 
-The last active owner can neither be demoted nor disabled. A project that could lock itself out of
-its own admin panel would need database access to recover, which is the thing the panel guards.
+The last owner who can actually enter can neither be demoted nor disabled. A project that could lock
+itself out of its own admin panel would need database access to recover, which is the thing the panel
+guards.
 
 An owner can promote a second owner and then step down — the rule only refuses to leave zero. This is
 where the lock is: changing a role, the `enabled` flag or a set of grants holds the whole table
-(`LOCK TABLE administrators IN SHARE ROW EXCLUSIVE MODE`) while it counts the other enabled owners,
+(`LOCK TABLE administrators IN SHARE ROW EXCLUSIVE MODE`) while it counts the owners who are left,
 because two simultaneous requests each seeing one other owner would otherwise leave none. Adding an
 administrator takes no lock and needs none: an insert cannot lower that count.
 
-Blocking is Auth's side of the same rule. A blocked identity loses every session and every token, so
-a blocked owner is an owner the panel can no longer let in — and the registry, which counts owners by
-its own flag, would not notice. Auth therefore refuses to block another owner while they still hold
-the rights, with a 409 that says so: the rights come off in **Администраторы** first, and only then
-does blocking apply. Blocking yourself is refused outright instead, and no order of steps gets around
-it — only an owner may block at all, so giving up the role gives up the ability along with it.
+"Who can actually enter" is why blocking matters here. A blocked identity loses every session and
+every token, so an owner blocked in Auth is enabled in the registry and still unable to sign in.
+Admin therefore asks Auth which of the remaining owners are blocked before it counts them, and the
+question runs before the transaction opens, so the table lock is not held while another module
+answers.
+
+Blocking itself asks nothing. Only an owner may block, and blocking yourself is refused outright, so
+whoever blocks is an owner still able to sign in afterwards — blocking alone can never leave the panel
+without one. The refusal a person meets is therefore in **Администраторы**, when the rights would come
+off the last owner who can enter, and not in **Пользователи** when someone is blocked.
 
 ## What is recorded
 

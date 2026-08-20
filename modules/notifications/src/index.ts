@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { EmailInternalCaller } from '@template/email/contract';
 import {
+  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
@@ -10,54 +11,52 @@ import {
   readAdminContext,
   RPC_TIMEOUT_MS,
   withDeadlineOn,
-  type Logger,
-  type Pool,
 } from '@template/shared';
 
+import type { NotificationsEnv } from './env.js';
+import { createDatabase } from './db/database.js';
 import { NotificationsRepository } from './repository.js';
 import { adminRouter, createInternalCallerFactory } from './routers.js';
 
-export { migrations } from './db/migrations.js';
+export type { NotificationsEnv } from './env.js';
 
 export interface NotificationsDeps {
-  logger: Logger;
-  pool: Pool;
-  /**
-   * Reaches Email's internal surface: Notifications routes an event, Email renders and sends it.
-   *
-   * A caller per request rather than one for the process — the request id is what ties the lines
-   * Email writes to the request that caused them.
-   */
+  /** Reaches Email's internal surface; a caller per request, so the id travels with it. */
   callEmail: (call: { requestId: string }) => EmailInternalCaller;
 }
 
 /**
  * Both shapes a composer needs — an application for the admin surface, a caller for the neighbour
- * that emits events — from one factory, so the repository is built once. The caller takes the
- * request it belongs to: one per process would stamp every later event with the first id.
+ * that emits events — from one factory, so the pool is opened once between them. The caller takes
+ * the environment as well as the request: a direct call has no `c.env` to read.
  */
 export function createModule(deps: NotificationsDeps) {
-  const repo = new NotificationsRepository(deps.pool);
+  const logger = createLogger('notifications');
 
-  const internalCaller = (call: { requestId: string }) =>
+  // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
+  const database = createDatabase(logger);
+  const repository = async (env: NotificationsEnv) =>
+    new NotificationsRepository(await database(env));
+
+  const internalCaller = (env: NotificationsEnv, call: { requestId: string }) =>
     withDeadlineOn(
-      createInternalCallerFactory({
-        repo,
-        logger: deps.logger.child({ requestId: call.requestId }),
+      createInternalCallerFactory(async () => ({
+        repo: await repository(env),
+        logger: logger.child({ requestId: call.requestId }),
         email: deps.callEmail(call),
-      }),
+      })),
       'notifications',
       RPC_TIMEOUT_MS,
     );
 
-  const app = createServiceApp('notifications', deps.logger);
+  const app = createServiceApp<NotificationsEnv>('notifications', logger);
 
   mountTrpc(
     app,
     '/admin/embed/service/notifications/rpc',
     adminRouter,
-    ({ request, resHeaders }) => ({
-      repo,
+    async ({ request, resHeaders, hono }) => ({
+      repo: await repository(hono.env),
       request,
       resHeaders,
       admin: readAdminContext(request.headers),

@@ -1,44 +1,31 @@
 import { optionalEnv } from './env.js';
 
 /**
- * Fixed internal ports of the template. Most are no longer dialled — the modules share one process,
- * so a neighbour's address is only what a `Request` is built from — and they are kept because they
- * are the escape hatch: point `SERVICE_URL_<MODULE>` at a real address, hand that module's client
- * the network `fetch`, and it moves back out into a service of its own without a code change.
+ * Every name this template gives a service. A name and nothing else: the modules share one process,
+ * and a neighbour is reached through the `fetch` its caller was handed, never through an address.
+ *
+ * `adminer` is on the list because Gateway routes to it as if it were a service, and it is the one
+ * target that really does live somewhere else.
  */
-export const INTERNAL_PORTS = {
-  gateway: 8080,
-  site: 3000,
-  app: 3001,
-  admin: 3002,
-  auth: 3003,
-  users: 3004,
-  notifications: 3005,
-  email: 3006,
-  adminer: 8080,
-} as const;
+export type InternalServiceName =
+  | 'gateway'
+  | 'site'
+  | 'app'
+  | 'admin'
+  | 'auth'
+  | 'users'
+  | 'notifications'
+  | 'email'
+  | 'adminer';
 
-export type InternalServiceName = keyof typeof INTERNAL_PORTS;
-
-/** Base URL of another service on the internal network; nothing here is published outwards. */
-export function internalServiceUrl(service: InternalServiceName): string {
-  return optionalEnv(
-    `SERVICE_URL_${service.toUpperCase()}`,
-    `http://${service}:${INTERNAL_PORTS[service]}`,
-  );
-}
+/** Port inside the container, and the port Adminer answers on in its own. */
+const CONTAINER_PORT = 8080;
 
 /**
- * Port to listen on. Inside the container the fixed internal port is right; outside there is no
- * publishing step, so the application takes `GATEWAY_PORT`, which Compose does not declare to the
- * container. That is what lets two worktrees run at once.
+ * Where the database browser answers: its own container, so this one is dialled for real.
+ * `SERVICE_URL_ADMINER` is the only address override left that does anything.
  */
-export function ownPort(service: InternalServiceName): number {
-  for (const name of service === 'gateway' ? ['PORT', 'GATEWAY_PORT'] : ['PORT']) {
-    const raw = process.env[name];
-    if (raw === undefined || raw === '') continue;
-    const parsed = Number.parseInt(raw, 10);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return INTERNAL_PORTS[service];
+export function adminerUrl(): string {
+  return optionalEnv('SERVICE_URL_ADMINER', `http://adminer:${CONTAINER_PORT}`);
 }
+

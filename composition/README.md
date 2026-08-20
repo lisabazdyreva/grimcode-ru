@@ -31,7 +31,7 @@ first time a role appears, an unknown module name is refused. The rule above is 
 that is what carries the widest permission.
 
 One of those branches names a module rather than a state, and it is the one worth being explicit
-about: `migrate` seeds the email templates for `email` alone. That is operational work of the same
+about: Email seeds its own templates when its database is fresh. That is operational work of the same
 kind — it needs the schema just applied, it is idempotent, and it renders every template through
 `@maily-to/render`, which is why it belongs to a command that runs once rather than to every start.
 
@@ -54,53 +54,49 @@ a `Request` is built from it — but nobody dials it.
 
 Two things follow, and both are easy to miss:
 
-- **the wiring has a cycle in it.** Admin asks Auth who a session belongs to; Auth asks Admin whether
-  an identity is an active owner. `call(name)` resolves the neighbour at call time rather than at
-  build time, which is what lets both be built at all;
 - **the deadline is ours.** `AbortSignal` is not honoured by an in-process call, so `createTrpcClient`
-  enforces the wait itself. It stops the caller waiting; it cannot stop the handler running.
+  enforces the wait itself. It stops the caller waiting; it cannot stop the handler running;
+- **a module may keep the function it is handed, and may not call it while it is being built.** The map
+  of applications is built in one expression, so a neighbour named by `call(name)` may not exist yet
+  when the closure is made. It is looked up when a request arrives, which is what makes that safe —
+  and calling it from inside `createApp` would read `undefined` instead, with the types right, the
+  boundaries unbroken, and an error that says only `undefined`.
 
-A module may keep the function it is handed, and may not call it while it is being built. `apps` is
-filled in one module at a time, and the neighbour a cycle points at is not there yet: Auth is built
-before Admin, so calling `isActiveOwner` from inside `createApp` reads `undefined`. Nothing catches
-that — the types are right, the boundaries are unbroken, and the error only says `undefined`.
+The calls run in one direction: Admin, Users and Gateway ask Auth, Auth asks Notifications,
+Notifications asks Email. Nothing asks back, so the applications can be built in dependency order.
 
-## The list of secrets is kept by hand
+## The environment is read here and left in place
 
-`forgetSecrets` deletes each single-module secret from `process.env` once it has been handed out,
-because one process means one environment and a neighbour's credentials read out of it would open a
-database that is not theirs. Three of its four rules are shapes of a name — `DATABASE_URL`,
-`DATABASE_URL_*`, `DB_PASSWORD_*` — and the fourth is one variable of one module,
-`UNISENDER_GO_API_KEY`.
+Everything a module gets out of the environment is read in `compose()` and handed over as a value: the
+mail settings, the session lifetime, one connection string per module. A module reads nothing itself,
+which the lint rules and `check-boundaries` enforce.
 
-So a new secret has to be added there by hand, and nothing will remind you: no check reads that list,
-and a forgotten name simply stays readable to every module in the process. It is the one line in the
-wiring that needs maintaining when a module gains a credential of its own.
+What used to be here as well was deletion: every credential removed from `process.env` once handed out,
+so that one process did not leave a neighbour's password readable. That went, deliberately. It bought
+less than it looked like — the connection string lives on `c.env` for the life of the process either
+way, and `/proc/<pid>/environ` keeps the startup snapshot regardless — and it cost a reader that
+remembered every name it read, plus a list of variables it must never be given because they are read
+after `compose()` returns or again on every request.
 
-Deleting them is safe because of where they are read. Everything that comes out of the environment is
-read at the top of `compose()` — the pools, and the mail settings handed to Email — and this runs at
-the bottom, after every module has been built. A module reading a secret of its own instead would
-make its credentials depend on where in that order it happens to be built, and an emptied key does
-not announce itself: UniSender Go would simply refuse every message, one delivery recorded `failed`
-at a time.
+So `DATABASE_URL` and the mail key stay readable through `process.env` for anything inside the process,
+dependencies included. That is the standard exposure of a Node application, now accepted here too.
 
 ## Files
 
 | File | What is in it |
 | --- | --- |
-| [`src/index.ts`](src/index.ts) | Build everything, mount Gateway, listen |
-| [`src/wiring.ts`](src/wiring.ts) | Pools, modules, the calls between them, the secrets removed afterwards — and `MIGRATIONS`, the one list of which modules own a database |
-| [`src/bin/db-init.ts`](src/bin/db-init.ts) | Databases, roles and ownership |
-| [`src/bin/migrate.ts`](src/bin/migrate.ts) | Migrations and the email seed templates |
+| [`src/index.ts`](src/index.ts) | The whole package: what each module is given, the calls between them, `DATABASE_MODULES`, and — behind a guard at the bottom — starting the program |
 
-`bin/db-init.ts` and `bin/migrate.ts` are the two jobs a deployment runs; `pnpm db-init` and
-`pnpm migrate` are the same two on a machine.
+One file, importable and runnable: the listener at the bottom starts only when this file is the program,
+so the tests and the acceptance suite can import `compose` without opening a port. There is nothing else
+to run — databases, migrations and the email seed templates are each module's own work, done on the first
+request that needs them.
 
 ## Commands
 
 ```bash
-pnpm db-init
-pnpm migrate
-pnpm migrate auth   # one module instead of all five
 pnpm --filter @template/composition build
 ```
+
+There is nothing else: the databases and their migrations are each module's own work, done on the first
+request that needs them.

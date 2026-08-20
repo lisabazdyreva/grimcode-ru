@@ -1,30 +1,40 @@
 import { emailSchema, okSchema } from '@template/shared/vocabulary';
 import { z } from 'zod';
 import {
-  createRateLimiter,
   expiredSessionCookie,
   hashPassword,
-  intEnv,
   parseCookies,
   publicSiteUrl,
   sessionCookie,
   sessionCookieName,
   verifyPassword,
   type Logger,
+  type RateLimiter,
   type RpcContext,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
+import type { AuthEnv } from '../env.js';
 import type { Notifier } from '../notifier.js';
 import type { AuthRepository, IdentityRow } from '../repository.js';
 import { identitySchema, passwordSchema, sessionSummarySchema, type Identity } from '../schemas.js';
-import { newSessionToken, SESSION_TTL_SECONDS } from '../sessions.js';
+import { newSessionToken } from '../sessions.js';
 import { toIdentity } from '../repository.js';
 
 export interface PublicContext extends RpcContext {
   repo: AuthRepository;
   notifier: Notifier;
   logger: Logger;
+  /**
+   * The part of `AuthEnv` these procedures need. Narrowed rather than passed whole: the connection
+   * string beside it is this module's own, and no procedure has any use for it.
+   */
+  env: Pick<AuthEnv, 'sessionTtlSeconds'>;
+  /**
+   * Password guessing, counted per address. Handed in rather than made here: one limiter per
+   * application instead of one per module load, and the window it counts in comes from the composer.
+   */
+  loginAttempts: RateLimiter;
 }
 
 const VERIFICATION_TTL_SECONDS = 60 * 60 * 24;
@@ -38,15 +48,6 @@ const VERIFICATION_TTL_SECONDS = 60 * 60 * 24;
  */
 const RESET_REQUEST_WINDOW_MS = 15 * 60 * 1000;
 
-/**
- * Password guessing against one address is not free. Counted per address rather than per client:
- * that is what Auth actually knows and what an attacker has to keep hitting. Limits per client
- * address belong to the proxy in front of Gateway, the only part that sees the real one.
- */
-const loginAttempts = createRateLimiter({
-  limit: intEnv('AUTH_LOGIN_ATTEMPT_LIMIT', 10),
-  windowMs: intEnv('AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS', 15 * 60) * 1000,
-});
 const RESET_TTL_SECONDS = 60 * 60;
 const EMAIL_CHANGE_TTL_SECONDS = 60 * 60;
 
@@ -75,7 +76,7 @@ function appUrl(path: string, token: string): string {
 
 async function openSession(ctx: PublicContext, identityId: string): Promise<void> {
   const token = newSessionToken();
-  const ttl = SESSION_TTL_SECONDS();
+  const ttl = ctx.env.sessionTtlSeconds;
   await ctx.repo.createSession(identityId, token, ttl, ctx.request.headers.get('user-agent'));
   ctx.resHeaders.append('set-cookie', sessionCookie(token, ttl));
 }
@@ -150,7 +151,7 @@ export const publicRouter = t.router({
     .output(z.object({ ok: z.literal(true), identity: identitySchema }))
     .mutation(async ({ input, ctx }) => {
     const attemptKey = input.email.trim().toLowerCase();
-    if (!loginAttempts.attempt(attemptKey)) {
+    if (!ctx.loginAttempts.attempt(attemptKey)) {
       // Said the same way to everyone, so the answer still reveals nothing about the address.
       throw new TRPCError({
         code: 'TOO_MANY_REQUESTS',
@@ -173,12 +174,12 @@ export const publicRouter = t.router({
     }
 
     const token = newSessionToken();
-    const ttl = SESSION_TTL_SECONDS();
+    const ttl = ctx.env.sessionTtlSeconds;
     await ctx.repo.createSession(identity.id, token, ttl, ctx.request.headers.get('user-agent'));
     await ctx.repo.touchLogin(identity.id);
     await ctx.repo.audit({ identityId: identity.id, action: 'login.succeeded' });
     // Signing in successfully means the failures before it were this person mistyping.
-    loginAttempts.clear(attemptKey);
+    ctx.loginAttempts.clear(attemptKey);
 
     ctx.resHeaders.append('set-cookie', sessionCookie(token, ttl));
     return { ok: true as const, identity: toIdentity(identity) };

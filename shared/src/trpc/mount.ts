@@ -3,13 +3,13 @@ import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 
 import type { Context as HonoContext } from 'hono';
 
-import type { ServiceApp, ServiceAppVariables } from '../http/service-app.js';
+import type { ServiceApp, ServiceAppVariables, ServiceEnv } from '../http/service-app.js';
 import type { RpcContext } from './builders.js';
 
-export interface TrpcRequestContext {
+export interface TrpcRequestContext<TEnv extends ServiceEnv = object> {
   request: Request;
   resHeaders: Headers;
-  hono: HonoContext<{ Variables: ServiceAppVariables }>;
+  hono: HonoContext<{ Bindings: TEnv; Variables: ServiceAppVariables }>;
 }
 
 /**
@@ -30,11 +30,11 @@ export interface TrpcRequestContext {
  * 405, and staying on POST keeps request bodies out of URLs — off the length limit, and out of the
  * caches a GET invites, since tRPC sets no `Cache-Control` of its own.
  */
-export function mountTrpc<TContext extends RpcContext>(
-  app: ServiceApp,
+export function mountTrpc<TContext extends RpcContext, TEnv extends ServiceEnv = object>(
+  app: ServiceApp<TEnv>,
   prefix: `/${string}`,
   router: AnyTRPCRouter,
-  createContext: (ctx: TrpcRequestContext) => TContext | Promise<TContext>,
+  createContext: (ctx: TrpcRequestContext<TEnv>) => TContext | Promise<TContext>,
 ): void {
   app.use(`${prefix}/*`, async (c) => {
     const resHeaders = new Headers();
@@ -48,8 +48,21 @@ export function mountTrpc<TContext extends RpcContext>(
         createContext({
           request: c.req.raw,
           resHeaders,
-          hono: c as HonoContext<{ Variables: ServiceAppVariables }>,
+          hono: c as HonoContext<{ Bindings: TEnv; Variables: ServiceAppVariables }>,
         }),
+      /*
+       * Without this a procedure that throws answers 500 and leaves nothing but the access line: the
+       * reason stays inside the adapter. `input` is never logged — `register` and `login` carry
+       * passwords through here.
+       */
+      onError: ({ error, path, type }) => {
+        c.get('logger').error('procedure failed', {
+          procedure: path ?? 'unknown',
+          type,
+          code: error.code,
+          error: error.cause ?? error,
+        });
+      },
     });
 
     if (resHeaders.entries().next().done === true) return response;

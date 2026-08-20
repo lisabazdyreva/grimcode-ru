@@ -22,6 +22,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@hono/node-server": "2.0.11",
     "@template/admin": "workspace:*",
     "@template/app": "workspace:*",
     "@template/auth": "workspace:*",

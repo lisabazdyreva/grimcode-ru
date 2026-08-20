@@ -2,37 +2,40 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
   mountTrpc,
   readAdminContext,
-  type Logger,
-  type Pool,
   type ServiceApp,
 } from '@template/shared';
 
 import type { AuthInternalCaller } from '@template/auth/contract';
 
 import { resolveIdentity } from './auth-client.js';
+import type { UsersEnv } from './env.js';
+import { createDatabase } from './db/database.js';
 import { UsersRepository } from './repository.js';
 import { adminRouter, publicRouter } from './routers.js';
 
-export { migrations } from './db/migrations.js';
+export type { UsersEnv } from './env.js';
 
 export interface UsersDeps {
-  logger: Logger;
-  pool: Pool;
   /** Reaches Auth's internal surface; a caller per request, so the id travels with it. */
   callAuth: (call: { requestId: string }) => AuthInternalCaller;
 }
 
-export function createApp(deps: UsersDeps): ServiceApp {
-  const repo = new UsersRepository(deps.pool);
-  const app = createServiceApp('users', deps.logger);
+export function createApp(deps: UsersDeps): ServiceApp<UsersEnv> {
+  const logger = createLogger('users');
+  const app = createServiceApp<UsersEnv>('users', logger);
+
+  // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
+  const database = createDatabase(logger);
+  const repository = async (env: UsersEnv) => new UsersRepository(await database(env));
 
   mountTrpc(app, '/service/users/rpc', publicRouter, async ({ request, resHeaders, hono }) => ({
-    repo,
+    repo: await repository(hono.env),
     request,
     resHeaders,
     identity: await resolveIdentity(request, deps.callAuth({ requestId: hono.get('requestId') })),
@@ -42,8 +45,8 @@ export function createApp(deps: UsersDeps): ServiceApp {
     app,
     '/admin/embed/service/users/rpc',
     adminRouter,
-    ({ request, resHeaders, hono }) => ({
-      repo,
+    async ({ request, resHeaders, hono }) => ({
+      repo: await repository(hono.env),
       request,
       resHeaders,
       auth: deps.callAuth({ requestId: hono.get('requestId') }),

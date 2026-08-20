@@ -27,10 +27,7 @@ import { z } from 'zod';
 import { toAdministrator, type AdminRepository } from './repository.js';
 import { administratorSchema, adminAuditEntrySchema, authorizationResultSchema } from './schemas.js';
 
-/**
- * No `request` and no `resHeaders`: a caller has no request. The mount passes them anyway as extra
- * fields — this is the one internal surface still answering on a path, for `isActiveOwner`.
- */
+/** No `request` and no `resHeaders`: this surface is reached by a caller, never by a request. */
 export interface InternalContext {
   repo: AdminRepository;
   auth: AuthCaller;
@@ -51,7 +48,7 @@ const internalT = initTRPC.context<InternalContext>().create();
  * `authorize` is the decision Gateway trusts on every `/admin/**` request. The same line in the admin
  * router would put it behind a screen anyone with a session can reach.
  */
-type InternalName = 'isActiveOwner' | 'authorize';
+type InternalName = 'authorize';
 type AdminName =
   | 'session'
   | 'listAdministrators'
@@ -62,15 +59,6 @@ type AdminName =
   | 'logout';
 
 export const internalRouter = internalT.router({
-  isActiveOwner: internalT.procedure
-    .input(z.object({ userId: idSchema }))
-    .output(z.object({ activeOwner: z.boolean() }))
-    .query(async ({ input, ctx }) => {
-      const row = await ctx.repo.findByUserId(input.userId);
-
-      return { activeOwner: row?.role === 'owner' && row.enabled };
-    }),
-
   /**
    * A query, because from Gateway's side it is a question asked on every `/admin/**` request. It can
    * write once — the first call bootstraps the owner from Auth's first account when the registry is
@@ -125,17 +113,41 @@ const ownerMutation = ownerProcedure.use(({ ctx, next }) => {
   return next();
 });
 
-function lastOwnerGuard(userId: string) {
+/**
+ * Refuses a change that would leave the panel with nobody able to enter.
+ *
+ * Exported because this rule and the question below it are the whole of what can go wrong here, and
+ * the procedure around them needs a database and a running Auth to say anything.
+ */
+export function lastOwnerGuard(userId: string) {
   return (next: { role: AdminRole; enabled: boolean }, activeOwners: number): void => {
     const staysActiveOwner = next.role === 'owner' && next.enabled;
     if (!staysActiveOwner && activeOwners === 0) {
       throw new TRPCError({
         code: 'CONFLICT',
-        message: 'Последнего активного владельца нельзя понизить или отключить',
+        message: 'Последнего владельца, который может войти, нельзя понизить или отключить',
         cause: { userId },
       });
     }
   };
+}
+
+/**
+ * Which of these owners could actually take the panel over: an owner blocked in Auth has no sessions
+ * and cannot sign in, so the registry's own `enabled` flag is not enough to count them.
+ *
+ * Asked before the transaction opens, so the table lock is not held while Auth answers. More owners
+ * than one request may ask about are cut off, which can only refuse a change that would have been
+ * allowed — never allow one that leaves nobody able to enter.
+ */
+export async function ownersAbleToSignIn(
+  userIds: readonly string[],
+  auth: AuthCaller,
+): Promise<string[]> {
+  if (userIds.length === 0) return [];
+
+  const { identities } = await auth.getIdentitiesByIds({ ids: userIds.slice(0, 200) });
+  return identities.filter((identity) => identity.blockedAt === null).map((identity) => identity.id);
 }
 
 export const adminRouter = adminT.router({
@@ -259,12 +271,21 @@ export const adminRouter = adminT.router({
     const existing = await ctx.repo.findByUserId(input.userId);
     if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Администратор не найден' });
 
-    // The last-owner rule is enforced inside the transaction, so two simultaneous requests cannot
-    // both believe another owner remains.
+    /*
+     * Who is left able to enter, established before the transaction and checked inside it: the rule
+     * is enforced under the table lock, so two simultaneous requests cannot both believe another
+     * owner remains. Blocking is Auth's fact, hence the question.
+     */
+    const eligible = await ownersAbleToSignIn(
+      await ctx.repo.otherActiveOwnerIds(input.userId),
+      ctx.auth,
+    );
+
     const row = await ctx.repo.update(
       input.userId,
       { role: input.role, enabled: input.enabled, grants: input.grants },
       lastOwnerGuard(input.userId),
+      eligible,
     );
 
     await ctx.repo.audit({

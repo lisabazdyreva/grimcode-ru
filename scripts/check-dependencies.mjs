@@ -3,8 +3,9 @@
  * What a package may declare, and what keeps `node_modules` isolated.
  *
  * `check-boundaries.mjs` reads imports, and to it `pg` is the same kind of import as `zod`. This
- * check reads the manifests, where the difference is visible: a module that declares the database
- * driver can open a connection past `shared`, whether or not it does today.
+ * check reads the manifests, where the difference is visible: a package that declares the database
+ * driver can open a connection, whether or not it does today. The five modules that own a database
+ * may; `app`, `site`, `gateway` and `tests` may not, and that is what this refuses.
  *
  * Every dependency section is read, not just `dependencies` — a rule that reads one section is
  * obeyed by moving a line into another. And only the two rules below: a check that goes red on
@@ -17,7 +18,7 @@ import {
   allows,
   compartmentOf,
   describeAllowance,
-  OUTSIDE_PROCESS_HOME,
+  OUTSIDE_PROCESS_HOMES,
   OUTSIDE_PROCESS_PACKAGES,
   repoRoot,
   workspacePackages,
@@ -79,11 +80,11 @@ for (const { name, dir, manifest } of packages) {
         );
       }
 
-      if (OUTSIDE_PROCESS_PACKAGES.includes(dependency) && dir !== OUTSIDE_PROCESS_HOME) {
+      if (OUTSIDE_PROCESS_PACKAGES.includes(dependency) && !OUTSIDE_PROCESS_HOMES.includes(dir)) {
         problems.push(
-          `${dir} declares "${dependency}" in ${section}; packages that reach outside the ` +
-            `process belong to ${OUTSIDE_PROCESS_HOME}, which hands out what a module is allowed ` +
-            'to use',
+          `${dir} declares "${dependency}" in ${section}; the database driver belongs to a package ` +
+            `that owns a database — ${OUTSIDE_PROCESS_HOMES.join(', ')} — and everything else is ` +
+            'handed what it may use',
         );
       }
     }

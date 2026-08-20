@@ -1,18 +1,15 @@
 /**
- * What a neighbour may see of this module: `@template/notifications` resolves to `createModule` and `migrations`,
- * `@template/notifications/contract` to here, `dist/repository.js` to nothing at all. Types and
- * only types — one value and the `exports` key becomes a formality while the module leaks through.
+ * What a neighbour may see of this module: `@template/notifications` resolves to `createModule` and
+ * its types, `/contract` to here, `dist/repository.js` to nothing at all. One value here and the
+ * `exports` key becomes a formality.
  *
- * A projection of the implementation, not an agreement: what keeps the type honest is `.output()` on
- * every procedure and the `satisfies` line pinning each router to the names it may hold.
+ * A projection of the implementation, not an agreement: `.output()` on every procedure and the
+ * `satisfies` line are what keep it honest.
  */
 export type { NotificationsAdminRouter } from './routers.js';
 
 /** What a neighbour holds to call this module: the caller, not the router. */
 export type { NotificationsInternalCaller } from './index.js';
 
-/**
- * The event Auth builds and the row the admin screen renders, both inferred from `schemas.ts`: a
- * Zod object is a value, and a value must not travel through this file.
- */
+/** Inferred from `schemas.ts`: a Zod object is a value, and values must not cross this file. */
 export type { NotificationEvent, StoredNotificationEvent } from './schemas.js';

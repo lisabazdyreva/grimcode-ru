@@ -1,12 +1,7 @@
 /**
- * Typed access to the environment.
- *
- * Every value comes from the single root `.env` documented in `.env.example`, declared in one place
- * to one container. A module never reaches for any of it — `check-boundaries` refuses `process.env`
- * inside `modules/*` — so every caller here is the composer, its two commands, or `shared` itself on
- * their behalf.
+ * Typed access to the environment, for the composer and for `shared` itself while answering a request. A
+ * module reaches for none of it. Which database a module opens is not here — that is the composer's.
  */
-
 export class MissingEnvError extends Error {
   constructor(name: string) {
     super(`Required environment variable ${name} is not set`);
@@ -39,76 +34,6 @@ export function projectSlug(): string {
 
 export function publicSiteUrl(): string {
   return optionalEnv('PUBLIC_SITE_URL', 'http://127.0.0.1:8080').replace(/\/+$/, '');
-}
-
-/**
- * Where PostgreSQL is, when the application runs on the machine instead of in Compose.
- *
- * `DATABASE_URL` names the host `postgres`, which exists only inside the Compose network. The
- * substitution lives here, where every caller passes through, and in Compose the variable is simply
- * not declared to the container — the switch is the declaration, not a flag anybody has to remember.
- */
-function withLocalHost(url: URL): URL {
-  const host = process.env.LOCAL_POSTGRES_HOST;
-  if (host === undefined || host === '') return url;
-
-  url.hostname = host;
-  url.port = optionalEnv('POSTGRES_PORT', url.port);
-  return url;
-}
-
-/**
- * Connection string of one module database. The template uses a single base `DATABASE_URL` and each
- * module with state owns `<PROJECT_SLUG>_<module>` on that server; a deployment that needs different
- * credentials or hosts per module sets `DATABASE_URL_<MODULE>` instead.
- */
-export function serviceDatabaseUrl(service: string): string {
-  // An explicit override is taken literally, `LOCAL_POSTGRES_HOST` or not: whoever wrote out a
-  // whole connection string for one module meant that server, that role and that password.
-  const override = process.env[`DATABASE_URL_${service.toUpperCase()}`];
-  if (override !== undefined && override !== '') return override;
-
-  const base = requireEnv('DATABASE_URL');
-  const url = withLocalHost(new URL(base));
-
-  // Assigned rather than concatenated: a password containing `@` or `/` would tear the string
-  // apart, and `URL` is what knows how to escape each part.
-  url.username = serviceDatabaseRole(service);
-  url.password = requireEnv(`DB_PASSWORD_${service.toUpperCase()}`);
-  url.pathname = `/${serviceDatabaseName(service)}`;
-  return url.toString();
-}
-
-/**
- * The role a module connects as. Derived from the slug, exactly like the database name and for the
- * same reason: taken from the connection string instead, `db-init`, the application and
- * `bootstrap:worktree` would drift apart with nothing to notice it.
- */
-export function serviceDatabaseRole(service: string): string {
-  return truncateIdentifier(`${projectSlug()}_${service}`);
-}
-
-/**
- * The connection string of the role that owns the server — `CREATE ROLE`, `ALTER DATABASE`,
- * `GRANT`. Only `db-init` has any business with it.
- */
-export function adminDatabaseUrl(): string {
-  return withLocalHost(new URL(requireEnv('DATABASE_URL'))).toString();
-}
-
-/**
- * PostgreSQL truncates every identifier to 63 bytes, silently and everywhere. Applying it where the
- * name is derived keeps it from happening later in five places at once — but it does not make long
- * slugs safe, and `db-init` refuses two names that survive truncation identically.
- */
-export const IDENTIFIER_LIMIT = 63;
-
-export function truncateIdentifier(name: string): string {
-  return Buffer.from(name, 'utf8').subarray(0, IDENTIFIER_LIMIT).toString();
-}
-
-export function serviceDatabaseName(service: string): string {
-  return truncateIdentifier(`${projectSlug()}_${service}`);
 }
 
 /** Name of the session cookie. Scoped by project slug so parallel worktrees do not collide. */

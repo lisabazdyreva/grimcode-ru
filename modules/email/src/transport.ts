@@ -19,9 +19,8 @@ const UNISENDER_API_URL = 'https://go1.unisender.ru/ru/transactional/api/v1';
 /**
  * Everything the mail transport needs, handed over by the composer.
  *
- * The module does not read the environment: the API key is a secret of this one module, and the
- * composer deletes it from `process.env` once it has been handed out. Reading it here instead would
- * make the key depend on where in `compose()` this module happens to be built.
+ * The module does not read the environment: the composer does, and hands these over on `c.env`. That is
+ * the rule for every module, and the lint rules enforce it.
  *
  * The values arrive as they were written, unset ones as empty strings, and what empty means is
  * decided here — one per field, and each on purpose. `provider` is not narrowed to `TransportName`

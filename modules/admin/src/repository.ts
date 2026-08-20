@@ -145,14 +145,28 @@ export class AdminRepository {
     return row;
   }
 
+  /** Owners other than this one, as this registry sees them. Whether they can sign in is Auth's fact. */
+  async otherActiveOwnerIds(userId: string): Promise<string[]> {
+    const { rows } = await this.pool.query<{ user_id: string }>(
+      `SELECT user_id FROM administrators
+        WHERE role = 'owner' AND enabled AND user_id <> $1`,
+      [userId],
+    );
+    return rows.map((row) => row.user_id);
+  }
+
   /**
    * Applies a change while holding the whole administrators table against concurrent writes, so
    * the "last active owner" rule cannot be bypassed by two simultaneous requests.
+   *
+   * `eligibleOwnerIds` is which of the other owners could actually take over — the registry cannot
+   * tell, because being blocked is Auth's fact, so the caller establishes it and passes it in.
    */
   async update(
     userId: string,
     patch: { role?: AdminRole; enabled?: boolean; grants?: readonly string[] },
     guard: (next: { role: AdminRole; enabled: boolean }, activeOwners: number) => void,
+    eligibleOwnerIds: readonly string[],
   ): Promise<AdministratorRow> {
     await withTransaction(this.pool, async (client) => {
       await client.query('LOCK TABLE administrators IN SHARE ROW EXCLUSIVE MODE');
@@ -171,8 +185,8 @@ export class AdminRepository {
 
       const { rows: ownerRows } = await client.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM administrators
-          WHERE role = 'owner' AND enabled AND user_id <> $1`,
-        [userId],
+          WHERE role = 'owner' AND enabled AND user_id <> $1 AND user_id = ANY($2)`,
+        [userId, eligibleOwnerIds],
       );
       guard(next, Number(ownerRows[0]?.count ?? 0));
 

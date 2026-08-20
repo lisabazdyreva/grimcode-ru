@@ -1,11 +1,9 @@
 /**
- * What a neighbour may see of this module: `@template/admin` resolves to `createApp` and `migrations`,
- * `@template/admin/contract` to here, `dist/repository.js` to nothing at all. It matters more here
- * than anywhere else — this module is the registry of who may do what, and the one thing a neighbour
- * is allowed to have of it is the shape of the two questions it may ask.
+ * What a neighbour may see of this module: `@template/admin` resolves to `createApp` and its
+ * types, `@template/admin/contract` to here, `dist/repository.js` to nothing at all.
  *
- * A projection of the implementation, not an agreement: what keeps the type honest is `.output()` on
- * every procedure and the `satisfies` line pinning each router to the names it may hold.
+ * A projection of the implementation, not an agreement: `.output()` on every procedure and the
+ * `satisfies` line are what keep it honest.
  */
 export type { AdminInternalRouter, AdminPanelRouter } from './routers.js';
 

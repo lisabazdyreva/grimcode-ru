@@ -14,25 +14,10 @@ import type { Notifier } from '../notifier.js';
 import type { AuthRepository, IdentityRow } from '../repository.js';
 import { adminIdentitySchema, authAuditEntrySchema } from '../schemas.js';
 
-/**
- * Whether this identity is an active owner of the admin panel.
- *
- * Ownership is Admin's fact and Auth needs it for one rule, so Auth declares what it needs and is
- * handed an implementation. The direction of the call is a decision of the wiring, the only place
- * that knows about both.
- */
-export type IsActiveOwner = (userId: string) => Promise<boolean>;
-
 export interface AdminRpcContext extends AdminAwareContext {
   repo: AuthRepository;
   notifier: Notifier;
   logger: Logger;
-  /**
-   * Required, never optional and never defaulted: a default of "assume not an owner" would turn one
-   * forgotten line in the wiring into a rule that silently stops running, and that rule is what
-   * keeps the panel from being left with no owner at all.
-   */
-  isActiveOwner: IsActiveOwner;
 }
 
 const RESET_TTL_SECONDS = 60 * 60;
@@ -219,7 +204,12 @@ export const adminRouter = t.router({
     },
   ),
 
-  /** Owner-only, and no owner's identity can be blocked while they hold the rights. */
+  /**
+   * Owner-only, and nobody can block themselves. Those two together are why this needs to ask nothing
+   * about the panel: whoever blocks is an owner who is still able to sign in afterwards, so blocking
+   * alone can never leave the panel without one. Taking the rights off that owner is refused in
+   * Administrators, which is where the registry can see who is left.
+   */
   setBlocked: adminMutation
     .input(z.object({ id: idSchema, blocked: z.boolean() }))
     .output(z.object({ ok: z.literal(true), identity: adminIdentitySchema }))
@@ -231,21 +221,6 @@ export const adminRouter = t.router({
       if (input.blocked && ctx.admin.userId === input.id) {
         // Otherwise the last working owner session could be removed by the owner themselves.
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Нельзя заблокировать самого себя' });
-      }
-
-      /*
-       * Blocking takes away every session and every token, so a blocked owner is an owner the panel
-       * can no longer let in. The registry counts owners by its `enabled` flag and cannot see that,
-       * so two owners could be reduced to none: block one here, remove the other there. Auth asks
-       * before it acts and refuses outright — rights come off in Administrators first.
-       */
-      if (input.blocked) {
-        if (await ctx.isActiveOwner(input.id)) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'Сначала снимите права владельца в разделе «Администраторы»',
-          });
-        }
       }
 
       const row = await loadIdentity(ctx.repo, input.id);

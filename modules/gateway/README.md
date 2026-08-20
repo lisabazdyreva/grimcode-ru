@@ -109,13 +109,13 @@ also sets its own session cookie.
 | `SERVICE_URL_ADMINER` | Where Adminer lives — the one address Gateway still resolves for itself |
 
 Gateway does not hold addresses any more: the composer builds every module and hands the whole set
-over as `targets`. A target may be an application in this process or a URL, and Gateway does not
-care which — Adminer is a URL today, and a module that has to be moved back out into a service of its
-own becomes one without touching this package.
+over as `targets`. A target may be an application in this process or a URL, and Gateway does not care
+which — Adminer is a URL today, and anything put behind a real network would become one without
+touching this package.
 
-Which is why only Adminer's variable is listed above. The other `SERVICE_URL_<MODULE>` overrides still
-exist, but they are read by whoever builds that module's client — not here. Pointing
-`SERVICE_URL_AUTH` somewhere else changes nothing about Gateway's routing.
+Adminer's is the only such variable left anywhere. A client calling a module does not take an address
+at all: it is handed the neighbour's `fetch`, and the address it builds its request from lives in
+`shared`. `SERVICE_URL_AUTH` and the rest are read by nobody.
 
 The process's listening port is fixed inside the image. Locally the published host port comes from
 `GATEWAY_PORT` in `.env`; in production nothing is published at all.

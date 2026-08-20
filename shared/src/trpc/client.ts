@@ -3,70 +3,50 @@ import type { AnyTRPCRouter } from '@trpc/server';
 
 import { RPC_TIMEOUT_MS, withDeadline, type FetchLike } from '../rpc.js';
 
+/**
+ * The address a request is built from. The host is never dialed — the neighbour's own `app.fetch`
+ * answers — but the path is what that neighbour routes on, so it must match the
+ * `mountTrpc(app, '/internal/rpc', …)` of every module. Nothing checks that for us.
+ */
+const INTERNAL_RPC_URL = 'http://module/internal/rpc';
+
 export interface TrpcClientOptions {
-  /** Absolute URL of the tRPC mount, for example `http://email:3006/internal/rpc`. */
-  url: string;
-  /** Extra headers sent with every call, such as the propagated request id. */
+  /** Who answers the call: the neighbour's own `app.fetch`, which the caller was handed. */
+  fetch: FetchLike;
   headers?: Record<string, string>;
   timeoutMs?: number;
-  /**
-   * Who answers the call; omitted means the network. In this process it is the neighbour's own
-   * `app.fetch`, and the `url` still builds the request that nobody dials.
-   */
-  fetch?: FetchLike;
 }
 
 /**
- * Typed tRPC client for one module calling another.
+ * Typed tRPC client for a call carried as a request; the type comes from the neighbour's
+ * `./contract`. No module uses it any more — only the composer, for its one remaining call.
  *
- * The type comes from the neighbour's router, through its `./contract` export.
+ * **`httpLink`, never `httpBatchLink`.** Batching answers mixed results with a single 207, and the
+ * fail-closed branches around here are written around one call having one status.
  *
- * **`httpLink`, never `httpBatchLink`.** The batching link is the one tRPC's own documentation
- * recommends by default, and it answers a batch of mixed results with 207. Everything above this —
- * the fail-closed branches, `ServiceUnavailableError`, the acceptance suite — is written around one
- * call having one status.
- *
- * **The deadline is ours to enforce.** `AbortSignal` is honoured by the network and ignored by
- * `app.fetch`, so in one process a hung handler would otherwise be waited on forever — and every
- * fail-closed branch above this depends on the wait actually ending.
+ * **The deadline is ours.** `app.fetch` ignores `AbortSignal`, so a hung handler would otherwise be
+ * waited on forever.
  */
 export function createTrpcClient<TRouter extends AnyTRPCRouter>(
   options: TrpcClientOptions,
 ): TRPCClient<TRouter> {
   const timeoutMs = options.timeoutMs ?? RPC_TIMEOUT_MS;
-  const answer = options.fetch;
 
   const link = httpLink({
-    url: options.url,
+    url: INTERNAL_RPC_URL,
     methodOverride: 'POST',
     headers: () => options.headers ?? {},
-    fetch: answer
-      ? (input, init) =>
-          withDeadline(
-            answer(new Request(input as string | URL | Request, init as RequestInit)),
-            options.url,
-            timeoutMs,
-          )
-      : (input, init) => {
-          /*
-           * The link's own signal is kept rather than replaced: tRPC aborts a call the caller gave
-           * up on through `init.signal`, and overwriting it would leave that request running to its
-           * end with nobody left to read it.
-           */
-          const request = init as RequestInit | undefined;
-          const deadline = AbortSignal.timeout(timeoutMs);
-          return fetch(input as string | URL | Request, {
-            ...request,
-            signal: request?.signal ? AbortSignal.any([request.signal, deadline]) : deadline,
-          });
-        },
+    fetch: (input, init) => {
+      const request = new Request(input as string | URL | Request, init as RequestInit);
+      // The procedure is the last part of the path, so a deadline names the call it gave up on.
+      return withDeadline(options.fetch(request), request.url, timeoutMs);
+    },
   });
 
   /*
-   * The one cast in this file, and it is about a transformer nothing here has. `httpLink`'s options
-   * resolve `TransformerOptions<…>` off the router's own types — with a transformer one must be
-   * given, without one it is forbidden — and while `TRouter` is generic the compiler cannot tell
-   * which case it is looking at, so it accepts neither. No module here configures a transformer.
+   * The cast is about a transformer nothing here has: `httpLink` resolves its options off the
+   * router's own types — required with a transformer, forbidden without — and a generic `TRouter`
+   * fits neither.
    */
   return createTRPCClient<TRouter>({ links: [link as TRPCLink<TRouter>] });
 }

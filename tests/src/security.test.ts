@@ -297,11 +297,13 @@ describe('an administrator acting on an identity', () => {
   });
 
   /**
-   * Blocking takes away every session and every token, so a blocked owner is an owner the panel can
-   * no longer let in — and the registry, which counts owners by its own flag, would never notice.
-   * Rights come off first; only then can the identity be blocked.
+   * Blocking an owner is allowed, and asks Admin nothing: only an owner may block and nobody may
+   * block themselves, so whoever blocks can still sign in afterwards. The panel is kept from being
+   * left empty on the other side — a blocked owner does not count as one who could take over, so the
+   * rights cannot come off the last owner who can still enter.
    */
-  it('cannot block another owner while they still hold the rights', async () => {
+  it('counts a blocked owner as unable to enter when rights are taken away', async () => {
+    const acting = await owner.call<{ userId: string }>(ADMIN, 'session');
     const second = await createUser('secondowner');
     await restore.remember(second.userId);
     await owner.call(
@@ -311,36 +313,37 @@ describe('an administrator acting on an identity', () => {
       { csrf: true },
     );
 
-    const refused = await owner.rpc(
+    const blocked = await owner.rpc(
       serviceAdmin('auth'),
       'setBlocked',
       { id: second.userId, blocked: true },
       { csrf: true },
     );
-    // 409: refused for holding the rights, not for any of the other reasons blocking can fail.
-    expect(refused.status).toBe(409);
+    expect(blocked.status).toBe(200);
 
-    // Taking the rights away is what makes blocking possible.
-    await owner.call(
+    // 409: the other owner is blocked, so giving up these rights would leave nobody able to enter.
+    const refused = await owner.rpc(
       ADMIN,
       'updateAdministrator',
-      { userId: second.userId, role: 'admin', grants: ['auth'] },
+      { userId: acting.userId, role: 'admin' },
       { csrf: true },
     );
-    const allowed = await owner.rpc(
-      serviceAdmin('auth'),
-      'setBlocked',
-      { id: second.userId, blocked: true },
-      { csrf: true },
-    );
-    expect(allowed.status).toBe(200);
+    expect(refused.status).toBe(409);
 
+    // Unblocked, that owner counts again, and the ordinary last-owner path still allows the change.
     await owner.call(
       serviceAdmin('auth'),
       'setBlocked',
       { id: second.userId, blocked: false },
       { csrf: true },
     );
+    const allowed = await owner.rpc(
+      ADMIN,
+      'updateAdministrator',
+      { userId: second.userId, role: 'admin', grants: [] },
+      { csrf: true },
+    );
+    expect(allowed.status).toBe(200);
   });
 
   it('cannot block themselves, even as the owner', async () => {

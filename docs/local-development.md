@@ -19,8 +19,8 @@ the databases.
 silently, and the longest name built from the slug is `<slug>_notifications` — fourteen characters on
 top, which is where 49 comes from. At 50 one name quietly loses its last letter; at 60 the suffixes
 are down to `_ad`, `_au`, `_em`, `_no`, `_us`, which work and read like nothing; at 61 `admin` and
-`auth` both truncate to `…_a` and two modules would share one database. `db-init` refuses that last
-case and nothing catches the ones before it, so the number is worth respecting rather than
+`auth` both truncate to `…_a` and two modules would share one database. The composer refuses that
+last case at startup and nothing catches the ones before it, so the number is worth respecting rather than
 discovering.
 
 Ports come from one range, `PORT_RANGE_START..PORT_RANGE_END`. Its first port is the main checkout's
@@ -39,7 +39,7 @@ subnet of its own and never touches anyone else's.
 | | |
 | --- | --- |
 | `pnpm start` / `pnpm stop` | Start and stop the stack |
-| `pnpm db-init` / `pnpm migrate` | Create the databases and roles; apply the migrations |
+| — | The databases and their migrations need no command: each module creates and migrates its own on its first request |
 | `pnpm logs server` | Follow the application |
 | `pnpm check` | Lint, types, unit tests, production build, then the six scripts below: dependencies, boundaries, procedures, service ids, Compose, script names |
 | `pnpm test:acceptance` | The HTTP checks, against the running stack |
@@ -55,13 +55,11 @@ full rebuild — around forty seconds. The second mode skips Docker for the appl
 
 ```bash
 node scripts/compose.mjs up -d postgres
-pnpm db-init && pnpm migrate
 pnpm dev
 ```
 
-The first two are the same commands the deployment runs as jobs before the application starts, and
-they are needed here for the same reason: the application no longer migrates anything on start-up.
-Running them again is harmless — both only ever add what is missing.
+PostgreSQL is the only thing that has to be started first: the databases and their schemas appear on
+their own, module by module, on the first request that needs them.
 
 `pnpm dev` builds what changed and runs the application directly, on `GATEWAY_PORT` — the same
 address as the container it replaces, so nothing else has to be told about it. PostgreSQL is reached
@@ -79,7 +77,8 @@ Four things this mode does not give you:
   failure answers with more detail than a deployment would.
 - **It is your machine's Node.** The image pins one; here you get whatever `node -v` says, which is
   the point of the speed and also the reason a green `pnpm dev` is not a green deployment.
-- **Migrations are yours to run.** `pnpm migrate` after a schema change, before `pnpm dev` — nothing
+- **Migrations run themselves.** A new migration is applied by its module on the first request after
+  a restart; there is no command to remember. Nothing
   applies them behind you any more.
 
 ## Reaching it from another machine
@@ -150,27 +149,25 @@ Adminer, themed to match the panel around it; it has no host port in any environ
 node scripts/compose.mjs exec postgres psql -U template -d "${PROJECT_SLUG}_auth"
 ```
 
-Each module connects as a role of its own — `<PROJECT_SLUG>_<module>`, with the password from
-`DB_PASSWORD_<MODULE>` — and owns its database and everything in it. `PUBLIC` has no `CONNECT`, so a
-module presented with a neighbour's database name is refused while connecting, before any statement
-runs.
+Each module works in a database of its own — `<PROJECT_SLUG>_<module>` — created on first use through
+the one account in `DATABASE_URL`, which needs `CREATEDB` and opens every database on the server.
 
-What that is worth, precisely: a query against a neighbour's table is already impossible because the
-table is in another database, and a module cannot open a connection of its own because
-`check-boundaries` and `check-dependencies` refuse `createPool`, `createAdminPool`, `process.env`
-and `pg` in a module. The role adds the two things those cannot — one leaked module password opens
-one database rather than five, and it is the only layer here that is not a script of ours, so it
-still refuses when every check above has been edited away.
+What separates the modules, then, and what does not. Separate databases still mean a query cannot reach
+a neighbour's table: it would have to be a different connection, not a different table name. What is
+gone is PostgreSQL refusing that connection — there are no per-module roles any more, so the module
+that opens the wrong database is stopped by the check it makes when its pool opens (`Pool opened
+database … expected …`) and by nothing else. That check runs before the migrations, so a mistyped
+`DATABASE_URL_<MODULE>` cannot build one module's tables in another module's database.
 
-The `template` account in the `psql` line above is a different thing: it owns the server, comes from
-`DATABASE_URL`, and is what `db-init` uses to create the module roles — which is also why it is the
+The `template` account in the `psql` line above is the same one the modules use: it comes from
+`DATABASE_URL`, owns the server, and is what creates the databases — which is also why it is the
 convenient one to poke around with.
 
 ## The checks, and what each is for
 
 | Script | Refuses |
 | --- | --- |
-| `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver lives in `shared` and nowhere else; an `.npmrc` setting that would hoist every package into reach |
+| `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver belongs to the five modules that own a database and to `shared`, and nowhere else; an `.npmrc` setting that would hoist every package into reach |
 | `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool opened outside the wiring; a module reading the environment; a door that would carry code, in its source and in what it emits; a browser-facing file of `shared` importing anything but `zod` |
 | `check-procedures.mjs` | A procedure that declares no `.output()`; an admin procedure that changes something without asking for a CSRF token — the builder is followed to its definition rather than trusted by its name; a router nobody mounts |
 | `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; a grantable service that is not an admin service; Adminer being public or grantable |
@@ -183,16 +180,17 @@ They exist because each protects a rule that is easy to break by accident and ha
 
 1. The module under `modules/`, with its routers split by trust boundary — public, internal, admin —
    and a `src/contract.ts` re-exporting their **types** for whoever calls it.
-2. The same package exporting `createApp(deps)` and — if it stores anything — its
-   `migrations`, plus an entry in the composer's `MIGRATIONS` list, which is what gives it a pool, a
-   database and a role.
+2. The same package exporting `createApp(deps)`. If it stores anything, it also carries its own
+   `src/db/database.ts` — creating its database, applying its migrations, opening the pool — and its name
+   goes into the composer's `DATABASE_MODULES`, which is what gets it a connection string on `c.env`.
 3. Its id in `ADMIN_SERVICE_IDS` and, unless only the owner should reach it, in
    `ASSIGNABLE_SERVICE_IDS` — both in [`shared/src/vocabulary.ts`](../shared/src/vocabulary.ts).
 4. Its id in Gateway's `ADMIN_SERVICES` allowlist, and — only if it should be reachable without a
    session — in `PUBLIC_SERVICES` as well; plus its entry in the Admin shell's
    [`services.ts`](../modules/admin/web/src/services.ts).
-5. Its password variable `DB_PASSWORD_<MODULE>` in `.env.example` and in the Compose environment
-   anchor, next to a `DATABASE_URL_<MODULE>` line if that module's database should be movable
+5. Its directory in `OUTSIDE_PROCESS_HOMES` in [`scripts/workspace-rules.mjs`](../scripts/workspace-rules.mjs)
+   if it stores anything — that is what lets it declare the database driver — and a
+   `DATABASE_URL_<MODULE>` line in the Compose environment anchor if its database should be movable
    elsewhere. Nothing else in `docker/compose.yaml` changes: a module is not a container any more.
 
 `check-service-ids.mjs` will tell you if you missed one of the three places ids live —

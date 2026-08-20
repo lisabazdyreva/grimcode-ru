@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Boundary check: what a file may import, and which database a module may open. The rules are in
+ * Boundary check: what a file may import, and whether it reads the environment. The rules are in
  * `workspace-rules.mjs`, and the walk covers the whole repository, so `shared/` reaching into a
  * module is caught by the same rule as the reverse.
  */
@@ -32,14 +32,6 @@ const ignoredDirs = new Set([
   'test-results',
 ]);
 const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']);
-
-/**
- * Areas allowed to open a database pool; a module is handed what it needs. `createAdminPool` opens
- * whatever string it is given, as the role that owns the server, and this is the check behind the
- * subpath it hides in. `tests` is here for one check: that a module's credentials are refused.
- */
-const POOL_CALLERS = ['composition', 'tests'];
-const POOL_FUNCTIONS = ['createPool', 'createAdminPool'];
 
 /**
  * Areas forbidden to read the environment directly — the one boundary the move genuinely weakened,
@@ -94,7 +86,6 @@ function workspacePackageOf(specifier) {
 }
 
 const importProblems = [];
-const poolProblems = [];
 const envProblems = [];
 const doorProblems = [];
 const emitProblems = [];
@@ -140,16 +131,6 @@ function inspect(file) {
     );
   };
 
-  /**
-   * The composer creates all five pools and hands each module a ready one, so the call may only
-   * appear where the permission already is — a module cannot pass the wrong name because it cannot ask.
-   */
-  const recordPool = (node, name) => {
-    if (!POOL_CALLERS.includes(rule.area)) {
-      poolProblems.push(`${at(node)} ${name}() in ${dir}`);
-    }
-  };
-
   const readsEnvironment =
     ENV_FORBIDDEN_AREAS.includes(rule.area) && !/\.test\.tsx?$/.test(relative);
 
@@ -179,9 +160,6 @@ function inspect(file) {
       }
       if (specifier && ts.isIdentifier(node.expression) && node.expression.text === 'require') {
         recordImport(node, specifier, 'require');
-      }
-      if (ts.isIdentifier(node.expression) && POOL_FUNCTIONS.includes(node.expression.text)) {
-        recordPool(node, node.expression.text);
       }
     }
     ts.forEachChild(node, visit);
@@ -289,24 +267,15 @@ if (importProblems.length > 0) {
   );
 }
 
-if (poolProblems.length > 0) {
-  console.error(`${importProblems.length > 0 ? '\n' : ''}Database pools opened outside the wiring:`);
-  for (const problem of poolProblems) console.error(`- ${problem}`);
-  console.error(
-    `\n${POOL_FUNCTIONS.join('() and ')}() belong to ${POOL_CALLERS.join(', ')}; ` +
-      'a module is handed its pool.',
-  );
-}
-
 if (envProblems.length > 0) {
-  const separator = importProblems.length > 0 || poolProblems.length > 0 ? '\n' : '';
+  const separator = importProblems.length > 0 ? '\n' : '';
   console.error(`${separator}Modules reading the environment:`);
   for (const problem of envProblems) console.error(`- ${problem}`);
   console.error('\nA module is handed what it needs; the composer is what reads the environment.');
 }
 
 if (browserProblems.length > 0) {
-  const earlier = importProblems.length > 0 || poolProblems.length > 0 || envProblems.length > 0;
+  const earlier = importProblems.length > 0 || envProblems.length > 0;
   console.error(`${earlier ? '\n' : ''}Browser-facing files reaching into the server:`);
   for (const problem of browserProblems) console.error(`- ${problem}`);
   console.error(
@@ -316,7 +285,7 @@ if (browserProblems.length > 0) {
 }
 
 if (doorProblems.length > 0) {
-  const earlier = importProblems.length > 0 || poolProblems.length > 0 || envProblems.length > 0;
+  const earlier = importProblems.length > 0 || envProblems.length > 0;
   console.error(`${earlier ? '\n' : ''}Doors that would carry code:`);
   for (const problem of doorProblems) console.error(`- ${problem}`);
   console.error(
@@ -327,7 +296,6 @@ if (doorProblems.length > 0) {
 
 const earlierProblem = () =>
   importProblems.length > 0 ||
-  poolProblems.length > 0 ||
   envProblems.length > 0 ||
   doorProblems.length > 0 ||
   browserProblems.length > 0;
@@ -349,7 +317,6 @@ if (unbuiltDoors.length > 0) {
 
 if (
   importProblems.length > 0 ||
-  poolProblems.length > 0 ||
   envProblems.length > 0 ||
   doorProblems.length > 0 ||
   emitProblems.length > 0 ||

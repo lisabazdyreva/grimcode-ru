@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
@@ -9,81 +10,57 @@ import {
   readAdminContext,
   RPC_TIMEOUT_MS,
   withDeadlineOn,
-  type Logger,
-  type Pool,
 } from '@template/shared';
 
+import type { EmailEnv } from './env.js';
+import { createDatabase } from './db/database.js';
 import { EmailRepository } from './repository.js';
-import { renderMessage } from './render.js';
 import { adminRouter, createInternalCallerFactory } from './routers.js';
-import { createTransport, type MailSettings } from './transport.js';
+import { createTransport, type Transport } from './transport.js';
 
-export { migrations } from './db/migrations.js';
+export type { EmailEnv } from './env.js';
 export type { MailSettings } from './transport.js';
 
 /**
- * What seeding needs, and no transport: it renders templates and writes rows, it never sends. Kept
- * separate so the `migrate` job does not have to carry mail settings it has no use for.
- */
-export interface EmailSeedDeps {
-  logger: Logger;
-  pool: Pool;
-}
-
-export interface EmailDeps extends EmailSeedDeps {
-  /** The mail settings, read from the environment by the composer and handed over here. */
-  mail: MailSettings;
-}
-
-/**
- * Creates the seed templates, in the editor's own format and already published, so the auth flows
- * work on a fresh installation. Existing templates are never overwritten, so running it twice
- * changes nothing.
- *
- * A separate export rather than part of `createApp` because it is data, not routing, and because it
- * renders every template through `@maily-to/render`. It belongs to the `migrate` command, where it
- * stops running on every restart of the process.
- */
-export async function seedTemplates(deps: EmailSeedDeps): Promise<number> {
-  const repo = new EmailRepository(deps.pool);
-
-  const seeded = await repo.ensureSeedTemplates((document, subject) =>
-    renderMessage(document, subject).then(({ html, text }) => ({ html, text })),
-  );
-  if (seeded > 0) deps.logger.info('seed templates created', { created: seeded });
-
-  return seeded;
-}
-
-/**
  * Both shapes a composer needs — an application for what Gateway routes here, a caller for the
- * neighbour — from one factory, so the repository and the transport are built once. The caller
- * takes the request it belongs to: one per process would stamp every later line with the first id.
+ * neighbour — from one factory, so the pool and the transport are opened once between them.
+ *
+ * Takes nothing: this module calls no neighbour, and its database and mail settings arrive on
+ * `c.env`. The caller is handed the same environment by the composer, because a direct call has no
+ * request to read it from.
  */
-export function createModule(deps: EmailDeps) {
-  const repo = new EmailRepository(deps.pool);
-  const transport = createTransport(deps.mail, deps.logger);
+export function createModule() {
+  const logger = createLogger('email');
 
-  const internalCaller = (call: { requestId: string }) =>
+  // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
+  const database = createDatabase(logger);
+  const repository = async (env: EmailEnv) => new EmailRepository(await database(env));
+
+  // The transport likewise, from `c.env` on the first request and kept: which provider sends the mail
+  // is not a per-message decision. Synchronous, so one line remembers it.
+  let built: Transport | undefined;
+  const transport = (env: EmailEnv) => (built ??= createTransport(env.mail, logger));
+
+  const internalCaller = (env: EmailEnv, call: { requestId: string }) =>
     withDeadlineOn(
-      createInternalCallerFactory({
-        repo,
-        transport,
-        logger: deps.logger.child({ requestId: call.requestId }),
-      }),
+      createInternalCallerFactory(async () => ({
+        repo: await repository(env),
+        transport: transport(env),
+        logger: logger.child({ requestId: call.requestId }),
+      })),
       'email',
       RPC_TIMEOUT_MS,
     );
 
-  const app = createServiceApp('email', deps.logger);
+  const app = createServiceApp<EmailEnv>('email', logger);
 
   mountTrpc(
     app,
     '/admin/embed/service/email/rpc',
     adminRouter,
-    ({ request, resHeaders, hono }) => ({
-      repo,
-      transport,
+    async ({ request, resHeaders, hono }) => ({
+      repo: await repository(hono.env),
+      transport: transport(hono.env),
       logger: hono.get('logger'),
       request,
       resHeaders,

@@ -1,8 +1,17 @@
-import { serviceDatabaseName, serviceDatabaseUrl } from '@template/shared';
-import { createAdminPool } from '@template/shared/admin';
+import { maintenanceDatabaseUrl, serviceDatabaseName } from '@template/composition';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ADMIN, errorCode, errorMessage, Session, serviceAdmin, waitForStack } from './client.js';
+import {
+  ADMIN,
+  AUTH,
+  errorCode,
+  errorMessage,
+  Session,
+  serviceAdmin,
+  USERS,
+  waitForStack,
+} from './client.js';
 import { createUser, RegistryRestore, resolveOwner, type TestUser } from './fixtures.js';
 
 /**
@@ -284,34 +293,46 @@ describe('public routing', () => {
 });
 
 /**
- * The one layer that catches SQL written against a neighbour's table.
+ * Each module still works in a database of its own — and that is now a fact of the wiring rather than
+ * something PostgreSQL enforces.
  *
- * Every other boundary here is about code, and none of them can read a query — to a check a query is
- * a string. A role that cannot open the database is the difference between "must not" and "cannot".
+ * What stood here before was the opposite check: a module's own credentials being refused a
+ * neighbour's database, with `permission denied for database` as the proof. It was true while every
+ * module had a role and a password of its own. A module now creates its own database on its first
+ * request, which needs an account allowed to create databases — and such an account opens all of them.
+ * The refusal is gone, so the check that asserted it is gone too rather than being weakened into
+ * something that passes.
  *
- * The only check in the suite that speaks to PostgreSQL instead of going through Gateway, and it has
- * to: the refusal it is about never becomes an HTTP response anywhere.
+ * What is left worth checking is that the separation itself is real: the five databases exist, they
+ * are distinct, and each module's data is in its own. The first two are checked here; the third is
+ * what every flow in this suite exercises through Gateway.
  */
-describe('a module and a neighbour’s database', () => {
-  it('is refused on connection, not on the first query', async () => {
-    const url = new URL(serviceDatabaseUrl('admin'));
-    url.pathname = `/${serviceDatabaseName('auth')}`;
+describe('a database per module', () => {
+  /**
+   * The five databases exist and are distinct — and they come into being on first use, not at
+   * deployment, so this asks each module for something first. One request per module is enough: the
+   * pool opens, the database is created if it was missing, the migrations run.
+   *
+   * Written this way rather than trusting the rest of the suite to have warmed them: the files run in
+   * parallel, and a check that depends on another file's order is a check that goes red on a Tuesday.
+   */
+  it('is five distinct databases, each one where it is expected', async () => {
+    // Auth and Users answer these; Admin is asked by Gateway on any `/admin/**`; Notifications and
+    // Email are woken by the registration in `beforeAll`, which is the only route into them.
+    await owner.call(AUTH, 'currentSession', {});
+    await owner.call(USERS, 'getOwnProfile', {});
+    await owner.rpc(ADMIN, 'listAdministrators', {});
 
-    const pool = createAdminPool(url.toString());
+    const pool = new pg.Pool({ connectionString: maintenanceDatabaseUrl(), max: 1 });
     try {
-      // Refused while connecting, so the message names the database and not a table. Arriving on
-      // the first SELECT instead would mean every statement is one bug away from succeeding.
-      await expect(pool.query('SELECT 1')).rejects.toThrow(/permission denied for database/i);
-    } finally {
-      await pool.end();
-    }
-  });
+      const names = ['admin', 'auth', 'email', 'notifications', 'users'].map(serviceDatabaseName);
+      expect(new Set(names).size).toBe(names.length);
 
-  it('opens its own', async () => {
-    const pool = createAdminPool(serviceDatabaseUrl('admin'));
-    try {
-      const { rows } = await pool.query<{ current_database: string }>('SELECT current_database()');
-      expect(rows[0]?.current_database).toBe(serviceDatabaseName('admin'));
+      const { rows } = await pool.query<{ datname: string }>(
+        'SELECT datname FROM pg_database WHERE datname = ANY($1)',
+        [names],
+      );
+      expect(rows.map((row) => row.datname).sort()).toEqual([...names].sort());
     } finally {
       await pool.end();
     }

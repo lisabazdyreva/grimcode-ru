@@ -27,9 +27,12 @@ export const AREA_RULES = [
   { area: 'composition', mayUse: EVERY_PACKAGE },
   { area: 'shared', mayUse: [] },
   { area: 'modules/*', mayUse: ['@template/shared'], neighbourSubpath: true },
-  // The suite imports no module. It reaches for `shared` in one place: proving a module's
-  // credentials are refused a neighbour's database, which never becomes an HTTP response anywhere.
-  { area: 'tests', mayUse: ['@template/shared'] },
+  /*
+   * The suite imports no module. It reaches for `shared`, and for the composer in one place: asking
+   * PostgreSQL which databases exist needs the names, and deriving them is the composer's. Allowed
+   * because the composer is not a module — importing it borrows a name, not somebody's data.
+   */
+  { area: 'tests', mayUse: ['@template/shared', '@template/composition'] },
   { area: 'scripts', mayUse: [] },
   { area: '.', mayUse: [] },
 ];
@@ -56,14 +59,35 @@ export function describeAllowance(rule) {
 }
 
 /**
- * Packages that open a door out of the process; only `shared` may declare one. Written out one by
- * one because this is not a class a check can recognise, and a mail client added tomorrow would have
- * to be added by hand. `@types/pg` is absent: types are erased at build time and open nothing.
+ * Packages that open a door out of the process. Written out one by one because this is not a class a
+ * check can recognise, and a mail client added tomorrow would have to be added by hand. `@types/pg` is
+ * absent: types are erased at build time and open nothing.
  */
 export const OUTSIDE_PROCESS_PACKAGES = ['pg'];
 
-/** The one package allowed to declare them, as a repository-relative directory. */
-export const OUTSIDE_PROCESS_HOME = 'shared';
+/**
+ * Who may declare one, as repository-relative directories.
+ *
+ * It used to be `shared` alone, and the rule said what it meant: nothing but `shared` talks to a
+ * database, and a module is handed a pool. A module now opens its own — it decides how many
+ * connections it wants and when — so the driver is its dependency too, and the list grew from one to
+ * six.
+ *
+ * What that costs is worth stating: the check no longer says "only one package talks to the database",
+ * it says "only a package that owns a database, or checks one, does". `app`, `site` and `gateway` are
+ * still refused, and a new module that needs the driver has to be added here — which is the moment to
+ * ask whether it really owns a database of its own. `tests` is here for the one acceptance check that
+ * asks PostgreSQL directly which databases exist.
+ */
+export const OUTSIDE_PROCESS_HOMES = [
+  'shared',
+  'tests',
+  'modules/admin',
+  'modules/auth',
+  'modules/email',
+  'modules/notifications',
+  'modules/users',
+];
 
 /**
  * The compartment a repository-relative path belongs to, with the rule that governs it. `dir` is

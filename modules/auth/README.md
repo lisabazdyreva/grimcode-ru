@@ -8,10 +8,10 @@ Even though its main table is called `identities`, these are identity users, not
 
 ## Data
 
-Auth owns the database `<PROJECT_SLUG>_auth` and no other — it connects as the role of the same
-name, which has no right to connect to anyone else’s. Versioned migrations live in
-[`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the `migrate` command, not on
-start.
+Auth owns the database `<PROJECT_SLUG>_auth` and no other: it creates that one, opens that one, and
+names no other anywhere in its code. Versioned migrations live in
+[`src/db/migrations.ts`](src/db/migrations.ts) and are applied by this module itself, on the first
+request that opens its pool — as is creating the database if it is missing.
 
 | Table | Contents |
 | --- | --- |
@@ -115,13 +115,11 @@ time-limited flow through Notifications and Email as a user-initiated request. B
 immediately revokes sessions and outstanding auth tokens. An owner cannot block their own
 identity, so the action can never remove the last working owner session.
 
-Nor can anyone block *another* active owner: blocking takes away every session, and Admin's own
-last-owner rule counts owners by its `enabled` flag and would not see it, so two owners could be
-reduced to none — one blocked here, the other stripped there. Whether an identity is an active
-owner is Admin's fact, and this service does not reach for it: the router declares what it needs
-as `IsActiveOwner` and [`src/index.ts`](src/index.ts) hands it an implementation. The dependency is
-required, never optional — a missing one is a compile error rather than a rule that quietly stops
-running.
+Blocking another owner is allowed and asks Admin nothing. Only an owner may block, and nobody may
+block themselves, so whoever blocks is an owner still able to sign in afterwards — blocking alone
+cannot leave the panel without one. The other half of the rule lives where the registry is: Admin
+refuses to take the rights off the last owner who can still enter, counting only owners this service
+reports as unblocked. Ownership is Admin's fact and this service never reaches for it.
 
 Every admin mutation requires both the Gateway-verified administrator context and a valid CSRF
 token, is written to the Auth audit, and takes effect from the next request. Identity operations
@@ -144,9 +142,6 @@ A failed hand-off to Notifications never fails a security flow; it is logged ins
 | `PROJECT_SLUG` | Database and cookie naming |
 | `PUBLIC_SITE_URL` | Origin of verification and recovery links, and what decides `Secure` on the session cookie |
 | `AUTH_SESSION_TTL_SECONDS` | Session lifetime, 30 days by default |
-| `AUTH_LOGIN_ATTEMPT_LIMIT` | Failed sign-ins allowed per address inside one window, 10 by default |
-| `AUTH_LOGIN_ATTEMPT_WINDOW_SECONDS` | Length of that window, 15 minutes by default |
-| `SERVICE_URL_NOTIFICATIONS` | Notifications' address, used to build the request Auth's client sends |
 
 `Secure` follows that origin and **not** `NODE_ENV`, which this module never reads: the local stack
 runs the very same production images over plain http, and a `Secure` cookie would never come back.

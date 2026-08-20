@@ -109,8 +109,9 @@ caller this module hands out; either way a type has to cross the module boundary
 one named door and no other: `@template/email/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the admin router type, that caller type and
 `EditorDocument`, the stored document the editor screen reads — and nothing else. `@template/email`
-is the other entry and belongs to the composer, not to a neighbour: `createModule`, `migrations`, `seedTemplates` for the
-migrate job, and `MailSettings`, the shape of what `createModule` is handed. The repository, the
+is the other entry and belongs to the composer, not to a neighbour: `createModule`, the `EmailEnv`
+type and `MailSettings`, the shape of what arrives on `c.env`. Seeding the templates is this module's
+own business now and no specifier reaches it. The repository, the
 transport and the renderer are reachable by no specifier at all — which matters here more than
 elsewhere, because `@maily-to/render` is the one CPU-bound dependency in the process.
 
@@ -121,9 +122,9 @@ surface is not allowed to hold.
 
 ## Data
 
-Database `<PROJECT_SLUG>_email`, opened as the role of the same name and reachable by no other
+Database `<PROJECT_SLUG>_email`, created and opened by this module itself and touched by no other
 module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
-`migrate` command, which also creates the seed templates.
+module itself on the first request that opens its pool, which is also when the seed templates appear.
 
 `email_audit` records who changed what — a template created or updated, a draft made, a version
 published, a test sent — with the administrator and their role. It is a record for the database
@@ -133,14 +134,13 @@ difference.
 
 ## Environment
 
-Nothing in this module reads it. The composer opens the database and reads the mail settings, and
-hands both to `createModule` as `pool` and `mail`; the API key is a secret of this one module, and the
-composer deletes it from the environment once it has been handed over. What follows is what a
-deployment sets on this module's behalf.
+Nothing in this module reads it. The composer reads the mail settings and the connection string of this
+module's database, and both arrive on `c.env` with every request — the module creates and opens the
+database itself from that string. What follows is what a deployment sets on this module's behalf.
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL`, `PROJECT_SLUG` | The composer opens `<PROJECT_SLUG>_email` from these |
+| `DATABASE_URL`, `PROJECT_SLUG` | The composer derives `<PROJECT_SLUG>_email` from these; the module creates and opens it |
 | `EMAIL_PROVIDER` | `log` locally, `unisender` in production; anything else, empty included, records without sending |
 | `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` | Sender identity; UniSender Go refuses to send without an address |
 | `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | UniSender Go credentials; an unset URL means the provider's own |

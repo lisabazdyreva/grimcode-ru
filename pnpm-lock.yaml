@@ -41,6 +41,9 @@ importers:
 
   composition:
     dependencies:
+      '@hono/node-server':
+        specifier: 2.0.11
+        version: 2.0.11(hono@4.12.32)
       '@template/admin':
         specifier: workspace:*
         version: link:../modules/admin
@@ -96,6 +99,9 @@ importers:
       hono:
         specifier: 4.12.32
         version: 4.12.32
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -257,6 +263,9 @@ importers:
       hono:
         specifier: 4.12.32
         version: 4.12.32
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -342,6 +351,9 @@ importers:
       html-to-text:
         specifier: 10.0.0
         version: 10.0.0
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -455,6 +467,9 @@ importers:
       hono:
         specifier: 4.12.32
         version: 4.12.32
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -528,9 +543,6 @@ importers:
       '@tanstack/react-router':
         specifier: 1.170.18
         version: 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@tanstack/react-start':
-        specifier: 1.168.32
-        version: 1.168.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.1.5)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
@@ -556,6 +568,9 @@ importers:
       '@tailwindcss/vite':
         specifier: 4.3.3
         version: 4.3.3(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
+      '@tanstack/react-start':
+        specifier: 1.168.32
+        version: 1.168.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.1.5)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
       '@types/node':
         specifier: 22.20.1
         version: 22.20.1
@@ -598,6 +613,9 @@ importers:
       hono:
         specifier: 4.12.32
         version: 4.12.32
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -665,9 +683,6 @@ importers:
 
   shared:
     dependencies:
-      '@hono/node-server':
-        specifier: 2.0.11
-        version: 2.0.11(hono@4.12.32)
       '@trpc/client':
         specifier: 11.18.0
         version: 11.18.0(@trpc/server@11.18.0(typescript@5.9.3))(typescript@5.9.3)
@@ -702,12 +717,21 @@ importers:
       '@playwright/test':
         specifier: 1.62.0
         version: 1.62.0
+      '@template/composition':
+        specifier: workspace:*
+        version: link:../composition
       '@template/shared':
         specifier: workspace:*
         version: link:../shared
       '@types/node':
         specifier: 22.20.1
         version: 22.20.1
+      '@types/pg':
+        specifier: 8.20.0
+        version: 8.20.0
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
       typescript:
         specifier: 5.9.3
         version: 5.9.3

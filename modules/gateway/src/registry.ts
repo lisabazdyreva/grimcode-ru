@@ -1,4 +1,4 @@
-import { internalServiceUrl, type FetchLike } from '@template/shared';
+import { adminerUrl, type FetchLike } from '@template/shared';
 
 import type { ProxyTarget } from './proxy.js';
 
@@ -47,7 +47,7 @@ export interface GatewayTargets extends Record<AdminServiceName | PublicServiceN
  * container. Gateway knows where it lives; Admin decides who may reach it.
  */
 export function databaseBrowserUrl(): string {
-  return internalServiceUrl('adminer');
+  return adminerUrl();
 }
 
 export function isPublicService(name: string): name is PublicServiceName {

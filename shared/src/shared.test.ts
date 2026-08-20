@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { hashPassword, safeEqual, verifyPassword } from './crypto.js';
-import { serviceDatabaseName, serviceDatabaseUrl } from './env.js';
 import {
   ADMIN_CONTEXT_HEADERS,
   applyAdminContext,
@@ -172,77 +171,6 @@ describe('passwords', () => {
   });
 });
 
-describe('service databases', () => {
-  /** Nothing about a module's connection comes from the base string except where the server is. */
-  it('derives a database, a role and a password per module from the base url', () => {
-    process.env.PROJECT_SLUG = 'demo';
-    process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
-    process.env.DB_PASSWORD_AUTH = 'auth-password';
-
-    expect(serviceDatabaseName('auth')).toBe('demo_auth');
-    expect(serviceDatabaseUrl('auth')).toBe(
-      'postgres://demo_auth:auth-password@postgres:5432/demo_auth',
-    );
-
-    delete process.env.DB_PASSWORD_AUTH;
-  });
-
-  /** Fail closed: a module with no password of its own must not fall back to the owner's. */
-  it('refuses to start a module that has no password', () => {
-    process.env.PROJECT_SLUG = 'demo';
-    process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
-    delete process.env.DB_PASSWORD_AUTH;
-
-    expect(() => serviceDatabaseUrl('auth')).toThrow(/DB_PASSWORD_AUTH/);
-  });
-
-  /** A password with `@` or `/` in it tears a concatenated string apart; `URL` escapes each part. */
-  it('survives a password with characters that would tear a url apart', () => {
-    process.env.PROJECT_SLUG = 'demo';
-    process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
-    process.env.DB_PASSWORD_AUTH = 'p@ss/word:1';
-
-    const parsed = new URL(serviceDatabaseUrl('auth'));
-    expect(parsed.hostname).toBe('postgres');
-    expect(decodeURIComponent(parsed.password)).toBe('p@ss/word:1');
-
-    delete process.env.DB_PASSWORD_AUTH;
-  });
-
-  it('prefers an explicit per-service override', () => {
-    process.env.DATABASE_URL_EMAIL = 'postgres://other@db:5432/custom';
-    expect(serviceDatabaseUrl('email')).toBe('postgres://other@db:5432/custom');
-    delete process.env.DATABASE_URL_EMAIL;
-  });
-
-  /** Running on the machine rather than in Compose, where the host `postgres` does not exist. */
-  it('redirects to the published port when the application runs outside Compose', () => {
-    process.env.PROJECT_SLUG = 'demo';
-    process.env.DATABASE_URL = 'postgres://u:p@postgres:5432/postgres';
-    process.env.LOCAL_POSTGRES_HOST = '127.0.0.1';
-    process.env.POSTGRES_PORT = '63003';
-    process.env.DB_PASSWORD_AUTH = 'auth-password';
-
-    expect(serviceDatabaseUrl('auth')).toBe(
-      'postgres://demo_auth:auth-password@127.0.0.1:63003/demo_auth',
-    );
-
-    delete process.env.LOCAL_POSTGRES_HOST;
-    delete process.env.POSTGRES_PORT;
-    delete process.env.DB_PASSWORD_AUTH;
-  });
-
-  it('takes an explicit override literally, even then', () => {
-    process.env.LOCAL_POSTGRES_HOST = '127.0.0.1';
-    process.env.DATABASE_URL_EMAIL = 'postgres://other@db:5432/custom';
-
-    expect(serviceDatabaseUrl('email')).toBe('postgres://other@db:5432/custom');
-
-    delete process.env.DATABASE_URL_EMAIL;
-    delete process.env.LOCAL_POSTGRES_HOST;
-  });
-});
-
 describe('theme', () => {
   it('drops the attribute for system so prefers-color-scheme applies', () => {
     const attributes = new Map<string, string>();
@@ -332,11 +260,45 @@ describe('calling a neighbour in this process over tRPC', () => {
     mountTrpc(app, '/internal/rpc', router, ({ request, resHeaders }) => ({ request, resHeaders }));
 
     return createTrpcClient<typeof router>({
-      url: 'http://email:3006/internal/rpc',
       fetch: (request) => app.fetch(request),
       timeoutMs,
     });
   }
+
+  /**
+   * A procedure that throws used to answer 500 and write nothing at all: the reason stayed inside the
+   * adapter, and the only line left was the access log with its status. `onError` is what makes the
+   * failure visible, and this is the test that keeps it there.
+   */
+  it('writes the reason when a procedure throws, naming the procedure', async () => {
+    const lines: { message: string; fields?: Record<string, unknown> }[] = [];
+    const capturing: Logger = {
+      debug: () => undefined,
+      info: () => undefined,
+      warn: () => undefined,
+      error: (message, fields) => lines.push({ message, fields }),
+      child: () => capturing,
+    };
+
+    const router = t.router({
+      boom: t.procedure
+        .input(z.object({}))
+        .output(z.object({ ok: z.boolean() }))
+        .query(() => {
+          throw new Error('соединение с базой не открылось');
+        }),
+    });
+
+    const app = createServiceApp('email', capturing);
+    mountTrpc(app, '/internal/rpc', router, ({ request, resHeaders }) => ({ request, resHeaders }));
+    const client = createTrpcClient<typeof router>({ fetch: (request) => app.fetch(request) });
+
+    await expect(client.boom.query({})).rejects.toThrow();
+
+    const failure = lines.find((line) => line.message === 'procedure failed');
+    expect(failure?.fields).toMatchObject({ procedure: 'boom', code: 'INTERNAL_SERVER_ERROR' });
+    expect((failure?.fields?.error as Error).message).toBe('соединение с базой не открылось');
+  });
 
   it('reaches it without a network and answers through the contract', async () => {
     const client = callNeighbour(() => Promise.resolve({ pong: 'pong' }));
@@ -351,7 +313,10 @@ describe('calling a neighbour in this process over tRPC', () => {
     );
 
     const started = Date.now();
-    await expect(client.ping.query({ say: 'hi' })).rejects.toThrow(/did not answer within 50 ms/);
+    // The procedure, not a host: the address a client uses is ours and names nothing on its own.
+    await expect(client.ping.query({ say: 'hi' })).rejects.toThrow(
+      /\/internal\/rpc\/ping did not answer within 50 ms/,
+    );
     expect(Date.now() - started).toBeLessThan(500);
   });
 });

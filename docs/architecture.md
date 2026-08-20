@@ -33,7 +33,6 @@ flowchart LR
     gateway -.->|authorize| admin
     admin -.->|sessions, identities| auth
     users -.->|session, addresses| auth
-    auth -.->|isActiveOwner| admin
     auth -.->|emit| notifications
     notifications -.->|send| email
   end
@@ -81,10 +80,15 @@ Each module owns one thing completely, including the database it keeps that thin
 one. Nothing reads another module's tables — a module that did would break the moment the other
 changed a column, and there would be no way to replace one of them without replacing both.
 
-Sharing a process does not soften that. A module connects as a role of its own and `PUBLIC` has no
-`CONNECT`, so a module handed a neighbour's database name is refused while connecting, before a
-single statement runs. That is the only layer here that catches a query written against a
-neighbour's table: to every check that reads code, SQL is a string and not a structure.
+Sharing a process does not soften that, and the databases stay separate: a query cannot reach a
+neighbour's table, because that would take a different connection and not a different table name.
+
+What it does soften, deliberately, is who enforces it. There are no per-module roles: a module creates
+its own database on first use, which needs an account allowed to create databases, and such an account
+opens every database on the server. So the module that opens the wrong one is stopped by the check it
+makes when its pool opens — the name it landed on against the name it was told to expect — and by
+nothing in PostgreSQL. The check runs before the migrations, which is what keeps a mistyped
+`DATABASE_URL_<MODULE>` from building one module's tables in another's database.
 
 | Module | Owns | Deliberately does not know |
 | --- | --- | --- |
@@ -203,20 +207,20 @@ Notifications and Email have no public surface at all.
 
 ## Data
 
-One PostgreSQL server, one database per module with state, named `<PROJECT_SLUG>_<module>`, owned by
-a role of the same name. Nothing migrates another module's schema.
+One PostgreSQL server, one database per module with state, named `<PROJECT_SLUG>_<module>`. Nothing
+migrates another module's schema, and nothing but a module touches its own.
 
-Migrations are a command — `migrate` — that runs to completion before the application starts, not
-something the process does to itself on the way up. A failed migration then fails the deploy, with a
-non-zero exit code and the name of the module that stopped it, instead of leaving a container in a
-restart loop.
+A module prepares its own storage, on the first request that needs it: create the database if it is
+missing, apply the migrations, check what was opened, keep the pool. There is no deployment step in
+front of it. The cost is explicit — a broken migration answers 500 instead of failing a deploy — and
+the reason is that a module owning its data owns bringing it into existence too.
 
-Credentials are handed to a module and never read by it. The composer reads the environment, opens
-the five pools, gives each module the one that is its own, and then deletes the single-module secrets
-from `process.env` — because in one process that variable is shared by everyone in it. Two different
-things are in there: a neighbour's `DB_PASSWORD_<MODULE>`, which opens that neighbour's database as
-its role, and `DATABASE_URL` itself, which is the role that owns the server and goes past the roles
-entirely.
+Credentials are handed to a module and never read by it: the composer reads the environment and gives
+each module the connection string of its own database and the name it must land on. What is in the
+environment is `DATABASE_URL` — one account, which owns the server and opens every database on it — and
+it stays there. Deleting it after handing it out was tried and dropped: the string lives on `c.env` for
+the life of the process anyway, so the deletion bought a reader that remembered every name it read and
+little else.
 
 In production the server is a managed resource of the deployment platform, reached through
 `DATABASE_URL`. Locally it is a container in the same Compose project, so the whole thing has one
@@ -229,13 +233,14 @@ an out-of-memory kill or a rendering job that would not finish took down that co
 process it takes down everything, the public site included.
 
 Two answers are kept ready. The first is that the CPU-bound work is off the start-up path: rendering
-the seed email templates belongs to the `migrate` command, so a cold start no longer renders anything.
+the seed email templates happens once per fresh database, on the first request that reaches Email, and
+never again on a restart.
 Rendering has not left the process — publishing a template, previewing a version and a test send all
 call `@maily-to/render` on an admin request — but those are an administrator's own actions, not
-something a visitor or a restart can trigger. The second is the way out: `SERVICE_URL_<MODULE>`
-pointed at a real address, with the network `fetch` handed to that module's client, moves a module
-back out into a service of its own without changing a line of its code. The contracts are what make
-that possible, which is most of why the calls still go through them.
+something a visitor or a restart can trigger. The second is that a module stays a package of its own:
+what it offers is a contract and what it needs is handed to it, so putting one behind a real network
+again is work in `shared` and in the composer, not in the module. It is not a switch, and nothing here
+is written on the assumption that it will happen.
 
 **And transactions across a module boundary**, which follows from one database per module. A
 transaction lives in one connection to one database and no module can open a neighbour's, so two
