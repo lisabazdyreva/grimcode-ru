@@ -57,6 +57,24 @@ const DOOR_FILE = /^modules\/[^/]+\/src\/contract\.ts$/;
 const BROWSER_SAFE_FILES = /^shared\/src\/(theme|vocabulary)\.ts$/;
 const BROWSER_SAFE_IMPORTS = new Set(['zod']);
 
+/**
+ * The one file of a module allowed to hold the driver, and the one that must check where it landed.
+ *
+ * A module opens its own database, so the driver has to live somewhere; the point is that it lives in
+ * exactly one small file. One credential opens every database on the server, so a pool built anywhere
+ * else — a repository, a router, a helper — could open a neighbour's with the same string and a
+ * different name in it, and nothing downstream would notice.
+ */
+const DATABASE_FILE = /^modules\/[^/]+\/src\/db\/database\.ts$/;
+const DATABASE_DRIVER = 'pg';
+
+/**
+ * What that file must do: ask the pool which database it actually opened. It is a guard, so on a
+ * correct configuration it says nothing — which is why a module that forgets it looks healthy, and
+ * why this check exists rather than a test.
+ */
+const DATABASE_ASSERTION = 'assertOpenedDatabase';
+
 const packages = workspacePackages();
 const packageNames = new Set(packages.map((entry) => entry.name));
 const nameOfDir = new Map(packages.map((entry) => [entry.dir, entry.name]));
@@ -91,6 +109,8 @@ const doorProblems = [];
 const emitProblems = [];
 const unbuiltDoors = [];
 const browserProblems = [];
+const driverProblems = [];
+const unguardedDatabases = [];
 
 function inspect(file) {
   const relative = repoRelative(file);
@@ -168,6 +188,31 @@ function inspect(file) {
   if (DOOR_FILE.test(relative)) {
     inspectDoor(relative, source, at);
     inspectDoorEmit(relative);
+  }
+
+  if (rule.area === 'modules/*' && !/\.test\.tsx?$/.test(relative) && !DATABASE_FILE.test(relative)) {
+    for (const statement of source.statements) {
+      const specifier = ts.isImportDeclaration(statement) ? literalOf(statement.moduleSpecifier) : null;
+      if (specifier === DATABASE_DRIVER) {
+        driverProblems.push(`${at(statement)} imports "${DATABASE_DRIVER}" in ${dir}`);
+      }
+    }
+  }
+
+  if (DATABASE_FILE.test(relative)) {
+    let asserts = false;
+    const findAssertion = (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === DATABASE_ASSERTION
+      ) {
+        asserts = true;
+      }
+      ts.forEachChild(node, findAssertion);
+    };
+    findAssertion(source);
+    if (!asserts) unguardedDatabases.push(relative);
   }
 
   if (BROWSER_SAFE_FILES.test(relative)) {
@@ -284,6 +329,26 @@ if (browserProblems.length > 0) {
   );
 }
 
+if (driverProblems.length > 0) {
+  const earlier = importProblems.length > 0 || envProblems.length > 0 || browserProblems.length > 0;
+  console.error(`${earlier ? '\n' : ''}Modules holding the database driver outside their own db file:`);
+  for (const problem of driverProblems) console.error(`- ${problem}`);
+  console.error(
+    `\nA module opens its own database in src/db/database.ts and nowhere else. One credential opens ` +
+      'every database on the server, so a second pool built elsewhere could open a neighbour\'s.',
+  );
+}
+
+if (unguardedDatabases.length > 0) {
+  console.error(`\nModule databases opened without checking which one answered:`);
+  for (const file of unguardedDatabases) console.error(`- ${file}`);
+  console.error(
+    `\nEach must call ${DATABASE_ASSERTION} before it uses the pool. It is a guard: on a correct ` +
+      'configuration it says nothing, so a module that forgets it looks healthy until it writes into ' +
+      "a neighbour's database.",
+  );
+}
+
 if (doorProblems.length > 0) {
   const earlier = importProblems.length > 0 || envProblems.length > 0;
   console.error(`${earlier ? '\n' : ''}Doors that would carry code:`);
@@ -298,7 +363,9 @@ const earlierProblem = () =>
   importProblems.length > 0 ||
   envProblems.length > 0 ||
   doorProblems.length > 0 ||
-  browserProblems.length > 0;
+  browserProblems.length > 0 ||
+  driverProblems.length > 0 ||
+  unguardedDatabases.length > 0;
 
 if (emitProblems.length > 0) {
   console.error(`${earlierProblem() ? '\n' : ''}Doors that carry code once built:`);
@@ -315,14 +382,7 @@ if (unbuiltDoors.length > 0) {
   console.error('\nWhat a door emits is only visible after pnpm build; run it and repeat.');
 }
 
-if (
-  importProblems.length > 0 ||
-  envProblems.length > 0 ||
-  doorProblems.length > 0 ||
-  emitProblems.length > 0 ||
-  unbuiltDoors.length > 0 ||
-  browserProblems.length > 0
-) {
+if (earlierProblem() || emitProblems.length > 0 || unbuiltDoors.length > 0) {
   process.exit(1);
 }
 
