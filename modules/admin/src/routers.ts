@@ -18,7 +18,6 @@ import {
   verifiedAdmin,
   type AdminAwareContext,
   type Logger,
-  type RpcContext,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
@@ -28,7 +27,8 @@ import { z } from 'zod';
 import { toAdministrator, type AdminRepository } from './repository.js';
 import { administratorSchema, adminAuditEntrySchema, authorizationResultSchema } from './schemas.js';
 
-export interface InternalContext extends RpcContext {
+/** No `request` and no `resHeaders`: a caller has no request, and the mount passes them anyway. */
+export interface InternalContext {
   repo: AdminRepository;
   auth: AuthCaller;
   logger: Logger;
@@ -319,6 +319,9 @@ export const adminRouter = adminT.router({
     }),
 } satisfies Record<AdminName, unknown>);
 
+
+/** Calls the internal procedures directly, with their schemas and without a request. */
+export const createInternalCallerFactory = internalT.createCallerFactory(internalRouter);
 
 /** The panel's browser client, Gateway and the composer are typed from these, and nothing else. */
 export type AdminInternalRouter = typeof internalRouter;

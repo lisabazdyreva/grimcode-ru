@@ -1,3 +1,4 @@
+import type { AdminInternalCaller } from '@template/admin/contract';
 import type { AdminContext, AdminTarget } from '@template/shared/vocabulary';
 import { ServiceUnavailableError, type Logger } from '@template/shared';
 
@@ -38,12 +39,13 @@ export async function routeRequest(
   requestId: string,
   logger: Logger,
   targets: GatewayTargets,
+  callAdmin: (call: { requestId: string }) => AdminInternalCaller,
 ): Promise<Response> {
   const { pathname } = new URL(request.url);
 
   try {
     if (pathname === '/admin' || pathname.startsWith('/admin/')) {
-      return await routeAdmin(request, pathname, requestId, targets);
+      return await routeAdmin(request, pathname, requestId, targets, callAdmin);
     }
 
     if (pathname === '/service' || pathname.startsWith('/service/')) {
@@ -77,13 +79,16 @@ async function routeAdmin(
   pathname: string,
   requestId: string,
   targets: GatewayTargets,
+  callAdmin: (call: { requestId: string }) => AdminInternalCaller,
 ): Promise<Response> {
   const target = adminTargetOf(pathname);
 
   // An unknown module name never becomes a target and Admin is never asked about it.
   if (target === null) return notFound(request);
 
-  const result = await authorizeAdminRequest(request, target, requestId, targets.admin);
+  // Built here, not at the entrance: Gateway sees every request, and a page of the site needs no
+  // caller into Admin.
+  const result = await authorizeAdminRequest(request, target, callAdmin({ requestId }));
 
   if (result.state === 'awaiting-first-user') return awaitingFirstUser(request);
   if (result.state === 'denied') return forbidden(request);

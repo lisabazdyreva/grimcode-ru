@@ -7,15 +7,16 @@ import {
   mountSpa,
   mountTrpc,
   readAdminContext,
+  RPC_TIMEOUT_MS,
+  withDeadlineOn,
   type Logger,
   type Pool,
-  type ServiceApp,
 } from '@template/shared';
 
 import type { AuthInternalCaller } from '@template/auth/contract';
 
 import { AdminRepository } from './repository.js';
-import { adminRouter, internalRouter } from './routers.js';
+import { adminRouter, createInternalCallerFactory, internalRouter } from './routers.js';
 
 export { migrations } from './db/migrations.js';
 
@@ -29,8 +30,24 @@ export interface AdminDeps {
   callAuth: (call: { requestId: string }) => AuthInternalCaller;
 }
 
-export function createApp(deps: AdminDeps): ServiceApp {
+/**
+ * Both shapes a composer needs — an application for what Gateway routes here, a caller for Gateway's
+ * authorization check — from one factory, so the repository is built once.
+ */
+export function createModule(deps: AdminDeps) {
   const repo = new AdminRepository(deps.pool);
+
+  const internalCaller = (call: { requestId: string }) =>
+    withDeadlineOn(
+      createInternalCallerFactory({
+        repo,
+        auth: deps.callAuth(call),
+        logger: deps.logger.child({ requestId: call.requestId }),
+      }),
+      'admin',
+      RPC_TIMEOUT_MS,
+    );
+
   const app = createServiceApp('admin', deps.logger);
 
   /**
@@ -63,5 +80,7 @@ export function createApp(deps: AdminDeps): ServiceApp {
     rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
   });
 
-  return app;
+  return { app, internalCaller };
 }
+
+export type AdminInternalCaller = ReturnType<ReturnType<typeof createModule>['internalCaller']>;

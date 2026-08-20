@@ -1,3 +1,4 @@
+import type { AdminInternalCaller } from '@template/admin/contract';
 import { createServiceApp, type Logger, type ServiceApp } from '@template/shared';
 
 import { routeRequest } from './router.js';
@@ -9,6 +10,8 @@ export interface GatewayDeps {
   logger: Logger;
   /** Every module Gateway may route to, built and handed over by the composer. */
   targets: GatewayTargets;
+  /** Asks Admin for the decision; `targets.admin` is where an allowed request then goes. */
+  callAdmin: (call: { requestId: string }) => AdminInternalCaller;
 }
 
 /**
@@ -23,7 +26,7 @@ export function createApp(deps: GatewayDeps): ServiceApp {
   const app = createServiceApp('gateway', deps.logger);
 
   app.all('*', (c) =>
-    routeRequest(c.req.raw, c.get('requestId'), c.get('logger'), deps.targets),
+    routeRequest(c.req.raw, c.get('requestId'), c.get('logger'), deps.targets, deps.callAdmin),
   );
 
   return app;

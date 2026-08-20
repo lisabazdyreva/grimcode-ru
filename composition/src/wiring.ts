@@ -1,4 +1,4 @@
-import { createApp as createAdminApp, migrations as adminMigrations } from '@template/admin';
+import { createModule as createAdminModule, migrations as adminMigrations } from '@template/admin';
 import type { AdminInternalRouter } from '@template/admin/contract';
 import { createApp as createAppApp } from '@template/app';
 import {
@@ -154,11 +154,12 @@ export async function compose(): Promise<Composition> {
   });
   apps.auth = auth.app;
 
-  apps.admin = createAdminApp({
+  const admin = createAdminModule({
     logger: moduleLogger('admin'),
     pool: pools.admin,
     callAuth: auth.internalCaller,
   });
+  apps.admin = admin.app;
 
   apps.users = createUsersApp({
     logger: moduleLogger('users'),
@@ -180,7 +181,11 @@ export async function compose(): Promise<Composition> {
     email: call('email'),
   };
 
-  apps.gateway = createGatewayApp({ logger: moduleLogger('gateway'), targets });
+  apps.gateway = createGatewayApp({
+    logger: moduleLogger('gateway'),
+    targets,
+    callAdmin: admin.internalCaller,
+  });
 
   forgetSecrets(logger);
 

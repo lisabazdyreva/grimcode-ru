@@ -9,6 +9,9 @@
  */
 export type { AdminInternalRouter, AdminPanelRouter } from './routers.js';
 
+/** What Gateway holds to ask this module: the caller, not the router. */
+export type { AdminInternalCaller } from './index.js';
+
 /**
  * The decision Gateway acts on. It is a discriminated union rather than a boolean because Gateway
  * must never interpret a failure: every refusal names itself, and the one that is not a refusal —

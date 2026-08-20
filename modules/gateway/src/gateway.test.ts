@@ -104,8 +104,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Admin's caller, unused: the module that reads it is mocked above. */
+const callAdmin = (() => ({})) as Parameters<typeof routeRequest>[4];
+
 async function route(path: string, init?: RequestInit): Promise<Response> {
-  return routeRequest(new Request(`http://gateway.test${path}`, init), 'req-test', logger, targets);
+  return routeRequest(
+    new Request(`http://gateway.test${path}`, init),
+    'req-test',
+    logger,
+    targets,
+    callAdmin,
+  );
 }
 
 describe('allowlists', () => {
