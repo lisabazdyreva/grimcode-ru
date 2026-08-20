@@ -63,7 +63,8 @@ The bootstrap is a conditional insert inside a transaction, and what makes two r
 together converge is a partial unique index — `administrators_single_bootstrap_idx`, over the
 `bootstrap` flag — so the second insert does nothing, and only the request that really created the
 row writes the audit entry. One owner and one entry, not two of either. If Auth has no accounts at
-all, the panel reports that it is waiting for the first user rather than promoting whoever knocked.
+all, the panel reports that it is waiting for the first user rather than promoting whoever knocked —
+and it says so to a visitor with nothing to sign in with, which on a fresh installation is everyone.
 
 ## Grants take effect immediately
 

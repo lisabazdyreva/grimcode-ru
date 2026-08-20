@@ -7,6 +7,7 @@ import {
   errorMessage,
   Session,
   serviceAdmin,
+  USERS,
   waitForStack,
 } from './client.js';
 import {
@@ -275,6 +276,27 @@ describe('service boundaries', () => {
       expect(profiles.items[0]).not.toHaveProperty('passwordHash');
       expect(profiles.items[0]).not.toHaveProperty('activeSessionCount');
     }
+  });
+
+  /**
+   * Users does not store the sign-in address — the profile list asks Auth for it on every page, in
+   * one call for the whole page. The call is a direct one into Auth now, and a failure inside it is
+   * swallowed so the page still renders without addresses; that is exactly why the column needs a
+   * check of its own rather than being covered by the page answering at all.
+   */
+  it('fills in a profile’s sign-in address from auth', async () => {
+    const user = await createUser('profile-address');
+    // The profile row is created lazily on first access, so ask for it as the user first.
+    await user.session.call(USERS, 'getOwnProfile', {});
+
+    const page = await owner.call<{ items: { identityId: string; email: string | null }[] }>(
+      serviceAdmin('users'),
+      'listProfiles',
+      { limit: 20, offset: 0 },
+    );
+
+    const mine = page.items.find((item) => item.identityId === user.userId);
+    expect(mine?.email).toBe(user.email);
   });
 
   it('never exposes an internal surface through Gateway', async () => {

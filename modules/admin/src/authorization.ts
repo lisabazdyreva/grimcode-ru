@@ -33,15 +33,16 @@ export async function authorize(
     return { state: 'denied', reason: 'unknown-service' };
   }
 
-  if (!input.sessionToken) return { state: 'denied', reason: 'no-session' };
+  if (!input.sessionToken) {
+    return (await nobodyHasRegistered(deps))
+      ? { state: 'awaiting-first-user' }
+      : { state: 'denied', reason: 'no-session' };
+  }
 
   const { identity } = await deps.auth.resolveSession({ sessionToken: input.sessionToken });
   if (!identity) return { state: 'denied', reason: 'no-session' };
 
-  if (await deps.repo.isRegistryEmpty()) {
-    const bootstrapped = await bootstrapFirstOwner(deps);
-    if (bootstrapped === 'awaiting-first-user') return { state: 'awaiting-first-user' };
-  }
+  if (await deps.repo.isRegistryEmpty()) await bootstrapFirstOwner(deps);
 
   const administrator = await deps.repo.findByUserId(identity.id);
   // Ownership follows registration order in Auth, not who opened the admin panel first. If someone
@@ -76,19 +77,37 @@ export async function authorize(
 }
 
 /**
+ * A fresh installation, and the one case where a request without a session is answered with
+ * something other than a refusal: the panel says it is waiting for the first user instead of
+ * pretending the rights are merely missing.
+ *
+ * Asked in this order because the cheap question comes first — only an empty registry is worth a
+ * call into Auth, and a running installation answers `false` on the first line.
+ */
+async function nobodyHasRegistered(deps: AuthorizeDeps): Promise<boolean> {
+  if (!(await deps.repo.isRegistryEmpty())) return false;
+
+  const { identity } = await deps.auth.getFirstIdentity({});
+  return identity === null;
+}
+
+/**
  * Promotes the earliest registered Auth identity to owner.
  *
  * Idempotent and safe under concurrency: the insert is conditional and only the request that
  * really created the row writes the audit entry. Once any administrator exists the bootstrap stops
  * being attempted at all.
+ *
+ * A caller that got here holds a resolved session, so Auth has at least one identity and the empty
+ * answer below cannot happen; it leaves the registry empty, and the request is refused as any
+ * non-administrator's would be.
  */
-async function bootstrapFirstOwner(deps: AuthorizeDeps): Promise<'done' | 'awaiting-first-user'> {
+async function bootstrapFirstOwner(deps: AuthorizeDeps): Promise<void> {
   const { identity: first } = await deps.auth.getFirstIdentity({});
-  if (!first) return 'awaiting-first-user';
+  if (!first) return;
 
   const { created } = await deps.repo.bootstrapOwner(first.id, first.email);
   if (created) deps.logger.info('first owner bootstrapped', { userId: first.id });
-  return 'done';
 }
 
 /** Admin services this administrator may open, used to build the shell's sidebar. */

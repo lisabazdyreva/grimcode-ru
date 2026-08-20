@@ -92,10 +92,11 @@ function deps(auth: AuthCaller) {
 }
 
 describe('session requirement', () => {
+  /** Somebody has registered in Auth, so the panel has an owner to point at: an ordinary refusal. */
   it('denies a request without a session cookie', async () => {
     const result = await authorize(
       { sessionToken: null, target: { area: 'panel' } },
-      deps(fakeAuth({ session: FIRST })),
+      deps(fakeAuth({ first: FIRST })),
     );
     expect(result).toEqual({ state: 'denied', reason: 'no-session' });
   });
@@ -110,13 +111,36 @@ describe('session requirement', () => {
 });
 
 describe('first owner bootstrap', () => {
-  it('reports that nobody has registered yet instead of creating an owner', async () => {
+  /**
+   * A fresh installation answers the visitor who has nothing to sign in with, which is the only way
+   * this state is ever reached: a session would mean an identity, and an identity means Auth has a
+   * first one to promote.
+   */
+  it('reports that nobody has registered yet instead of refusing outright', async () => {
     const result = await authorize(
-      { sessionToken: 't', target: { area: 'panel' } },
-      deps(fakeAuth({ session: FIRST, first: null })),
+      { sessionToken: null, target: { area: 'panel' } },
+      deps(fakeAuth({ first: null })),
     );
     expect(result).toEqual({ state: 'awaiting-first-user' });
     expect(repo.rows.size).toBe(0);
+  });
+
+  /** And it says so about the panel only while the registry is empty — one owner ends it. */
+  it('stops saying so once an administrator exists', async () => {
+    repo.rows.set(FIRST.id, {
+      user_id: FIRST.id,
+      email: FIRST.email,
+      role: 'owner',
+      enabled: true,
+      grants: null,
+      bootstrap: true,
+    } as never);
+
+    const result = await authorize(
+      { sessionToken: null, target: { area: 'panel' } },
+      deps(fakeAuth({ first: null })),
+    );
+    expect(result).toEqual({ state: 'denied', reason: 'no-session' });
   });
 
   it('makes the first registered Auth user the owner', async () => {
