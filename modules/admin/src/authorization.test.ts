@@ -2,7 +2,7 @@ import type { Identity } from '@template/auth/contract';
 import { createLogger } from '@template/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { authorize, canOpenDatabase, visibleServices, type AuthClient } from './authorization.js';
+import { authorize, canOpenDatabase, visibleServices, type AuthCaller } from './authorization.js';
 import { authorizationResultSchema } from './schemas.js';
 import type { AdministratorRow, AdminRepository } from './repository.js';
 
@@ -66,17 +66,19 @@ class FakeRepo {
 /**
  * Auth, answering from memory.
  *
- * The procedures are nested under `query` because that is the shape a tRPC client has: the
- * operation's kind is part of the call and not only of the server. It reads as one word of noise
- * per line, and it buys the thing this whole stub exists for — if a procedure here ever stopped
- * matching Auth's router, the type would say so rather than the test quietly passing.
+ * A procedure per key, because that is the shape a caller has.
+ *
+ * The double cast means this object is not checked against Auth's router at all — a procedure that
+ * does not exist there compiles here, checked 20 August. What catches a drifting router is
+ * `authorize` itself: it calls through `AuthorizeDeps`, so a renamed or reshaped procedure stops
+ * compiling there.
  */
-function fakeAuth(options: { session?: Identity | null; first?: Identity | null }): AuthClient {
+function fakeAuth(options: { session?: Identity | null; first?: Identity | null }): AuthCaller {
   return {
-    resolveSession: { query: async () => ({ identity: options.session ?? null }) },
-    getFirstIdentity: { query: async () => ({ identity: options.first ?? null }) },
-    getIdentityByEmail: { query: async () => ({ identity: null }) },
-  } as unknown as AuthClient;
+    resolveSession: async () => ({ identity: options.session ?? null }),
+    getFirstIdentity: async () => ({ identity: options.first ?? null }),
+    getIdentityByEmail: async () => ({ identity: null }),
+  } as unknown as AuthCaller;
 }
 
 let repo: FakeRepo;
@@ -85,7 +87,7 @@ beforeEach(() => {
   repo = new FakeRepo();
 });
 
-function deps(auth: AuthClient) {
+function deps(auth: AuthCaller) {
   return { repo: repo as unknown as AdminRepository, auth, logger };
 }
 

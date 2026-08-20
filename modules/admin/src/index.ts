@@ -7,22 +7,26 @@ import {
   mountSpa,
   mountTrpc,
   readAdminContext,
-  type FetchLike,
   type Logger,
   type Pool,
   type ServiceApp,
 } from '@template/shared';
 
+import type { AuthInternalCaller } from '@template/auth/contract';
+
 import { AdminRepository } from './repository.js';
-import { adminRouter, createAuthClient, internalRouter } from './routers.js';
+import { adminRouter, internalRouter } from './routers.js';
 
 export { migrations } from './db/migrations.js';
 
 export interface AdminDeps {
   logger: Logger;
   pool: Pool;
-  /** Answers Auth's internal surface: who the session belongs to, and who the first identity is. */
-  callAuth: FetchLike;
+  /**
+   * Reaches Auth's internal surface: who the session belongs to, and who the first identity is.
+   * A caller per request, so the id travels with it.
+   */
+  callAuth: (call: { requestId: string }) => AuthInternalCaller;
 }
 
 export function createApp(deps: AdminDeps): ServiceApp {
@@ -35,7 +39,7 @@ export function createApp(deps: AdminDeps): ServiceApp {
    */
   mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
     repo,
-    auth: createAuthClient(hono.get('requestId'), deps.callAuth),
+    auth: deps.callAuth({ requestId: hono.get('requestId') }),
     logger: hono.get('logger'),
     request,
     resHeaders,
@@ -43,7 +47,7 @@ export function createApp(deps: AdminDeps): ServiceApp {
 
   mountTrpc(app, '/admin/rpc', adminRouter, ({ request, resHeaders, hono }) => ({
     repo,
-    auth: createAuthClient(hono.get('requestId'), deps.callAuth),
+    auth: deps.callAuth({ requestId: hono.get('requestId') }),
     request,
     resHeaders,
     requestId: hono.get('requestId'),

@@ -1,20 +1,19 @@
-import type { AuthInternalRouter } from '@template/auth/contract';
+import type { AuthInternalCaller } from '@template/auth/contract';
 import {
   ADMIN_SERVICE_IDS,
   type AdminTarget,
   type AdminServiceId,
 } from '@template/shared/vocabulary';
 import type { Logger } from '@template/shared';
-import type { TRPCClient } from '@trpc/client';
 
 import type { AdminRepository } from './repository.js';
 import type { AuthorizationResult } from './schemas.js';
 
-export type AuthClient = TRPCClient<AuthInternalRouter>;
+export type AuthCaller = AuthInternalCaller;
 
 export interface AuthorizeDeps {
   repo: AdminRepository;
-  auth: AuthClient;
+  auth: AuthCaller;
   logger: Logger;
 }
 
@@ -36,7 +35,7 @@ export async function authorize(
 
   if (!input.sessionToken) return { state: 'denied', reason: 'no-session' };
 
-  const { identity } = await deps.auth.resolveSession.query({ sessionToken: input.sessionToken });
+  const { identity } = await deps.auth.resolveSession({ sessionToken: input.sessionToken });
   if (!identity) return { state: 'denied', reason: 'no-session' };
 
   if (await deps.repo.isRegistryEmpty()) {
@@ -84,7 +83,7 @@ export async function authorize(
  * being attempted at all.
  */
 async function bootstrapFirstOwner(deps: AuthorizeDeps): Promise<'done' | 'awaiting-first-user'> {
-  const { identity: first } = await deps.auth.getFirstIdentity.query({});
+  const { identity: first } = await deps.auth.getFirstIdentity({});
   if (!first) return 'awaiting-first-user';
 
   const { created } = await deps.repo.bootstrapOwner(first.id, first.email);

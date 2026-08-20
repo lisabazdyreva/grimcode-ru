@@ -1,4 +1,3 @@
-import type { AuthInternalRouter } from '@template/auth/contract';
 import {
   adminRoleSchema,
   adminServiceIdSchema,
@@ -12,22 +11,18 @@ import {
   type AdminRole,
 } from '@template/shared/vocabulary';
 import {
-  createTrpcClient,
   expiredSessionCookie,
-  internalServiceUrl,
   parseCookies,
-  REQUEST_ID_HEADER,
   requireCsrf,
   sessionCookieName,
   verifiedAdmin,
   type AdminAwareContext,
-  type FetchLike,
   type Logger,
   type RpcContext,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
-import { authorize, canOpenDatabase, visibleServices, type AuthClient } from './authorization.js';
+import { authorize, canOpenDatabase, visibleServices, type AuthCaller } from './authorization.js';
 import { z } from 'zod';
 
 import { toAdministrator, type AdminRepository } from './repository.js';
@@ -35,13 +30,13 @@ import { administratorSchema, adminAuditEntrySchema, authorizationResultSchema }
 
 export interface InternalContext extends RpcContext {
   repo: AdminRepository;
-  auth: AuthClient;
+  auth: AuthCaller;
   logger: Logger;
 }
 
 export interface AdminRpcContext extends AdminAwareContext {
   repo: AdminRepository;
-  auth: AuthClient;
+  auth: AuthCaller;
   requestId: string;
 }
 
@@ -196,7 +191,7 @@ export const adminRouter = adminT.router({
       }),
     )
     .query(async ({ input, ctx }) => {
-      const { identities } = await ctx.auth.searchIdentities.query({
+      const { identities } = await ctx.auth.searchIdentities({
         query: input.query,
         limit: 10,
       });
@@ -224,7 +219,7 @@ export const adminRouter = adminT.router({
     )
     .output(z.object({ ok: z.literal(true), administrator: administratorSchema }))
     .mutation(async ({ input, ctx }) => {
-      const { identity } = await ctx.auth.getIdentityByEmail.query({ email: input.email });
+      const { identity } = await ctx.auth.getIdentityByEmail({ email: input.email });
       if (!identity) {
         throw new TRPCError({
           code: 'NOT_FOUND',
@@ -317,7 +312,7 @@ export const adminRouter = adminT.router({
     const token = parseCookies(ctx.request.headers.get('cookie'))[sessionCookieName()];
     if (!token) return { ok: true as const };
 
-    await ctx.auth.revokeSessionByToken.mutate({ sessionToken: token });
+    await ctx.auth.revokeSessionByToken({ sessionToken: token });
     ctx.resHeaders.append('set-cookie', expiredSessionCookie());
 
     return { ok: true as const };
@@ -328,15 +323,3 @@ export const adminRouter = adminT.router({
 /** The panel's browser client, Gateway and the composer are typed from these, and nothing else. */
 export type AdminInternalRouter = typeof internalRouter;
 export type AdminPanelRouter = typeof adminRouter;
-
-/**
- * Typed client for Auth's internal surface. `callAuth` is who answers — the network, or Auth's own
- * app when it shares this process; either way the call goes through the contract.
- */
-export function createAuthClient(requestId: string, callAuth: FetchLike): AuthClient {
-  return createTrpcClient<AuthInternalRouter>({
-    url: `${internalServiceUrl('auth')}/internal/rpc`,
-    headers: { [REQUEST_ID_HEADER]: requestId },
-    fetch: callAuth,
-  });
-}

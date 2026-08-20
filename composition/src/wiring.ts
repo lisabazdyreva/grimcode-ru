@@ -157,7 +157,7 @@ export async function compose(): Promise<Composition> {
   apps.admin = createAdminApp({
     logger: moduleLogger('admin'),
     pool: pools.admin,
-    callAuth: call('auth'),
+    callAuth: auth.internalCaller,
   });
 
   apps.users = createUsersApp({
