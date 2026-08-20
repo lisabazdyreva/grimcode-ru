@@ -41,7 +41,7 @@ export function createModule() {
   let built: Transport | undefined;
   const transport = (env: EmailEnv) => (built ??= createTransport(env.mail, logger));
 
-  const internalCaller = (env: EmailEnv, call: { requestId: string }) =>
+  const internalCaller = (env: EmailEnv, call: { requestId: string }): EmailInternalCaller =>
     withDeadlineOn(
       createInternalCallerFactory(async () => ({
         repo: await repository(env),
@@ -80,4 +80,5 @@ export function createModule() {
   return { app, internalCaller };
 }
 
-export type EmailInternalCaller = ReturnType<ReturnType<typeof createModule>['internalCaller']>;
+/** What a neighbour holds: the caller, named here so the type does not have to be inferred. */
+export type EmailInternalCaller = ReturnType<typeof createInternalCallerFactory>;

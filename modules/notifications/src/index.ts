@@ -38,7 +38,7 @@ export function createModule(deps: NotificationsDeps) {
   const repository = async (env: NotificationsEnv) =>
     new NotificationsRepository(await database(env));
 
-  const internalCaller = (env: NotificationsEnv, call: { requestId: string }) =>
+  const internalCaller = (env: NotificationsEnv, call: { requestId: string }): NotificationsInternalCaller =>
     withDeadlineOn(
       createInternalCallerFactory(async () => ({
         repo: await repository(env),
@@ -73,6 +73,5 @@ export function createModule(deps: NotificationsDeps) {
   return { app, internalCaller };
 }
 
-export type NotificationsInternalCaller = ReturnType<
-  ReturnType<typeof createModule>['internalCaller']
->;
+/** What a neighbour holds: the caller, named here so the type does not have to be inferred. */
+export type NotificationsInternalCaller = ReturnType<typeof createInternalCallerFactory>;

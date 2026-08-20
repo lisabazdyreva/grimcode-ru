@@ -347,6 +347,5 @@ export const adminRouter = adminT.router({
 /** Calls the internal procedures directly, with their schemas and without a request. */
 export const createInternalCallerFactory = internalT.createCallerFactory(internalRouter);
 
-/** The panel's browser client, Gateway and the composer are typed from these, and nothing else. */
-export type AdminInternalRouter = typeof internalRouter;
+/** The panel's browser client is typed from this, and from nothing else. */
 export type AdminPanelRouter = typeof adminRouter;

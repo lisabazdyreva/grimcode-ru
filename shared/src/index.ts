@@ -13,7 +13,6 @@ export * from './http/service-app.js';
 export * from './http/spa.js';
 
 export * from './trpc/builders.js';
-export * from './trpc/client.js';
 export * from './trpc/mount.js';
 
 export * from './db/pool.js';

@@ -21,8 +21,8 @@ import { CSRF_HEADER, isCsrfValid } from './http/csrf.js';
 import { createServiceApp } from './http/service-app.js';
 import type { Logger } from './logger.js';
 import { applyTheme, normalizeServicePath } from './theme.js';
+import { RPC_TIMEOUT_MS, withDeadlineOn } from './rpc.js';
 import type { RpcContext } from './trpc/builders.js';
-import { createTrpcClient } from './trpc/client.js';
 import { mountTrpc } from './trpc/mount.js';
 
 describe('cookies', () => {
@@ -247,8 +247,8 @@ describe('calling a neighbour in this process over tRPC', () => {
 
   const t = initTRPC.context<RpcContext>().create();
 
-  /** A module with one procedure, mounted exactly as a real one is, and a client aimed at it. */
-  function callNeighbour(answer: () => Promise<{ pong: string }>, timeoutMs?: number) {
+  /** A module with one procedure and the caller a neighbour is handed, deadline and all. */
+  function callNeighbour(answer: () => Promise<{ pong: string }>, timeoutMs = RPC_TIMEOUT_MS) {
     const router = t.router({
       ping: t.procedure
         .input(z.object({ say: z.string() }))
@@ -256,13 +256,7 @@ describe('calling a neighbour in this process over tRPC', () => {
         .query(answer),
     });
 
-    const app = createServiceApp('email', silent);
-    mountTrpc(app, '/internal/rpc', router, ({ request, resHeaders }) => ({ request, resHeaders }));
-
-    return createTrpcClient<typeof router>({
-      fetch: (request) => app.fetch(request),
-      timeoutMs,
-    });
+    return withDeadlineOn(t.createCallerFactory(router)({}), 'email', timeoutMs);
   }
 
   /**
@@ -291,31 +285,44 @@ describe('calling a neighbour in this process over tRPC', () => {
 
     const app = createServiceApp('email', capturing);
     mountTrpc(app, '/internal/rpc', router, ({ request, resHeaders }) => ({ request, resHeaders }));
-    const client = createTrpcClient<typeof router>({ fetch: (request) => app.fetch(request) });
 
-    await expect(client.boom.query({})).rejects.toThrow();
+    // Driven by a request rather than a caller: `onError` belongs to the mount, not to the router.
+    const response = await app.fetch(
+      new Request(`http://module/internal/rpc/boom?input=${encodeURIComponent('{}')}`),
+    );
+    expect(response.status).toBe(500);
 
     const failure = lines.find((line) => line.message === 'procedure failed');
     expect(failure?.fields).toMatchObject({ procedure: 'boom', code: 'INTERNAL_SERVER_ERROR' });
     expect((failure?.fields?.error as Error).message).toBe('соединение с базой не открылось');
   });
 
-  it('reaches it without a network and answers through the contract', async () => {
-    const client = callNeighbour(() => Promise.resolve({ pong: 'pong' }));
+  it('reaches it without a request and answers through the contract', async () => {
+    const email = callNeighbour(() => Promise.resolve({ pong: 'pong' }));
 
-    expect(await client.ping.query({ say: 'hi' })).toEqual({ pong: 'pong' });
+    expect(await email.ping({ say: 'hi' })).toEqual({ pong: 'pong' });
   });
 
+  it('refuses input the schema does not allow, exactly as a request would', async () => {
+    const email = callNeighbour(() => Promise.resolve({ pong: 'pong' }));
+
+    await expect(email.ping({ say: 42 as unknown as string })).rejects.toThrow(/say/i);
+  });
+
+  /**
+   * The deadline is the module's to put on the caller it hands out, and this is what keeps every
+   * fail-closed branch above it reachable: nothing else ends the wait, because a direct call has no
+   * signal to abort.
+   */
   it('stops waiting when the neighbour hangs, which no signal would do here', async () => {
-    const client = callNeighbour(
+    const email = callNeighbour(
       () => new Promise((resolve) => setTimeout(() => resolve({ pong: 'late' }), 1_000)),
       50,
     );
 
     const started = Date.now();
-    // The procedure, not a host: the address a client uses is ours and names nothing on its own.
-    await expect(client.ping.query({ say: 'hi' })).rejects.toThrow(
-      /\/internal\/rpc\/ping did not answer within 50 ms/,
+    await expect(email.ping({ say: 'hi' })).rejects.toThrow(
+      /email\.ping did not answer within 50 ms/,
     );
     expect(Date.now() - started).toBeLessThan(500);
   });

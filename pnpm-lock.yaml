@@ -433,9 +433,6 @@ importers:
       '@template/shared':
         specifier: workspace:*
         version: link:../../shared
-      '@trpc/client':
-        specifier: 11.18.0
-        version: 11.18.0(@trpc/server@11.18.0(typescript@5.9.3))(typescript@5.9.3)
       '@trpc/server':
         specifier: 11.18.0
         version: 11.18.0(typescript@5.9.3)
@@ -683,9 +680,6 @@ importers:
 
   shared:
     dependencies:
-      '@trpc/client':
-        specifier: 11.18.0
-        version: 11.18.0(@trpc/server@11.18.0(typescript@5.9.3))(typescript@5.9.3)
       '@trpc/server':
         specifier: 11.18.0
         version: 11.18.0(typescript@5.9.3)

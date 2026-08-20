@@ -5,7 +5,7 @@
  * A projection of the implementation, not an agreement: `.output()` on every procedure and the
  * `satisfies` line are what keep it honest.
  */
-export type { AdminInternalRouter, AdminPanelRouter } from './routers.js';
+export type { AdminPanelRouter } from './routers.js';
 
 /** What Gateway holds to ask this module: the caller, not the router. */
 export type { AdminInternalCaller } from './index.js';

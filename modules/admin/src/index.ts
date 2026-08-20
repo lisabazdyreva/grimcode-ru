@@ -17,7 +17,7 @@ import type { AuthInternalCaller } from '@template/auth/contract';
 import type { AdminEnv } from './env.js';
 import { createDatabase } from './db/database.js';
 import { AdminRepository } from './repository.js';
-import { adminRouter, createInternalCallerFactory, internalRouter } from './routers.js';
+import { adminRouter, createInternalCallerFactory } from './routers.js';
 
 export type { AdminEnv } from './env.js';
 
@@ -42,7 +42,7 @@ export function createModule(deps: AdminDeps) {
   const database = createDatabase(logger);
   const repository = async (env: AdminEnv) => new AdminRepository(await database(env));
 
-  const internalCaller = (env: AdminEnv, call: { requestId: string }) =>
+  const internalCaller = (env: AdminEnv, call: { requestId: string }): AdminInternalCaller =>
     withDeadlineOn(
       createInternalCallerFactory(async () => ({
         repo: await repository(env),
@@ -52,18 +52,6 @@ export function createModule(deps: AdminDeps) {
       'admin',
       RPC_TIMEOUT_MS,
     );
-
-  /**
-   * The single authorization method Gateway calls on every `/admin/**` request. It is mounted on
-   * the internal path only, which Gateway never routes to, so no browser can reach it.
-   */
-  mountTrpc(app, '/internal/rpc', internalRouter, async ({ request, resHeaders, hono }) => ({
-    repo: await repository(hono.env),
-    auth: deps.callAuth({ requestId: hono.get('requestId') }),
-    logger: hono.get('logger'),
-    request,
-    resHeaders,
-  }));
 
   mountTrpc(app, '/admin/rpc', adminRouter, async ({ request, resHeaders, hono }) => ({
     repo: await repository(hono.env),
@@ -86,4 +74,5 @@ export function createModule(deps: AdminDeps) {
   return { app, internalCaller };
 }
 
-export type AdminInternalCaller = ReturnType<ReturnType<typeof createModule>['internalCaller']>;
+/** What a neighbour holds: the caller, named here so the type does not have to be inferred. */
+export type AdminInternalCaller = ReturnType<typeof createInternalCallerFactory>;

@@ -61,7 +61,7 @@ export function createModule(deps: AuthDeps) {
    * own, so there is no logger here for the id to reach. The environment is, though — a direct call
    * has no `c.env`, so the composer hands it over.
    */
-  const internalCaller = (env: AuthEnv, _call: { requestId: string }) =>
+  const internalCaller = (env: AuthEnv, _call: { requestId: string }): AuthInternalCaller =>
     withDeadlineOn(
       createInternalCallerFactory(async () => ({ repo: await repository(env) })),
       'auth',
@@ -106,4 +106,5 @@ export function createModule(deps: AuthDeps) {
   return { app, internalCaller };
 }
 
-export type AuthInternalCaller = ReturnType<ReturnType<typeof createModule>['internalCaller']>;
+/** What a neighbour holds: the caller, named here so the type does not have to be inferred. */
+export type AuthInternalCaller = ReturnType<typeof createInternalCallerFactory>;

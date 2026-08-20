@@ -105,7 +105,7 @@ in the Auth database, which Admin may never read or reference.
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | never routed by Gateway; in-process only | nothing by this path — Gateway calls `authorize` directly |
+| *not mounted* | the internal procedures are called directly, in-process | Gateway, for `authorize` |
 | `/admin/rpc` | through Gateway's admin route | the central Admin shell |
 | `/admin/csrf` | through Gateway's admin route | the shell, before every mutation |
 | `/admin/**` | through Gateway's admin route | the built shell assets |
@@ -135,8 +135,8 @@ Auth has exactly one — blocking an identity — and guards it inside that muta
 
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door: `@template/admin/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types, the caller Gateway asks
-through, and `AuthorizationResult` — the shape of the decision Gateway acts on — and nothing else,
+[`src/contract.ts`](src/contract.ts), which re-exports the panel's router type, the caller Gateway
+asks through, and `AuthorizationResult` — the shape of the decision Gateway acts on — and nothing else,
 while the bare `@template/admin` resolves to `createModule` and `migrations` and nothing besides. It
 matters more here than anywhere else — this module *is* the registry of who may do what, and the
 rights, the last-owner rule and the audit log all live behind `repository.ts`, which no specifier
