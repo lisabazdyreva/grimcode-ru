@@ -32,16 +32,16 @@ the very first registered user is when it bootstraps the first owner.
 | --- | --- | --- |
 | `/service/auth/rpc` | through Gateway, no admin check | anyone — Auth secures these itself |
 | `/admin/embed/service/auth/rpc` | through Gateway's admin route | administrators with a grant on Auth |
-| `/internal/rpc` | never routed by Gateway; in-process only | other modules |
+| *not mounted* | the internal procedures are called directly, in-process | Admin and Users |
 
 ### What a neighbour may see of this module
 
-A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
-crosses through one named door: `@template/auth/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the three router types and the four shapes
-neighbours and browsers name by hand — `Identity`, `AdminIdentity`, `SessionSummary`,
-`AuthAuditEntry` — and nothing else, while the bare `@template/auth` resolves to `createModule` and
-`migrations` and nothing besides.
+The browser bundles are typed from this module's routers, and its neighbours from the caller it
+hands out; either way a type has to cross the module boundary. It crosses through one named door:
+`@template/auth/contract` resolves to [`src/contract.ts`](src/contract.ts), which re-exports the
+public and admin router types, that caller type, and the four shapes neighbours and browsers name
+by hand — `Identity`, `AdminIdentity`, `SessionSummary`, `AuthAuditEntry` — and nothing else, while
+the bare `@template/auth` resolves to `createModule` and `migrations` and nothing besides.
 
 Auth has more callers than any other module — Admin, Users in two separate places, and the
 application's own browser bundle — and holds the password hashes, the session rows and the one-time

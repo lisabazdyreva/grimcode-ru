@@ -27,7 +27,10 @@ import { z } from 'zod';
 import { toAdministrator, type AdminRepository } from './repository.js';
 import { administratorSchema, adminAuditEntrySchema, authorizationResultSchema } from './schemas.js';
 
-/** No `request` and no `resHeaders`: a caller has no request, and the mount passes them anyway. */
+/**
+ * No `request` and no `resHeaders`: a caller has no request. The mount passes them anyway as extra
+ * fields — this is the one internal surface still answering on a path, for `isActiveOwner`.
+ */
 export interface InternalContext {
   repo: AdminRepository;
   auth: AuthCaller;

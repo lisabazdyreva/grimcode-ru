@@ -7,7 +7,7 @@
  * A projection of the implementation, not an agreement: what keeps the type honest is `.output()` on
  * every procedure and the `satisfies` line pinning each router to the names it may hold.
  */
-export type { EmailAdminRouter, EmailInternalRouter } from './routers.js';
+export type { EmailAdminRouter } from './routers.js';
 
 /** What a neighbour holds to call this module: the caller, not the router. */
 export type { EmailInternalCaller } from './index.js';

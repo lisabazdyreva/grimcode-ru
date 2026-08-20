@@ -22,10 +22,10 @@ only one so far, and it is declared here.
 | `http/service-app.ts` | Shared Hono app: request ids, access log, `/healthz`; and `serveService`, which puts one on its port |
 | `http/spa.ts` | Serving a built SPA with deep-link fallback, refusing any path that would escape the build directory, and the endpoint that issues its CSRF token |
 | `db/admin-pool.ts` | `createAdminPool`, reachable only as `@template/shared/admin` — the owner's connection, for `db-init` and for the one acceptance check that proves a module's credentials are refused a neighbour's database |
-| `rpc.ts` | What a call to a neighbour needs whichever library carries it: `FetchLike`, the deadline, `ServiceUnavailableError` |
+| `rpc.ts` | What a call to a neighbour needs whichever library carries it: `FetchLike`, the deadline and `withDeadlineOn`, which puts it on every procedure of a caller, `ServiceUnavailableError` |
 | `trpc/mount.ts` | Mounting a tRPC router on a path prefix, merging `set-cookie` from procedures |
 | `trpc/builders.ts` | The context every procedure has, and the two guards admin surfaces are built from |
-| `trpc/client.ts` | Typed tRPC client factory for one module calling another |
+| `trpc/client.ts` | Typed tRPC client factory for a call carried as a request; no module uses it any more, only the composer |
 | `db/pool.ts` | One PostgreSQL pool per module database, transactions, startup wait |
 | `db/migrator.ts` | Versioned migrations with recorded versions, checksums and advisory locks |
 | `theme.ts` | The same-origin `postMessage` protocol between Admin shell and service iframes |

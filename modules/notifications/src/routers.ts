@@ -13,10 +13,7 @@ import {
   type NotificationEvent,
 } from './schemas.js';
 
-/**
- * No `request` and no `resHeaders`: a neighbour reaches this surface through a caller, where there
- * is no request to speak of. The mount passes them anyway as extra fields, which costs nothing.
- */
+/** No `request` and no `resHeaders`: this surface is reached by a caller, never by a request. */
 export interface InternalContext {
   repo: NotificationsRepository;
   logger: Logger;
@@ -165,7 +162,5 @@ export const adminRouter = adminT.router({
 /** Calls the internal procedures directly, with their schemas and without a request. */
 export const createInternalCallerFactory = internalT.createCallerFactory(internalRouter);
 
-/** The browser client and Auth are typed from these, and from nothing else. */
-
-export type NotificationsInternalRouter = typeof internalRouter;
+/** The browser client of this module's admin screen is typed from this, and from nothing else. */
 export type NotificationsAdminRouter = typeof adminRouter;

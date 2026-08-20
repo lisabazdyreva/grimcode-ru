@@ -18,7 +18,7 @@ import type { NotificationsInternalCaller } from '@template/notifications/contra
 import { Notifier } from './notifier.js';
 import { AuthRepository } from './repository.js';
 import { adminRouter, type IsActiveOwner } from './routers/admin.js';
-import { createInternalCallerFactory, internalRouter } from './routers/internal.js';
+import { createInternalCallerFactory } from './routers/internal.js';
 import { publicRouter } from './routers/public.js';
 
 export { migrations } from './db/migrations.js';
@@ -64,12 +64,6 @@ export function createModule(deps: AuthDeps) {
     repo,
     notifier: notifier(hono.get('logger'), () => hono.get('requestId')),
     logger: hono.get('logger'),
-    request,
-    resHeaders,
-  }));
-
-  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders }) => ({
-    repo,
     request,
     resHeaders,
   }));

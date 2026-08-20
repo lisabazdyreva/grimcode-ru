@@ -95,7 +95,7 @@ A test send is a real send: it goes through the transport and is recorded like a
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | never routed by Gateway; in-process only | Notifications |
+| *not mounted* | the internal procedures are called directly, in-process | Notifications |
 | `/admin/embed/service/email/rpc` | through Gateway's admin route | administrators granted Email |
 | `/admin/embed/service/email/csrf` | through Gateway's admin route | the admin screen, before every mutation |
 | `/admin/embed/service/email/**` | through Gateway's admin route | the built service admin |
@@ -104,11 +104,12 @@ Email has **no public surface**: it is absent from Gateway's public allowlist.
 
 ### What Notifications may see of this module
 
-A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
-crosses through one named door and no other: `@template/email/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types and `EditorDocument`, the
-stored document the editor screen reads — and nothing else. `@template/email` is the other entry and
-belongs to the composer, not to a neighbour: `createModule`, `migrations`, `seedTemplates` for the
+The editor screen's client is typed from this module's router, and Notifications is typed from the
+caller this module hands out; either way a type has to cross the module boundary. It crosses through
+one named door and no other: `@template/email/contract` resolves to
+[`src/contract.ts`](src/contract.ts), which re-exports the admin router type, that caller type and
+`EditorDocument`, the stored document the editor screen reads — and nothing else. `@template/email`
+is the other entry and belongs to the composer, not to a neighbour: `createModule`, `migrations`, `seedTemplates` for the
 migrate job, and `MailSettings`, the shape of what `createModule` is handed. The repository, the
 transport and the renderer are reachable by no specifier at all — which matters here more than
 elsewhere, because `@maily-to/render` is the one CPU-bound dependency in the process.

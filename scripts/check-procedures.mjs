@@ -19,8 +19,10 @@
  * this is written against.
  *
  * Which surface a router answers on is not guessed from its variable name either: it is read from
- * the `mountTrpc` call that mounts it. A router nobody mounts is reported rather than skipped,
- * because an unmounted surface is one this check cannot judge.
+ * the `mountTrpc` call that mounts it, or — for an internal router a neighbour calls directly — from
+ * the `createCallerFactory` it is handed to. A router with neither is reported rather than skipped,
+ * because a surface reached in a way this check cannot see is one it cannot judge. The CSRF rule
+ * keys off the mount prefix and so applies to neither: a direct call carries no browser and no form.
  *
  * The same rule applies inside a router. `{ name: builder… }` and `{ name }` beside a `const` are
  * one procedure written two ways, and both are followed; a form that is neither is reported. Before
@@ -88,6 +90,33 @@ function chainOf(node) {
   return { methods, base };
 }
 
+/**
+ * Routers this module hands to `createCallerFactory`, so a neighbour calls their procedures
+ * directly instead of over a path. Such a router answers nowhere and is still reachable, which is
+ * why an absent mount is not by itself a fault.
+ */
+function callerRoutersOf(files, source) {
+  const called = new Set();
+
+  for (const file of files) {
+    const visit = (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === 'createCallerFactory' &&
+        node.arguments.length === 1 &&
+        ts.isIdentifier(node.arguments[0])
+      ) {
+        called.add(node.arguments[0].text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source(file));
+  }
+
+  return called;
+}
+
 /** Where each router of one module is mounted, by the prefix given to `mountTrpc`. */
 function mountsOf(files, source) {
   const mounts = new Map();
@@ -150,6 +179,7 @@ for (const entry of readdirSync(MODULES, { withFileTypes: true })) {
   const parsed = new Map(files.map((file) => [file, parse(file)]));
   const source = (file) => parsed.get(file);
   const mounts = mountsOf(files, source);
+  const callerRouters = callerRoutersOf(files, source);
   const mountedRouters = new Set();
 
   for (const file of files) {
@@ -181,7 +211,7 @@ for (const entry of readdirSync(MODULES, { withFileTypes: true })) {
               : null;
           const prefix = routerName ? mounts.get(routerName) : undefined;
           if (routerName && prefix !== undefined) mountedRouters.add(routerName);
-          if (routerName && prefix === undefined) {
+          if (routerName && prefix === undefined && !callerRouters.has(routerName)) {
             unmountedRouters.push(`${relative} ${routerName}`);
           }
 
@@ -270,8 +300,9 @@ if (unmountedRouters.length > 0) {
   console.error(`${earlier ? '\n' : ''}Routers that are never mounted:`);
   for (const router of unmountedRouters) console.error(`- ${router}`);
   console.error(
-    '\nWhich surface a router answers on is read from its mountTrpc call. Unmounted, it either ' +
-      'answers nowhere or is mounted in a way this check cannot see; neither should pass quietly.',
+    '\nWhich surface a router answers on is read from its mountTrpc call, or from the ' +
+      'createCallerFactory that hands it to a neighbour. With neither, it either answers nowhere ' +
+      'or is reached in a way this check cannot see; neither should pass quietly.',
   );
 }
 

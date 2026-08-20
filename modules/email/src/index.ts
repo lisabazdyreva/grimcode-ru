@@ -15,7 +15,7 @@ import {
 
 import { EmailRepository } from './repository.js';
 import { renderMessage } from './render.js';
-import { adminRouter, createInternalCallerFactory, internalRouter } from './routers.js';
+import { adminRouter, createInternalCallerFactory } from './routers.js';
 import { createTransport, type MailSettings } from './transport.js';
 
 export { migrations } from './db/migrations.js';
@@ -76,14 +76,6 @@ export function createModule(deps: EmailDeps) {
     );
 
   const app = createServiceApp('email', deps.logger);
-
-  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
-    repo,
-    transport,
-    logger: hono.get('logger'),
-    request,
-    resHeaders,
-  }));
 
   mountTrpc(
     app,

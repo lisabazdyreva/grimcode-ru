@@ -6,7 +6,7 @@
  * A projection of the implementation, not an agreement: what keeps the type honest is `.output()` on
  * every procedure and the `satisfies` line pinning each router to the names it may hold.
  */
-export type { NotificationsAdminRouter, NotificationsInternalRouter } from './routers.js';
+export type { NotificationsAdminRouter } from './routers.js';
 
 /** What a neighbour holds to call this module: the caller, not the router. */
 export type { NotificationsInternalCaller } from './index.js';

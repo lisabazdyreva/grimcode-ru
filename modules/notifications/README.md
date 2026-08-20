@@ -37,7 +37,7 @@ If Email cannot be reached, the event is kept with status `failed` and the error
 up in the service admin instead of disappearing into a log line.
 
 **`failed` means the routing was not confirmed, not that no message was sent.** A deadline is one way
-to get it: the client here gives up after `RPC_TIMEOUT_MS`, and Email's own call to the mail provider
+to get it: Email puts `RPC_TIMEOUT_MS` on the caller it hands out, and its own call to the provider
 is deliberately given less than that, so the answer arrives while there is still someone waiting for
 it. What that buys is the two logs agreeing; it does not make a timeout mean nothing was sent —
 a provider can accept a message and answer too late to say so. When an event is `failed` with a
@@ -47,7 +47,7 @@ timeout rather than a refusal, the delivery log in Email is what says whether an
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | never routed by Gateway; in-process only | other modules emitting events |
+| *not mounted* | the internal procedures are called directly, in-process | Auth, emitting events |
 | `/admin/embed/service/notifications/rpc` | through Gateway's admin route | administrators granted Notifications |
 
 Notifications has **no public surface**: it is deliberately absent from Gateway's public
@@ -55,10 +55,12 @@ allowlist, so no browser can emit an event.
 
 ### What Auth may see of this module
 
-A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
-crosses through one named door and no other: `@template/notifications/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types, the `NotificationEvent`
-Auth builds and the `StoredNotificationEvent` the admin screen renders — and nothing else, while the
+The admin screen's client is typed from this module's router, and Auth is typed from the caller this
+module hands out; either way a type has to cross the module boundary. It crosses through one named
+door and no other: `@template/notifications/contract` resolves to
+[`src/contract.ts`](src/contract.ts), which re-exports the admin router type, that caller type, the
+`NotificationEvent` Auth builds and the `StoredNotificationEvent` the admin screen renders — and
+nothing else, while the
 bare `@template/notifications` resolves to `createModule` and `migrations` and nothing besides. The
 repository and the routing to Email are reachable by no specifier at all.
 

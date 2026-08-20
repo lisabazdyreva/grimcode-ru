@@ -15,7 +15,7 @@ import {
 } from '@template/shared';
 
 import { NotificationsRepository } from './repository.js';
-import { adminRouter, createInternalCallerFactory, internalRouter } from './routers.js';
+import { adminRouter, createInternalCallerFactory } from './routers.js';
 
 export { migrations } from './db/migrations.js';
 
@@ -51,15 +51,6 @@ export function createModule(deps: NotificationsDeps) {
     );
 
   const app = createServiceApp('notifications', deps.logger);
-
-  // Notifications has no public surface: only other modules emit events, over the internal path.
-  mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
-    repo,
-    logger: hono.get('logger'),
-    email: deps.callEmail({ requestId: hono.get('requestId') }),
-    request,
-    resHeaders,
-  }));
 
   mountTrpc(
     app,

@@ -8,7 +8,6 @@
  * every procedure and the `satisfies` line pinning each router to the names it may hold.
  */
 export type { AuthAdminRouter } from './routers/admin.js';
-export type { AuthInternalRouter } from './routers/internal.js';
 export type { AuthPublicRouter } from './routers/public.js';
 
 /** What a neighbour holds to call this module: the caller, not the router. */

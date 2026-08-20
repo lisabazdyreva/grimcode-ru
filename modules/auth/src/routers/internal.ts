@@ -5,7 +5,7 @@ import { initTRPC } from '@trpc/server';
 import { toIdentity, type AuthRepository } from '../repository.js';
 import { identitySchema } from '../schemas.js';
 
-/** No `request` and no `resHeaders`: a caller has no request, and the mount passes them anyway. */
+/** No `request` and no `resHeaders`: this surface is reached by a caller, never by a request. */
 export interface InternalContext {
   repo: AuthRepository;
 }
@@ -101,6 +101,3 @@ export const internalRouter = t.router({
 
 /** Calls the internal procedures directly, with their schemas and without a request. */
 export const createInternalCallerFactory = t.createCallerFactory(internalRouter);
-
-/** Admin, Users and the composer are typed from this, and from nothing else. */
-export type AuthInternalRouter = typeof internalRouter;

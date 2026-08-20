@@ -103,7 +103,7 @@ in the Auth database, which Admin may never read or reference.
 
 | Mount | Reachable as | Callers |
 | --- | --- | --- |
-| `/internal/rpc` | never routed by Gateway; in-process only | Gateway for `authorize`, the composer for `isActiveOwner` |
+| `/internal/rpc` | never routed by Gateway; in-process only | the composer, for `isActiveOwner` alone — Gateway calls `authorize` directly |
 | `/admin/rpc` | through Gateway's admin route | the central Admin shell |
 | `/admin/csrf` | through Gateway's admin route | the shell, before every mutation |
 | `/admin/**` | through Gateway's admin route | the built shell assets |
@@ -133,11 +133,12 @@ Auth has exactly one — blocking an identity — and guards it inside that muta
 
 A tRPC client is typed from the server's router, so the type has to cross the module boundary. It
 crosses through one named door: `@template/admin/contract` resolves to
-[`src/contract.ts`](src/contract.ts), which re-exports the two router types and
-`AuthorizationResult` — the shape of the decision Gateway acts on — and nothing else, while the
-bare `@template/admin` resolves to `createApp` and `migrations` and nothing besides. It matters
-more here than anywhere else — this module *is* the registry of who may do what, and the rights,
-the last-owner rule and the audit log all live behind `repository.ts`, which no specifier reaches.
+[`src/contract.ts`](src/contract.ts), which re-exports the two router types, the caller Gateway asks
+through, and `AuthorizationResult` — the shape of the decision Gateway acts on — and nothing else,
+while the bare `@template/admin` resolves to `createModule` and `migrations` and nothing besides. It
+matters more here than anywhere else — this module *is* the registry of who may do what, and the
+rights, the last-owner rule and the audit log all live behind `repository.ts`, which no specifier
+reaches.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
 in the type. What keeps the type honest is the `.output()` schema every procedure declares and the
