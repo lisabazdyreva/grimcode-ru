@@ -59,7 +59,7 @@ A tRPC client is typed from the server's router, so the type has to cross the mo
 crosses through one named door and no other: `@template/notifications/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the two router types, the `NotificationEvent`
 Auth builds and the `StoredNotificationEvent` the admin screen renders — and nothing else, while the
-bare `@template/notifications` resolves to `createApp` and `migrations` and nothing besides. The
+bare `@template/notifications` resolves to `createModule` and `migrations` and nothing besides. The
 repository and the routing to Email are reachable by no specifier at all.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up

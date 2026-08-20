@@ -1,15 +1,6 @@
 import { idSchema, notificationEventTypeSchema, pageOf, paginationInputSchema } from '@template/shared/vocabulary';
-import type { EmailInternalRouter } from '@template/email/contract';
-import {
-  createTrpcClient,
-  internalServiceUrl,
-  REQUEST_ID_HEADER,
-  verifiedAdmin,
-  type AdminAwareContext,
-  type FetchLike,
-  type Logger,
-  type RpcContext,
-} from '@template/shared';
+import type { EmailInternalCaller } from '@template/email/contract';
+import { verifiedAdmin, type AdminAwareContext, type Logger } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
 import { z } from 'zod';
@@ -22,12 +13,16 @@ import {
   type NotificationEvent,
 } from './schemas.js';
 
-export interface InternalContext extends RpcContext {
+/**
+ * No `request` and no `resHeaders`: a neighbour reaches this surface through a caller, where there
+ * is no request to speak of. The mount passes them anyway as extra fields, which costs nothing.
+ */
+export interface InternalContext {
   repo: NotificationsRepository;
   logger: Logger;
   requestId: string;
   /** Answers Email's internal surface. */
-  callEmail: FetchLike;
+  callEmail: (call: { requestId: string }) => EmailInternalCaller;
 }
 
 export interface AdminRpcContext extends AdminAwareContext {
@@ -95,18 +90,13 @@ export const internalRouter = internalT.router({
 
       try {
         /*
-         * The deadline around this call is the whole reason the `catch` below means anything:
-         * `app.fetch` ignores an abort signal, so without the bound `createTrpcClient` puts on the
-         * wait, an Email that hung would hang the event with it — and the event would never reach
-         * the `failed` state that makes the trouble visible in the service admin.
+         * The caller is made per request, which is what keeps this module's request id on the lines
+         * Email writes. Email puts the deadline on it, so an Email that hung cannot hang the event —
+         * without that the `catch` below would never be reached.
          */
-        const email = createTrpcClient<EmailInternalRouter>({
-          url: `${internalServiceUrl('email')}/internal/rpc`,
-          headers: { [REQUEST_ID_HEADER]: ctx.requestId },
-          fetch: ctx.callEmail,
-        });
+        const email = ctx.callEmail({ requestId: ctx.requestId });
 
-        const result = await email.send.mutate({
+        const result = await email.send({
           templateKey,
           to: event.recipient.email,
           variables: variablesOf(event),
@@ -176,6 +166,10 @@ export const adminRouter = adminT.router({
 } satisfies Record<AdminName, unknown>);
 
 
+/** Calls the internal procedures directly, with their schemas and without a request. */
+export const createInternalCallerFactory = internalT.createCallerFactory(internalRouter);
+
 /** The browser client and Auth are typed from these, and from nothing else. */
+
 export type NotificationsInternalRouter = typeof internalRouter;
 export type NotificationsAdminRouter = typeof adminRouter;

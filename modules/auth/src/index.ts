@@ -7,11 +7,12 @@ import {
   mountSpa,
   mountTrpc,
   readAdminContext,
-  type FetchLike,
   type Logger,
   type Pool,
   type ServiceApp,
 } from '@template/shared';
+
+import type { NotificationsInternalCaller } from '@template/notifications/contract';
 
 import { Notifier } from './notifier.js';
 import { AuthRepository } from './repository.js';
@@ -25,8 +26,8 @@ export type { IsActiveOwner } from './routers/admin.js';
 export interface AuthDeps {
   logger: Logger;
   pool: Pool;
-  /** Answers Notifications' internal surface, where Auth hands off the events it emits. */
-  callNotifications: FetchLike;
+  /** Reaches Notifications' internal surface; a caller per request, so the id travels with it. */
+  callNotifications: (call: { requestId: string }) => NotificationsInternalCaller;
   /**
    * Whether an identity is an active owner of the panel — Admin's fact, and required: a missing
    * implementation is a compile error rather than a rule that silently stops running.

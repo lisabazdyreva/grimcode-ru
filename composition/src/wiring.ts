@@ -7,13 +7,13 @@ import {
   type IsActiveOwner,
 } from '@template/auth';
 import {
-  createApp as createEmailApp,
+  createModule as createEmailModule,
   migrations as emailMigrations,
   type MailSettings,
 } from '@template/email';
 import { createApp as createGatewayApp, type GatewayTargets } from '@template/gateway';
 import {
-  createApp as createNotificationsApp,
+  createModule as createNotificationsModule,
   migrations as notificationsMigrations,
 } from '@template/notifications';
 import {
@@ -132,18 +132,24 @@ export async function compose(): Promise<Composition> {
     return (await admin.isActiveOwner.query({ userId })).activeOwner;
   };
 
-  apps.email = createEmailApp({ logger: moduleLogger('email'), pool: pools.email, mail });
+  /*
+   * A module with an internal surface is built once and reached two ways: by request, for what
+   * Gateway routes to it, and by a caller, which is how a neighbour invokes its procedures.
+   */
+  const email = createEmailModule({ logger: moduleLogger('email'), pool: pools.email, mail });
+  apps.email = email.app;
 
-  apps.notifications = createNotificationsApp({
+  const notifications = createNotificationsModule({
     logger: moduleLogger('notifications'),
     pool: pools.notifications,
-    callEmail: call('email'),
+    callEmail: email.internalCaller,
   });
+  apps.notifications = notifications.app;
 
   apps.auth = createAuthApp({
     logger: moduleLogger('auth'),
     pool: pools.auth,
-    callNotifications: call('notifications'),
+    callNotifications: notifications.internalCaller,
     isActiveOwner,
   });
 

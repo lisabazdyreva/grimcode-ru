@@ -7,14 +7,15 @@ import {
   mountSpa,
   mountTrpc,
   readAdminContext,
+  RPC_TIMEOUT_MS,
+  withDeadlineOn,
   type Logger,
   type Pool,
-  type ServiceApp,
 } from '@template/shared';
 
 import { EmailRepository } from './repository.js';
 import { renderMessage } from './render.js';
-import { adminRouter, internalRouter } from './routers.js';
+import { adminRouter, createInternalCallerFactory, internalRouter } from './routers.js';
 import { createTransport, type MailSettings } from './transport.js';
 
 export { migrations } from './db/migrations.js';
@@ -54,9 +55,26 @@ export async function seedTemplates(deps: EmailSeedDeps): Promise<number> {
   return seeded;
 }
 
-export function createApp(deps: EmailDeps): ServiceApp {
+/**
+ * Both shapes a composer needs — an application for what Gateway routes here, a caller for the
+ * neighbour — from one factory, so the repository and the transport are built once. The caller
+ * takes the request it belongs to: one per process would stamp every later line with the first id.
+ */
+export function createModule(deps: EmailDeps) {
   const repo = new EmailRepository(deps.pool);
   const transport = createTransport(deps.mail, deps.logger);
+
+  const internalCaller = (call: { requestId: string }) =>
+    withDeadlineOn(
+      createInternalCallerFactory({
+        repo,
+        transport,
+        logger: deps.logger.child({ requestId: call.requestId }),
+      }),
+      'email',
+      RPC_TIMEOUT_MS,
+    );
+
   const app = createServiceApp('email', deps.logger);
 
   mountTrpc(app, '/internal/rpc', internalRouter, ({ request, resHeaders, hono }) => ({
@@ -90,5 +108,7 @@ export function createApp(deps: EmailDeps): ServiceApp {
     rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
   });
 
-  return app;
+  return { app, internalCaller };
 }
+
+export type EmailInternalCaller = ReturnType<ReturnType<typeof createModule>['internalCaller']>;

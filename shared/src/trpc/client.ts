@@ -1,7 +1,7 @@
 import { createTRPCClient, httpLink, type TRPCClient, type TRPCLink } from '@trpc/client';
 import type { AnyTRPCRouter } from '@trpc/server';
 
-import { withDeadline, type FetchLike } from '../rpc.js';
+import { RPC_TIMEOUT_MS, withDeadline, type FetchLike } from '../rpc.js';
 
 export interface TrpcClientOptions {
   /** Absolute URL of the tRPC mount, for example `http://email:3006/internal/rpc`. */
@@ -30,15 +30,6 @@ export interface TrpcClientOptions {
  * `app.fetch`, so in one process a hung handler would otherwise be waited on forever — and every
  * fail-closed branch above this depends on the wait actually ending.
  */
-/**
- * How long a caller waits for a neighbour by default.
- *
- * Exported because it is a budget, not a detail: anything the neighbour does on its way to answering
- * has to fit inside it. A step that takes longer leaves the caller recording a failure for work that
- * actually succeeded, and nothing downstream can reconcile the two.
- */
-export const RPC_TIMEOUT_MS = 10_000;
-
 export function createTrpcClient<TRouter extends AnyTRPCRouter>(
   options: TrpcClientOptions,
 ): TRPCClient<TRouter> {

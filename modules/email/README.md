@@ -108,8 +108,8 @@ A tRPC client is typed from the server's router, so the type has to cross the mo
 crosses through one named door and no other: `@template/email/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the two router types and `EditorDocument`, the
 stored document the editor screen reads — and nothing else. `@template/email` is the other entry and
-belongs to the composer, not to a neighbour: `createApp`, `migrations`, `seedTemplates` for the
-migrate job, and `MailSettings`, the shape of what `createApp` is handed. The repository, the
+belongs to the composer, not to a neighbour: `createModule`, `migrations`, `seedTemplates` for the
+migrate job, and `MailSettings`, the shape of what `createModule` is handed. The repository, the
 transport and the renderer are reachable by no specifier at all — which matters here more than
 elsewhere, because `@maily-to/render` is the one CPU-bound dependency in the process.
 
@@ -133,7 +133,7 @@ difference.
 ## Environment
 
 Nothing in this module reads it. The composer opens the database and reads the mail settings, and
-hands both to `createApp` as `pool` and `mail`; the API key is a secret of this one module, and the
+hands both to `createModule` as `pool` and `mail`; the API key is a secret of this one module, and the
 composer deletes it from the environment once it has been handed over. What follows is what a
 deployment sets on this module's behalf.
 

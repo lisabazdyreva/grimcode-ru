@@ -1,12 +1,6 @@
 import type { NotificationEvent } from '@template/notifications/contract';
-import type { NotificationsInternalRouter } from '@template/notifications/contract';
-import {
-  createTrpcClient,
-  internalServiceUrl,
-  REQUEST_ID_HEADER,
-  type FetchLike,
-  type Logger,
-} from '@template/shared';
+import type { NotificationsInternalCaller } from '@template/notifications/contract';
+import type { Logger } from '@template/shared';
 
 /**
  * Auth's outgoing side.
@@ -18,24 +12,19 @@ export class Notifier {
   constructor(
     private readonly logger: Logger,
     private readonly requestIdOf: () => string,
-    private readonly callNotifications: FetchLike,
+    private readonly callNotifications: (call: { requestId: string }) => NotificationsInternalCaller,
   ) {}
 
   /**
-   * Emitting a notification must never fail a security flow: a password reset the user asked for
-   * still consumed its token, and a failed hand-off is logged. The client is built per call because
-   * the request id belongs to the request, and the deadline `createTrpcClient` puts around the wait
-   * is what makes the `catch` mean anything — `app.fetch` ignores an abort signal.
+   * Emitting must never fail a security flow: the token a reset consumed is gone either way, so a
+   * failed hand-off is logged and nothing more. What makes that `catch` reachable is the deadline
+   * Notifications puts on its own caller — nothing here honours an abort signal.
    */
   async emit(event: NotificationEvent, dedupeKey: string): Promise<void> {
     try {
-      const notifications = createTrpcClient<NotificationsInternalRouter>({
-        url: `${internalServiceUrl('notifications')}/internal/rpc`,
-        headers: { [REQUEST_ID_HEADER]: this.requestIdOf() },
-        fetch: this.callNotifications,
-      });
+      const notifications = this.callNotifications({ requestId: this.requestIdOf() });
 
-      await notifications.emit.mutate({ event, dedupeKey });
+      await notifications.emit({ event, dedupeKey });
     } catch (error) {
       this.logger.error('notification could not be handed to notifications', {
         type: event.type,

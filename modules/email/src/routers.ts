@@ -21,7 +21,6 @@ import {
   verifiedAdmin,
   type AdminAwareContext,
   type Logger,
-  type RpcContext,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
@@ -36,7 +35,11 @@ import {
 } from './render.js';
 import type { Transport } from './transport.js';
 
-export interface InternalContext extends RpcContext {
+/**
+ * No `request` and no `resHeaders`: a neighbour reaches this surface through a caller, where there
+ * is no request to speak of. The mount passes them anyway as extra fields, which costs nothing.
+ */
+export interface InternalContext {
   repo: EmailRepository;
   transport: Transport;
   logger: Logger;
@@ -520,6 +523,9 @@ export const adminRouter = adminT.router({
     }),
 } satisfies Record<AdminName, unknown>);
 
+
+/** Calls the internal procedures directly, with their schemas and without a request. */
+export const createInternalCallerFactory = internalT.createCallerFactory(internalRouter);
 
 /** The browser client and Notifications are typed from these, and from nothing else. */
 export type EmailInternalRouter = typeof internalRouter;
