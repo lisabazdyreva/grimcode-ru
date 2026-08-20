@@ -2,7 +2,7 @@ import { createApp as createAdminApp, migrations as adminMigrations } from '@tem
 import type { AdminInternalRouter } from '@template/admin/contract';
 import { createApp as createAppApp } from '@template/app';
 import {
-  createApp as createAuthApp,
+  createModule as createAuthModule,
   migrations as authMigrations,
   type IsActiveOwner,
 } from '@template/auth';
@@ -146,12 +146,13 @@ export async function compose(): Promise<Composition> {
   });
   apps.notifications = notifications.app;
 
-  apps.auth = createAuthApp({
+  const auth = createAuthModule({
     logger: moduleLogger('auth'),
     pool: pools.auth,
     callNotifications: notifications.internalCaller,
     isActiveOwner,
   });
+  apps.auth = auth.app;
 
   apps.admin = createAdminApp({
     logger: moduleLogger('admin'),
@@ -162,7 +163,7 @@ export async function compose(): Promise<Composition> {
   apps.users = createUsersApp({
     logger: moduleLogger('users'),
     pool: pools.users,
-    callAuth: call('auth'),
+    callAuth: auth.internalCaller,
   });
 
   apps.app = createAppApp({ logger: moduleLogger('app') });

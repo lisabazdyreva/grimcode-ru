@@ -7,9 +7,10 @@ import {
   mountSpa,
   mountTrpc,
   readAdminContext,
+  RPC_TIMEOUT_MS,
+  withDeadlineOn,
   type Logger,
   type Pool,
-  type ServiceApp,
 } from '@template/shared';
 
 import type { NotificationsInternalCaller } from '@template/notifications/contract';
@@ -17,7 +18,7 @@ import type { NotificationsInternalCaller } from '@template/notifications/contra
 import { Notifier } from './notifier.js';
 import { AuthRepository } from './repository.js';
 import { adminRouter, type IsActiveOwner } from './routers/admin.js';
-import { internalRouter } from './routers/internal.js';
+import { createInternalCallerFactory, internalRouter } from './routers/internal.js';
 import { publicRouter } from './routers/public.js';
 
 export { migrations } from './db/migrations.js';
@@ -36,13 +37,24 @@ export interface AuthDeps {
 }
 
 /**
- * Three mounts, one per trust boundary.
+ * Both shapes a composer needs — an application for what Gateway routes here, a caller for the
+ * neighbours — from one factory, so the repository is built once.
  *
- * Gateway routes `/service/auth/**` and `/admin/embed/service/auth/**` here and never routes
- * `/internal/**` anywhere, so the internal surface stays reachable only from inside the process.
+ * Three mounts, one per trust boundary. Gateway routes `/service/auth/**` and
+ * `/admin/embed/service/auth/**` here and never routes `/internal/**` anywhere, so the internal
+ * surface stays reachable only from inside the process.
  */
-export function createApp(deps: AuthDeps): ServiceApp {
+export function createModule(deps: AuthDeps) {
   const repo = new AuthRepository(deps.pool);
+
+  /*
+   * The request the call belongs to is taken and not used: these procedures write no line of their
+   * own, so there is no logger here for the id to reach. The argument is the shape every module's
+   * caller has, and what the first line written here would need.
+   */
+  const internalCaller = (_call: { requestId: string }) =>
+    withDeadlineOn(createInternalCallerFactory({ repo }), 'auth', RPC_TIMEOUT_MS);
+
   const app = createServiceApp('auth', deps.logger);
 
   const notifier = (logger: Logger, requestIdOf: () => string) =>
@@ -80,5 +92,7 @@ export function createApp(deps: AuthDeps): ServiceApp {
     rootDir: join(dirname(fileURLToPath(import.meta.url)), '../web/dist'),
   });
 
-  return app;
+  return { app, internalCaller };
 }
+
+export type AuthInternalCaller = ReturnType<ReturnType<typeof createModule>['internalCaller']>;

@@ -1,12 +1,12 @@
 import { emailSchema, idSchema, okSchema } from '@template/shared/vocabulary';
 import { z } from 'zod';
-import type { RpcContext } from '@template/shared';
 import { initTRPC } from '@trpc/server';
 
 import { toIdentity, type AuthRepository } from '../repository.js';
 import { identitySchema } from '../schemas.js';
 
-export interface InternalContext extends RpcContext {
+/** No `request` and no `resHeaders`: a caller has no request, and the mount passes them anyway. */
+export interface InternalContext {
   repo: AuthRepository;
 }
 
@@ -98,6 +98,9 @@ export const internalRouter = t.router({
   ),
 } satisfies Record<InternalName, unknown>);
 
+
+/** Calls the internal procedures directly, with their schemas and without a request. */
+export const createInternalCallerFactory = t.createCallerFactory(internalRouter);
 
 /** Admin, Users and the composer are typed from this, and from nothing else. */
 export type AuthInternalRouter = typeof internalRouter;

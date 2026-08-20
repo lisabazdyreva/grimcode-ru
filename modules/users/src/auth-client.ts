@@ -1,13 +1,5 @@
-import type { AuthInternalRouter } from '@template/auth/contract';
-import type { Identity } from '@template/auth/contract';
-import {
-  createTrpcClient,
-  internalServiceUrl,
-  parseCookies,
-  REQUEST_ID_HEADER,
-  sessionCookieName,
-  type FetchLike,
-} from '@template/shared';
+import type { AuthInternalCaller, Identity } from '@template/auth/contract';
+import { parseCookies, sessionCookieName } from '@template/shared';
 
 /**
  * Users owns no sessions and does not know the cookie's internal format. It asks Auth over the
@@ -19,17 +11,13 @@ import {
 export async function resolveIdentity(
   request: Request,
   requestId: string,
-  callAuth: FetchLike,
+  callAuth: (call: { requestId: string }) => AuthInternalCaller,
 ): Promise<Identity | null> {
   const token = parseCookies(request.headers.get('cookie'))[sessionCookieName()];
   if (!token) return null;
 
-  const auth = createTrpcClient<AuthInternalRouter>({
-    url: `${internalServiceUrl('auth')}/internal/rpc`,
-    headers: { [REQUEST_ID_HEADER]: requestId },
-    fetch: callAuth,
-  });
+  const auth = callAuth({ requestId });
 
-  const { identity } = await auth.resolveSession.query({ sessionToken: token });
+  const { identity } = await auth.resolveSession({ sessionToken: token });
   return identity;
 }

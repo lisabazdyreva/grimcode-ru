@@ -1,13 +1,11 @@
-import type { AuthInternalRouter } from '@template/auth/contract';
+import type { AuthInternalCaller } from '@template/auth/contract';
 import type { Identity } from '@template/auth/contract';
 
 import { idSchema, pageOf, paginationInputSchema } from '@template/shared/vocabulary';
 import {
-  createTrpcClient,
-  internalServiceUrl,
   verifiedAdmin,
   type AdminAwareContext,
-  type FetchLike,
+  type Logger,
   type RpcContext,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
@@ -22,27 +20,28 @@ import { toProfile, type ProfileRow, type UsersRepository } from './repository.j
  *
  * Users does not store it, so it is fetched per request, in one call for the whole page. An id Auth
  * does not know stays `null`, which is how a profile left by a deleted account is visible as one.
- * The `catch` below is why the deadline in `createTrpcClient` matters.
+ * The `catch` below is why the deadline Auth puts on its own caller matters.
  */
-async function withEmails(rows: ProfileRow[], callAuth: FetchLike) {
+async function withEmails(
+  rows: ProfileRow[],
+  ctx: Pick<AdminRpcContext, 'callAuth' | 'requestId' | 'logger'>,
+) {
   const profiles = rows.map((row) => ({ ...toProfile(row), email: null as string | null }));
   if (profiles.length === 0) return profiles;
 
   try {
-    const auth = createTrpcClient<AuthInternalRouter>({
-      url: `${internalServiceUrl('auth')}/internal/rpc`,
-      fetch: callAuth,
-    });
+    const auth = ctx.callAuth({ requestId: ctx.requestId });
 
-    const { identities } = await auth.getIdentitiesByIds.query({
+    const { identities } = await auth.getIdentitiesByIds({
       ids: [...new Set(rows.map((row) => row.identity_id))],
     });
 
     const byId = new Map(identities.map((identity) => [identity.id, identity.email]));
     for (const profile of profiles) profile.email = byId.get(profile.identityId) ?? null;
-  } catch {
-    // Auth being briefly unreachable is not a reason to refuse the whole page: the profiles are
-    // still worth showing, and a missing address reads as missing.
+  } catch (error) {
+    // The page is still worth showing without addresses, but a direct call fails where no mount
+    // writes it down, so the line is what keeps the refusal from being silent.
+    ctx.logger.warn('sign-in addresses could not be read from auth', { error });
   }
 
   return profiles;
@@ -56,8 +55,10 @@ export interface PublicContext extends RpcContext {
 
 export interface AdminRpcContext extends AdminAwareContext {
   repo: UsersRepository;
-  /** Answers Auth's internal surface; the profile list needs the sign-in address from it. */
-  callAuth: FetchLike;
+  /** Reaches Auth's internal surface; the profile list needs the sign-in address from it. */
+  callAuth: (call: { requestId: string }) => AuthInternalCaller;
+  requestId: string;
+  logger: Logger;
 }
 
 // --- public surface ---------------------------------------------------------------------------
@@ -126,7 +127,7 @@ export const adminRouter = adminT.router({
     .query(async ({ input, ctx }) => {
       const { rows, total } = await ctx.repo.list(input.query, input.limit, input.offset);
       return {
-        items: await withEmails(rows, ctx.callAuth),
+        items: await withEmails(rows, ctx),
         total,
         limit: input.limit,
         offset: input.offset,
@@ -140,7 +141,7 @@ export const adminRouter = adminT.router({
       const row = await ctx.repo.findById(input.id);
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Профиль не найден' });
 
-      const [profile] = await withEmails([row], ctx.callAuth);
+      const [profile] = await withEmails([row], ctx);
       return { profile: profile! };
     }),
 } satisfies Record<AdminName, unknown>);

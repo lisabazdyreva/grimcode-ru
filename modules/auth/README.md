@@ -40,7 +40,7 @@ A tRPC client is typed from the server's router, so the type has to cross the mo
 crosses through one named door: `@template/auth/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the three router types and the four shapes
 neighbours and browsers name by hand — `Identity`, `AdminIdentity`, `SessionSummary`,
-`AuthAuditEntry` — and nothing else, while the bare `@template/auth` resolves to `createApp` and
+`AuthAuditEntry` — and nothing else, while the bare `@template/auth` resolves to `createModule` and
 `migrations` and nothing besides.
 
 Auth has more callers than any other module — Admin, Users in two separate places, and the

@@ -7,11 +7,12 @@ import {
   mountSpa,
   mountTrpc,
   readAdminContext,
-  type FetchLike,
   type Logger,
   type Pool,
   type ServiceApp,
 } from '@template/shared';
+
+import type { AuthInternalCaller } from '@template/auth/contract';
 
 import { resolveIdentity } from './auth-client.js';
 import { UsersRepository } from './repository.js';
@@ -22,8 +23,8 @@ export { migrations } from './db/migrations.js';
 export interface UsersDeps {
   logger: Logger;
   pool: Pool;
-  /** Answers Auth's internal surface. Users owns no sessions and asks on every protected call. */
-  callAuth: FetchLike;
+  /** Reaches Auth's internal surface; a caller per request, so the id travels with it. */
+  callAuth: (call: { requestId: string }) => AuthInternalCaller;
 }
 
 export function createApp(deps: UsersDeps): ServiceApp {
@@ -37,13 +38,20 @@ export function createApp(deps: UsersDeps): ServiceApp {
     identity: await resolveIdentity(request, hono.get('requestId'), deps.callAuth),
   }));
 
-  mountTrpc(app, '/admin/embed/service/users/rpc', adminRouter, ({ request, resHeaders }) => ({
-    repo,
-    request,
-    resHeaders,
-    callAuth: deps.callAuth,
-    admin: readAdminContext(request.headers),
-  }));
+  mountTrpc(
+    app,
+    '/admin/embed/service/users/rpc',
+    adminRouter,
+    ({ request, resHeaders, hono }) => ({
+      repo,
+      request,
+      resHeaders,
+      callAuth: deps.callAuth,
+      requestId: hono.get('requestId'),
+      logger: hono.get('logger'),
+      admin: readAdminContext(request.headers),
+    }),
+  );
 
   mountCsrfEndpoint(app, '/admin/embed/service/users/csrf', 'users');
 
