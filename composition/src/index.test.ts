@@ -139,28 +139,17 @@ describe('the database of one module', () => {
     delete process.env.DATABASE_URL_EMAIL;
   });
 
-  /** Running on the machine rather than in Compose, where the host `postgres` does not exist. */
-  it('redirects to the published port when the application runs outside Compose', () => {
+  /**
+   * The address is taken as written. It used to be rewritten when the application ran on the machine
+   * instead of in a container — the host inside the network did not exist outside it — and with the
+   * containers gone there is one address again, wherever the program runs.
+   */
+  it('keeps the host and port of DATABASE_URL exactly as given', () => {
     process.env.PROJECT_SLUG = 'demo';
-    process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
-    process.env.LOCAL_POSTGRES_HOST = '127.0.0.1';
-    process.env.POSTGRES_PORT = '63003';
+    process.env.DATABASE_URL = 'postgres://owner:secret@127.0.0.1:63003/postgres';
 
     expect(serviceDatabaseUrl('auth')).toBe('postgres://owner:secret@127.0.0.1:63003/demo_auth');
     expect(maintenanceDatabaseUrl()).toBe('postgres://owner:secret@127.0.0.1:63003/postgres');
-
-    delete process.env.LOCAL_POSTGRES_HOST;
-    delete process.env.POSTGRES_PORT;
-  });
-
-  it('takes an explicit override literally, even then', () => {
-    process.env.LOCAL_POSTGRES_HOST = '127.0.0.1';
-    process.env.DATABASE_URL_EMAIL = 'postgres://other@db:5432/custom';
-
-    expect(serviceDatabaseUrl('email')).toBe('postgres://other@db:5432/custom');
-
-    delete process.env.DATABASE_URL_EMAIL;
-    delete process.env.LOCAL_POSTGRES_HOST;
   });
 });
 

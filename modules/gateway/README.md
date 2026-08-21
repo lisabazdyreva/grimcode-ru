@@ -108,8 +108,9 @@ redirect belongs to the browser — together with any cookie that redirect sets.
 | `PUBLIC_SITE_URL` | External origin, used in the sign-in link of the 403 page |
 
 Gateway holds no addresses at all: the composer builds every module and hands the whole set over as
-`targets`, and every target is an application in this process. The database browser in its own
-container was the last real address anywhere, and it is gone — nothing in the process dials outwards.
+`targets`, and every target is an application in this process. The database browser, which ran beside
+the application and answered over the network, was the last real address anywhere — it is gone, and
+nothing in the process dials outwards.
 
 A module calling a neighbour takes no address either: it is handed a caller built from the
 neighbour's own router and invokes a procedure on it, so there is no request and nothing to dial.

@@ -29,16 +29,15 @@ verified against a running stack.
 A template is only useful where it has taken a position. These are the positions, each with the
 reason, so a project can disagree with one on purpose rather than by accident.
 
-**One way in.** Gateway is the only application on the public listener: locally the process publishes
-one port, in production none at all — the platform routes the domain to the container's internal port.
-Nothing else is reachable from outside in either case — a module that could be reached directly would
-make Gateway's checks optional.
+**One way in.** Gateway is the only application on the public listener: the process opens exactly one
+port, and whatever terminates TLS in front of it is outside this repository. Nothing else is reachable
+from outside — a module that could be reached directly would make Gateway's checks optional.
 
 **Modules, in one process.** Eight of them, each its own package, and a database of its own for the
-five that store anything, talking to each other through contracts. They ran as eight containers
-before and can again: the point of the contracts is that where a module runs is not what decides
-what it may know. What one process costs is isolation of failure, and that is the price this
-template chose to pay.
+five that store anything, talking to each other through contracts. The point of the contracts is not
+that a module could be moved out again — it is that a module cannot learn anything about a neighbour
+beyond what the contract says, whoever is editing it. What one process costs is isolation of failure,
+and that is the price this template chose to pay.
 
 **Each module owns its data, and reaches nobody else's.** A neighbour's table lives in another
 database, so a query would need another connection rather than another table name. What refuses it is

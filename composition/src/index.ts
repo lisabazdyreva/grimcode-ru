@@ -204,20 +204,6 @@ export function mailSettings(): MailSettings {
 }
 
 /**
- * Where PostgreSQL is when the application runs on the machine, not in Compose. `DATABASE_URL`
- * names the host `postgres`, which exists only inside the Compose network; in Compose the variable
- * below is not declared to the container at all, so the declaration is the switch.
- */
-function withLocalHost(url: URL): URL {
-  const host = optionalEnv('LOCAL_POSTGRES_HOST', '');
-  if (host === '') return url;
-
-  url.hostname = host;
-  url.port = optionalEnv('POSTGRES_PORT', url.port);
-  return url;
-}
-
-/**
  * One module's database: `DATABASE_URL` with the name swapped for `<PROJECT_SLUG>_<module>`. One
  * credential, not five — creating a database needs an account allowed to, and such an account opens
  * all of them.
@@ -226,14 +212,14 @@ export function serviceDatabaseUrl(module: string): string {
   const override = optionalEnv(`DATABASE_URL_${module.toUpperCase()}`, '');
   if (override !== '') return override;
 
-  const url = withLocalHost(new URL(requireEnv('DATABASE_URL')));
+  const url = new URL(requireEnv('DATABASE_URL'));
   url.pathname = `/${serviceDatabaseName(module)}`;
   return url.toString();
 }
 
 /** The server itself: a database cannot be created from inside itself. */
 export function maintenanceDatabaseUrl(): string {
-  return withLocalHost(new URL(requireEnv('DATABASE_URL'))).toString();
+  return new URL(requireEnv('DATABASE_URL')).toString();
 }
 
 /** PostgreSQL cuts every identifier to this many bytes, silently. */
@@ -245,20 +231,19 @@ export function serviceDatabaseName(module: string): string {
     .toString();
 }
 
-/** Port inside the container. Compose publishes it; nothing else in the process listens. */
-const CONTAINER_PORT = 8080;
+/** Where the program listens when nothing says otherwise. */
+const DEFAULT_PORT = 8080;
 
 /**
- * Port to listen on. Inside the container the fixed one is right; outside there is no publishing
- * step, so the program takes `GATEWAY_PORT`, which Compose does not declare to the container — that
- * is what lets two worktrees run at once.
+ * Port to listen on. `PORT` first, because that is what a hosting platform sets; then
+ * `GATEWAY_PORT` from `.env`, which is what lets two worktrees run at once on one machine.
  */
 function ownPort(): number {
   for (const name of ['PORT', 'GATEWAY_PORT']) {
     const port = intEnv(name, 0);
     if (port !== 0) return port;
   }
-  return CONTAINER_PORT;
+  return DEFAULT_PORT;
 }
 
 /**

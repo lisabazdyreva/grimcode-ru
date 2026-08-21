@@ -13,20 +13,20 @@ deployment usually expects to configure are not among them either:
 
 | | Where it comes from |
 | --- | --- |
-| The internal port | Fixed in the image and Compose. Nobody sets it. |
-| The public port | There is none. The platform routes the domain to the container's internal port. |
-| PostgreSQL | A managed resource, reached through `DATABASE_URL`. |
+| The port | `PORT` if the platform sets one, `GATEWAY_PORT` from the environment file otherwise, 8080 if neither. |
+| PostgreSQL | A managed resource, or a server on the same machine. Either way, reached through `DATABASE_URL`. |
 | Per-module databases | `<PROJECT_SLUG>_<module>`, created by each module itself on its first request. |
+| Restarts, environment, logs | One systemd unit — [`deploy/app.service`](../deploy/app.service). |
 
 ## What a deployment supplies
 
-There is no production `.env` example to copy: the list lives here, and `docker/compose.yaml` is
-what enforces it. None of these has a working default — a value that is wrong in production is
-worse than a run that refuses to start, so Compose fails on a missing one and names it.
+There is no production `.env` example to copy: the list lives here. None of these has a working
+default — a value that is wrong in production is worse than a run that refuses to start, so the
+program throws on a missing one and names it, before the port is open.
 
 | Required | |
 | --- | --- |
-| `PROJECT_SLUG` | Names the Compose project and the databases. Changing it points every service at a different database. **At most 49 characters of `[a-z0-9_]`** — PostgreSQL truncates identifiers to 63 bytes silently, and `<slug>_notifications` adds fourteen. |
+| `PROJECT_SLUG` | Names the databases. Changing it points every service at a different database. **At most 49 characters of `[a-z0-9_]`** — PostgreSQL truncates identifiers to 63 bytes silently, and `<slug>_notifications` adds fourteen. |
 | `PUBLIC_SITE_URL` | The public origin as a visitor sees it. Links in email are built from it, and it decides whether the session cookie is marked `Secure`. |
 | `DATABASE_URL` | The managed database. Every module connects through it, swapping in its own database name, and creates that database when it is missing — so the account needs **`CREATEDB`**. It does not need `CREATEROLE`: there are no per-module roles any more. Consequence worth naming: one account opens all five databases, so which module works where is enforced by the wiring and a check at startup, not by PostgreSQL. |
 | `EMAIL_FROM_ADDRESS` | Who messages come from. |
@@ -39,14 +39,29 @@ worse than a run that refuses to start, so Compose fails on a missing one and na
 | `LOG_LEVEL` | `debug`, `info`, `warn` or `error`. `info` by default; anything below the level is not written at all. |
 | `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. A full override, taken exactly as written. |
 
+## Deploying
+
+Four steps, and the last one is the only one that interrupts anything:
+
 ```bash
-docker compose --env-file .env.production -f docker/compose.yaml up -d --build
+git pull
+pnpm install --frozen-lockfile
+pnpm build
+sudo systemctl restart grimcode
 ```
+
+The unit file is [`deploy/app.service`](../deploy/app.service); it is copied to
+`/etc/systemd/system/` once, with its paths and its user edited. What it takes over from the
+container is written down there: restarting the process, handing it the environment file, and
+collecting the logs — `journalctl -u grimcode -f`.
+
+Node is the machine's now, not the image's. `engines` in the manifest says what the project expects
+(22 or newer); nothing enforces it at runtime.
 
 ## What is exposed
 
-Only the application, and only to the platform. Nothing publishes a host port in production —
-`scripts/check-compose.mjs` refuses a configuration where something does.
+The application listens on one port, and only that port. What terminates TLS and routes the domain to
+it is outside this repository — a reverse proxy on the same machine, or the platform's own router.
 
 The panel's database section has nothing behind it in any environment: the third-party console that
 used to answer there has been removed, and this template's own interface is not written yet. Gateway
@@ -54,11 +69,11 @@ still checks the section — the owner gets a 503, anybody else the usual 403.
 
 ## What happens on start
 
-One container: our image.
+One process.
 
-1. **`server`** builds every module, hands each the connection string of its own database and mounts
-   Gateway on the port. No database work happens here,
-   and nothing waits for PostgreSQL: the process is listening in under a second.
+1. **The composer** builds every module, hands each the connection string of its own database and
+   mounts Gateway on the port. No database work happens here, and nothing waits for PostgreSQL: the
+   process is listening in under a second.
 2. **Each module prepares its own storage on the first request that needs it** — creates its database
    if it is missing, applies its versioned migrations, checks that the connection landed on the
    database it was meant to open, and keeps the pool for the life of the process. Email creates the
@@ -67,8 +82,8 @@ One container: our image.
 **What that trade means for a deploy.** There is no step that can stop it any more: a broken migration
 is not a failed deployment, it is a 500 to the first person through the door, with the reason in the
 logs of the module that refused (`module database unavailable`). Watch the logs of the first minutes,
-not the exit code of a job. In return there is nothing to keep in step: one image, one command, and no
-ordering between them to get wrong.
+not the exit code of a job. In return there is nothing to keep in step: one process, one restart, and
+no ordering between steps to get wrong.
 
 Then the first person to register becomes the owner of the admin panel — see
 [administrator access](admin-access.md).
@@ -115,13 +130,6 @@ client address, and only the proxy in front of Gateway has it. A deployment that
 traffic puts volumetric limits there — requests per address for `/service/*/rpc` and `/admin/**` —
 and Auth's counter stays as the last line for one account under attack.
 
-## Building images
-
-Our application is one Dockerfile and one image, run once: the server. The jobs that used to share it
-are gone — a module sets its own database up on the first request that needs it. The image contains
-the production dependency closure of the composer — `pnpm deploy --prod` — which is the union of what
-all eight modules need at runtime, and no build tooling.
-
 ## Upgrading
 
 Migrations are forward-only and versioned, and each module applies its own on the first request after
@@ -129,4 +137,4 @@ a deploy. A failed schema change therefore does not stop the deploy — it answe
 which is the trade described in the start-up sequence above.
 
 A rollback is therefore a matter for the change itself: a migration that dropped something cannot be
-undone by starting an older image.
+undone by checking out an older commit.

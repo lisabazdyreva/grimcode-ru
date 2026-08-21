@@ -159,7 +159,7 @@ export async function waitForStack(attempts = 30): Promise<void> {
   }
 
   throw new Error(
-    `The stack did not answer at ${BASE_URL}. Start it with "pnpm start", or point ` +
+    `The stack did not answer at ${BASE_URL}. Start it with "pnpm dev", or point ` +
       'ACCEPTANCE_BASE_URL at a running one.',
   );
 }

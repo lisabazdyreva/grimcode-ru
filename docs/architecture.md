@@ -3,8 +3,7 @@
 # Architecture
 
 A modular monolith: eight modules in one process, each owning its own interface and — where it keeps
-state — its own database, plus the database browser the admin panel embeds, which stays a container
-of its own.
+state — its own database. Nothing else runs beside them: the process is the whole application.
 
 Modules are still modules. Separate packages of the workspace, and on the server they call each other
 through `@template/<name>/contract` and nothing else — `check-boundaries` refuses a build where one
@@ -67,8 +66,8 @@ After this move the words are close enough to be worth separating:
 - the **entry for traffic** is Gateway. The composer mounts it, and only it, on the public listener,
   so every request from outside reaches Gateway before it reaches anything else.
 
-The Compose service is called `server` — the whole process. The module inside it that traffic enters
-through is called `gateway`. Neither name is the other.
+The program is one process. The module inside it that traffic enters through is called `gateway`, and
+that name belongs to the module, not to the program.
 
 The composer is allowed to know every module, which makes it the widest permission in the
 repository. It can afford that only while the wiring holds no decisions — just the order of calls.
@@ -232,15 +231,15 @@ it stays there. Deleting it after handing it out was tried and dropped: the stri
 the life of the process anyway, so the deletion bought a reader that remembered every name it read and
 little else.
 
-In production the server is a managed resource of the deployment platform, reached through
-`DATABASE_URL`. Locally it is a container in the same Compose project, so the whole thing has one
-lifecycle.
+In production the server is a managed resource, reached through `DATABASE_URL`. Locally it is a
+PostgreSQL on the machine, one server for every copy of the project — what keeps two copies apart is
+the slug in the database names, not the server.
 
 ## What this gave up
 
-Isolation of failure, and it is worth naming rather than glossing. When every module was a container,
-an out-of-memory kill or a rendering job that would not finish took down that container alone. In one
-process it takes down everything, the public site included.
+Isolation of failure, and it is worth naming rather than glossing. When every module was a service of
+its own, an out-of-memory kill or a rendering job that would not finish took that one down alone. In
+one process it takes down everything, the public site included.
 
 Two answers are kept ready. The first is that the CPU-bound work is off the start-up path: rendering
 the seed email templates happens once per fresh database, on the first request that reaches Email, and
