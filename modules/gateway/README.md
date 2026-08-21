@@ -113,9 +113,10 @@ over as `targets`. A target may be an application in this process or a URL, and 
 which — Adminer is a URL today, and anything put behind a real network would become one without
 touching this package.
 
-Adminer's is the only such variable left anywhere. A client calling a module does not take an address
-at all: it is handed the neighbour's `fetch`, and the address it builds its request from lives in
-`shared`. `SERVICE_URL_AUTH` and the rest are read by nobody.
+Adminer's is the only such variable left anywhere, and the only real address in the process. A module
+calling a neighbour takes no address at all — it is handed a caller built from the neighbour's own
+router and invokes a procedure on it, so there is no request and nothing to dial. `SERVICE_URL_AUTH`
+and the rest are read by nobody.
 
 The process's listening port is fixed inside the image. Locally the published host port comes from
 `GATEWAY_PORT` in `.env`; in production nothing is published at all.

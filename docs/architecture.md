@@ -46,11 +46,12 @@ flowchart LR
   email --- emailDb[(email)]
 ```
 
-Solid lines are requests arriving from outside; dotted lines are calls modules make to each other.
-Both are the same thing now — a `Request` answered by a module's own application — but they are not
-the same kind of traffic. A dotted one goes through the contract, so what crosses a boundary is
-exactly what crossed it over the network. A solid one Gateway forwards without reading: it routes by
-path and rewrites nothing, and the only contract call it makes is `authorize`.
+Solid lines are requests arriving from outside; dotted lines are calls modules make to each other,
+and the two are no longer the same thing. A solid one is a `Request` Gateway forwards without
+reading: it routes by path and rewrites nothing. A dotted one is a direct call on a caller the
+neighbour handed out — no request, no JSON — and it still goes through the contract, because the
+procedure validates its input and output by the same schemas and answers under the same deadline as
+when the call was carried as a request. The only such call Gateway itself makes is `authorize`.
 
 A dotted label names the procedure where there is only one of them, and the subject where there are
 several — the callee's own README lists which procedures each neighbour calls.
@@ -62,8 +63,8 @@ address over a real network.
 
 After this move the words are close enough to be worth separating:
 
-- the **entry of the program** is `composition/`. It starts first, reads the environment, opens the
-  pools, builds every module, wires them together and listens;
+- the **entry of the program** is `composition/`. It starts first, reads the environment, builds
+  every module, hands each its own environment and a way to reach its neighbours, and listens;
 - the **entry for traffic** is Gateway. The composer mounts it, and only it, on the public listener,
   so every request from outside reaches Gateway before it reaches anything else.
 
@@ -95,7 +96,7 @@ nothing in PostgreSQL. The check runs before the migrations, which is what keeps
 | **gateway** | The public surface: routing, allowlists, enforcing the admin decision | Any business rule, and who is allowed — it asks Admin |
 | **site** | Public pages | Anything about a signed-in person |
 | **app** | The interface behind sign-in | Any data; its pages ask Auth and Users |
-| **auth** | Identity, passwords, sessions, security events | Who is an administrator — it asks Admin; product data |
+| **auth** | Identity, passwords, sessions, security events | Who is an administrator, and it no longer asks: the rule that needed the answer lives in Admin. Product data |
 | **users** | The product profile | Passwords, sessions, admin rights |
 | **admin** | Who may open the panel and what they may reach | How anyone signs in |
 | **notifications** | Typed events and where they go | How a message is written or sent |
@@ -115,8 +116,9 @@ Gateway is the only application mounted on the public listener — locally reach
 published port, in production by the platform routing a domain to the process. Nothing else is
 reachable from outside, including the database browser, which has no host port in any environment.
 
-That is now a property of the wiring rather than of the network: the internal surfaces are not
-mounted where a request from outside can arrive at them. A `/internal/rpc` request through Gateway
+That is now a property of the wiring rather than of the network, and it went one step further: an
+internal surface is not mounted on a path at all. A neighbour reaches those procedures through a
+caller, so there is nothing for a request to arrive at. A `/internal/rpc` request through Gateway
 matches no route, falls through to the site and gets an ordinary 404 — there is an acceptance check
 that keeps it that way.
 
@@ -157,12 +159,13 @@ server's toolbox would follow it into a page.
 
 A module still may not import a neighbour's code — `scripts/check-boundaries.mjs` refuses a build
 where one does — with a single exception it names explicitly: `@template/<neighbour>/contract`, and
-that specifier only. The exception exists because a tRPC client is typed from the server's router,
-so the type has to cross the boundary; the door is one `exports` key — `./contract`, on each of the
-five modules a neighbour has to see into — resolving to a file that carries types and nothing but
-types: the router types, and the shapes inferred from that module's schemas. The bare
-`@template/auth` still resolves to `createApp` and `migrations`, and `dist/repository.js` resolves to
-nothing at all.
+that specifier only. The exception exists because a neighbour is typed from the caller a module hands
+out, and a browser bundle from the router behind its own admin screen; either way the type has to
+cross the boundary. The door is one `exports` key — `./contract`, on each of the five modules a
+neighbour has to see into — resolving to a file that carries types and nothing but types: the caller
+type, the router types a browser needs, and the shapes inferred from that module's schemas. The bare
+`@template/auth` resolves to `createModule` and its own environment type, and `dist/repository.js`
+resolves to nothing at all.
 
 That door is a projection of the implementation, not an agreement, and it is not what keeps a
 router honest. Two things do, and both are ordinary TypeScript rather than machinery of ours.
@@ -185,22 +188,30 @@ properties that should not be there. What it buys is that a procedure cannot lan
 surface unnoticed — an admin procedure written into a public router is a compile error rather than
 an open endpoint.
 
-They kept talking that way after moving into one process, and that was a decision rather than
-inertia. A direct method call would be faster and would hide the two things that only ever show up
-at a boundary — Zod coercing an input, a `Date` becoming a string through JSON — until the day a
-module has to be moved back out into a service of its own. What the move actually removed is the
-TCP hop, and nothing else: the composer hands each module's client the neighbour's own `app.fetch`.
+When the modules were separate services they talked over HTTP, and for a while after moving into one
+process they kept doing exactly that — the composer handed each module's client the neighbour's own
+`app.fetch`, so the only thing the move had removed was the TCP hop. That is finished: a module now
+hands its neighbour a **caller** built from its own router, and the neighbour invokes a procedure as
+a method. The boundary is unchanged in what it checks — the input schema, the output schema and the
+middleware all run exactly as before — and the caller is built per request, so the request id still
+travels with the call.
 
-One thing had to be rebuilt by hand. Over the network a client's `AbortSignal` bounds the wait; in
-one process it is ignored, and a handler that hangs never returns at all — measured, a 1500 ms
-handler under a 200 ms limit came back after 1512 ms with no error. So the deadline lives in
-`createTrpcClient` now. It buys exactly one thing: the caller stops waiting. The handler runs to its
-end regardless.
+What that gave up is the last of the network's habits: nothing is serialized on the way, so a `Date`
+stays a `Date` where a JSON hop would have made it a string. A strict schema refuses a live object
+anyway; a field declared `z.any()` or `z.date()` would not.
+
+The deadline had to be rebuilt by hand and stayed rebuilt. Over the network a client's `AbortSignal`
+bounds the wait; in one process it is ignored, and a handler that hangs never returns at all —
+measured, a 1500 ms handler under a 200 ms limit came back after 1512 ms with no error. So the module
+that hands out the caller puts the deadline on it, with `withDeadlineOn`, and no call site has to
+remember. It buys exactly one thing: the caller stops waiting. The handler runs to its end
+regardless.
 
 Each contract is split by who may call it:
 
 - **public** — reachable through Gateway by anyone, session or not;
-- **internal** — never routed by Gateway, so it is reachable only from inside the process;
+- **internal** — not mounted on a path at all, and reached only through the caller the module
+  hands out;
 - **admin** — through Gateway's admin route, after the role and grant were checked.
 
 Notifications and Email have no public surface at all.

@@ -6,9 +6,10 @@ What a deployment supplies, what it must not, and what happens on the way up.
 
 ## What a person actually decides
 
-Five things, and they are the five below the next heading: the **domain**, the **database**, a
-**project slug**, an **address to send mail from**, and **five database passwords**. The pieces a
-deployment usually expects to configure are not among them:
+Four things, and they are the four below the next heading: the **domain**, the **database**, a
+**project slug** and an **address to send mail from**. Database passwords are no longer among them —
+there are no per-module roles, so there is one account, and it comes with `DATABASE_URL`. The pieces a
+deployment usually expects to configure are not among them either:
 
 | | Where it comes from |
 | --- | --- |
@@ -73,10 +74,10 @@ Then the first person to register becomes the owner of the admin panel — see
 [administrator access](admin-access.md).
 
 `GET /healthz` is what a platform can watch: `{"ok":true,"service":"gateway"}` and a 200, on the same
-port as everything else, with no session needed. It checks nothing itself, and does not need to — the
-listener only starts after the composer has opened all five pools, waited for the databases and asked
-each one `SELECT current_database()`, so an answer at all means the start-up sequence completed. It
-says nothing about a database that goes away later.
+port as everything else, with no session needed. It checks nothing itself, and says less than it used
+to: a module opens its database on the first request that needs it, so an answer here means the
+process is up and Gateway is listening, not that PostgreSQL can be reached. The first request to a
+module is what finds that out — and answers 500 with the reason in the log if it cannot.
 
 ## Email will not send until it is told to
 
@@ -116,9 +117,10 @@ and Auth's counter stays as the last line for one account under attack.
 
 ## Building images
 
-Our application is one Dockerfile and one image, used three times: the server and the two jobs above.
-It contains the production dependency closure of the composer — `pnpm deploy --prod` — which is the
-union of what all eight modules need at runtime, and no build tooling.
+Our application is one Dockerfile and one image, run once: the server. The jobs that used to share it
+are gone — a module sets its own database up on the first request that needs it. The image contains
+the production dependency closure of the composer — `pnpm deploy --prod` — which is the union of what
+all eight modules need at runtime, and no build tooling.
 
 Adminer is the second image, built from `docker/adminer/Dockerfile`: the upstream
 `adminer:5.4.2-standalone` release, the wrapper that logs it in and themes it, and a router script in

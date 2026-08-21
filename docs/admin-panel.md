@@ -100,7 +100,8 @@ to the owner, and impossible to hand to a regular administrator.
 All of that is the browser half. The module also has to serve what was built: the admin router on
 `/admin/embed/service/<id>/rpc`, the CSRF endpoint beside it, and the bundle itself — three calls in
 [`modules/auth/src/index.ts`](../modules/auth/src/index.ts). Forget the router and
-`check-procedures.mjs` names it, because a router nobody mounts is reported rather than skipped.
+`check-procedures.mjs` names it: a router that is neither mounted nor handed to a caller factory is
+reported rather than skipped.
 Forget the bundle and nothing complains at all: the build passes, the sidebar shows the entry, and the
 frame answers 404 with nothing to explain it.
 

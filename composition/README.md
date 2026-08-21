@@ -2,8 +2,9 @@
 
 The entry of the program, and the only package that knows every module.
 
-It reads the environment, opens the database pools, builds each module, hands out what each one
-needs, mounts Gateway on the port and listens. That is the whole of it.
+It reads the environment, builds each module, hands out what each one needs — its own environment
+and a way to reach the neighbours it calls — mounts Gateway on the port and listens. That is the
+whole of it. Databases it does not open: each module creates and opens its own.
 
 ## Nothing in the wiring is a decision
 
@@ -11,10 +12,12 @@ needs, mounts Gateway on the port and listens. That is the whole of it.
 is missing then that".
 
 It does refuse to start in one place, and a refusal is not a decision — there is no second branch to
-take. After opening the pools it asks each one `SELECT current_database()` and stops unless the answer
-is the database that module was meant to get. A role cannot open the wrong database, but a
-`DATABASE_URL_<MODULE>` override bypasses the role, and an override is what a deployment edits by
-hand — without this the first sign would be data in the wrong place.
+take: `assertDistinctDatabases` stops the program when `PROJECT_SLUG` is long enough that two modules
+would end up sharing one database name after PostgreSQL cuts it. That is a property of the names this
+file hands out, which is why it is checked here and not in a module.
+
+Whether a module opened the database it was given is that module's own check, on the pool it opened
+itself — `assertOpenedDatabase`, beside the driver.
 
 This is the one package with permission to import every other — `workspace-rules.mjs` grants it
 explicitly, and both boundary checks read that grant from there — and the permission is affordable
@@ -24,16 +27,6 @@ package and the point of the boundaries are gone.
 
 Where a decision belongs instead: routing in `gateway`, product rules in the module that owns the
 data, anything shared and mechanical in `shared`.
-
-The two `bin/` jobs are the deliberate exception. Setting databases up is operational work, so they do
-branch: a console account gets `CONNECT` only if a deployment created one, ownership moves only the
-first time a role appears, an unknown module name is refused. The rule above is about the wiring —
-that is what carries the widest permission.
-
-One of those branches names a module rather than a state, and it is the one worth being explicit
-about: Email seeds its own templates when its database is fresh. That is operational work of the same
-kind — it needs the schema just applied, it is idempotent, and it renders every template through
-`@maily-to/render`, which is why it belongs to a command that runs once rather than to every start.
 
 ## Only Gateway is mounted
 
@@ -47,23 +40,24 @@ service `server` is not the module `gateway`, is in
 
 ## The calls between modules
 
-Modules talk through their published surfaces, exactly as they did over the network. The composer is
-what keeps that from costing a socket: it hands each module the neighbour's own `app.fetch`, and the
-module builds its client around it, so a call answers where a socket used to. The URL still matters —
-a `Request` is built from it — but nobody dials it.
+A module that has an internal surface hands out a **caller** built from its own router, and this file
+is what passes it on: `callEmail: (called) => email.internalCaller(emailEnv, called)`. The neighbour
+receives a function of one argument — the request the call belongs to — and the environment is closed
+over here, because a direct call has no request to carry it.
 
 Two things follow, and both are easy to miss:
 
-- **the deadline is ours.** `AbortSignal` is not honoured by an in-process call, so `createTrpcClient`
-  enforces the wait itself. It stops the caller waiting; it cannot stop the handler running;
-- **a module may keep the function it is handed, and may not call it while it is being built.** The map
-  of applications is built in one expression, so a neighbour named by `call(name)` may not exist yet
-  when the closure is made. It is looked up when a request arrives, which is what makes that safe —
-  and calling it from inside `createApp` would read `undefined` instead, with the types right, the
-  boundaries unbroken, and an error that says only `undefined`.
+- **the deadline belongs to the module that hands the caller out**, not to the call site.
+  `withDeadlineOn` puts it on every procedure of the caller, so no caller has to remember it. It stops
+  the caller waiting; it cannot stop the handler running;
+- **`call(name)` is still a lookup at request time.** Gateway's targets are built before the map of
+  applications exists, so the closure finds the application when a request arrives rather than when it
+  is made — calling one while the map is being built would read `undefined`, with the types right and
+  an error that says only that.
 
-The calls run in one direction: Admin, Users and Gateway ask Auth, Auth asks Notifications,
-Notifications asks Email. Nothing asks back, so the applications can be built in dependency order.
+The calls run in one direction: Gateway asks Admin, Admin and Users ask Auth, Auth asks
+Notifications, Notifications asks Email. Nothing asks back, so the modules are built in dependency
+order and the map of applications is one expression.
 
 ## The environment is read here and left in place
 

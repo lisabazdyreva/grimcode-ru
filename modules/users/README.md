@@ -30,7 +30,7 @@ A tRPC client is typed from the server's router, so the type has to cross the mo
 crosses through one named door: `@template/users/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the two router types and the two profile
 shapes the bundles render — `UserProfile` and `AdminUserProfile` — and nothing else, while the bare
-`@template/users` resolves to `createApp` and `migrations` and nothing besides. Two bundles use it:
+`@template/users` resolves to `createApp` and the `UsersEnv` type and nothing besides. Two bundles use it:
 the App's, for the public surface, and this module's own admin panel, which takes the same route
 rather than reaching into `src` by a relative path.
 
@@ -68,11 +68,16 @@ browser client already sends one on mutations, so adding a changing procedure ne
 with it — a builder that calls `requireCsrf` — or the token travels and nothing verifies it.
 
 The `email` of an admin profile row is not stored by Users: the address belongs to Auth, and it is
-filled in per request, one call for the whole page. It is `null` only when Auth no longer has that
+filled in per request, one call for the whole page. It is `null` when Auth no longer has that
 identity, which is how a profile left behind by a deleted account shows up rather than looking like
-an ordinary one.
+an ordinary one — and also, for the whole page at once, when the call to Auth failed. The page is
+worth showing without addresses, so that failure is caught rather than raised, and the line it writes
+(`sign-in addresses could not be read from auth`) is what tells the two cases apart.
 
 ## Environment
+
+Nothing in this module reads it: the composer reads these and hands over what belongs to this
+module on `c.env`. What follows is what a deployment sets on its behalf.
 
 | Variable | Purpose |
 | --- | --- |

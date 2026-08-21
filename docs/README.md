@@ -42,9 +42,11 @@ before and can again: the point of the contracts is that where a module runs is 
 what it may know. What one process costs is isolation of failure, and that is the price this
 template chose to pay.
 
-**Each module owns its data, and cannot reach anyone else's.** Not by agreement — by a role that has
-no `CONNECT` on a neighbour's database. Every other boundary here is about code, and no check that
-reads code can read a query.
+**Each module owns its data, and reaches nobody else's.** A neighbour's table lives in another
+database, so a query would need another connection rather than another table name. What refuses it is
+the module's own check on the pool it opened — the one account this template uses opens every
+database, so PostgreSQL does not refuse anything here. Every other boundary is about code, and no
+check that reads code can read a query.
 
 **Identity and profile are different things.** Auth owns how someone signs in; Users owns who they
 are inside the product. A product changes its profile fields constantly and its sign-in almost
@@ -59,7 +61,8 @@ admin without rebuilding the panel.
 
 **Nothing is decided by the interface.** Hiding a menu entry is presentation; the server refuses the
 same request either way, and the tests ask over HTTP through Gateway rather than by calling a router —
-the two exceptions speak to PostgreSQL, because the refusal they are about never becomes a response.
+the one exception speaks to PostgreSQL, because which databases exist is not something an answer over
+HTTP would show.
 
 **Email is stored, not re-rendered.** Publishing produces the HTML and text; delivery fills in the
 values that are only known per recipient and sends that, without ever calling the renderer again. A

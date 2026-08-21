@@ -28,9 +28,10 @@ nor `database` — is Gateway's own 404, and Admin is never asked.
 
 ```
 target names an unknown service   → denied: unknown-service
-no session                        → denied: no-session
+no session, registry empty,
+  and Auth has nobody registered  → awaiting-first-user
+no session otherwise              → denied: no-session
 session Auth no longer knows      → denied: no-session
-registry empty, Auth empty        → awaiting-first-user
 not in the registry               → denied: not-an-administrator
 disabled                          → denied: disabled
 target is the panel               → allowed for any enabled administrator
@@ -44,6 +45,11 @@ The first line is checked before the session, so a name that is not an admin ser
 whoever asks — though Gateway 404s such a path before asking, which makes that branch a guard against
 a caller that is not Gateway.
 
+The second is the one case where a request without a session is answered with something other than a
+refusal, and it is why the state is reachable at all: a session means an identity, and an identity
+means Auth has a first one to promote. Only an empty registry is worth asking Auth about, so a
+running installation settles it on the cheap question and never makes the call.
+
 Gateway computes nothing itself, keeps no copy of the rights and caches no result, which is why a
 changed role or grant takes effect on the very next request.
 
@@ -51,14 +57,15 @@ Hiding a menu entry is interface only. A direct URL passes exactly the same chec
 
 ## First owner
 
-At the first authorized `/admin` request Admin checks its registry. If it is empty, it asks Auth
-for the earliest registered identity and atomically promotes it to owner.
+At the first `/admin` request carrying a session Admin checks its registry. If it is empty, it asks
+Auth for the earliest registered identity and atomically promotes it to owner.
 
 Ownership follows **registration order in Auth**, not who opened the admin panel first. If a
 different user opens it, the first Auth user still becomes owner and the current request is
 refused.
 
-- If Auth has no users at all, no owner is created and the state `awaiting-first-user` is returned.
+- If Auth has no users at all there is nobody to promote, and the visitor — who cannot have a session
+  either — is told so instead of being refused.
 - The insert is conditional, and the partial unique index `administrators_single_bootstrap_idx`
   makes two concurrent requests converge on one owner.
 - Only the request that really inserted the row writes the bootstrap audit entry.
@@ -137,7 +144,7 @@ A tRPC client is typed from the server's router, so the type has to cross the mo
 crosses through one named door: `@template/admin/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the panel's router type, the caller Gateway
 asks through, and `AuthorizationResult` — the shape of the decision Gateway acts on — and nothing else,
-while the bare `@template/admin` resolves to `createModule` and `migrations` and nothing besides. It
+while the bare `@template/admin` resolves to `createModule` and the `AdminEnv` type and nothing besides. It
 matters more here than anywhere else — this module *is* the registry of who may do what, and the
 rights, the last-owner rule and the audit log all live behind `repository.ts`, which no specifier
 reaches.
@@ -151,6 +158,9 @@ Two callers use that door: Gateway for `authorize` on every `/admin/**` request,
 browser bundle for the surface above.
 
 ## Environment
+
+Nothing in this module reads it: the composer reads these and hands over what belongs to this
+module on `c.env`. What follows is what a deployment sets on its behalf.
 
 | Variable | Purpose |
 | --- | --- |

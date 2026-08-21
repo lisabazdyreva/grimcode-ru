@@ -41,7 +41,7 @@ hands out; either way a type has to cross the module boundary. It crosses throug
 `@template/auth/contract` resolves to [`src/contract.ts`](src/contract.ts), which re-exports the
 public and admin router types, that caller type, and the four shapes neighbours and browsers name
 by hand — `Identity`, `AdminIdentity`, `SessionSummary`, `AuthAuditEntry` — and nothing else, while
-the bare `@template/auth` resolves to `createModule` and `migrations` and nothing besides.
+the bare `@template/auth` resolves to `createModule` and the `AuthEnv` type and nothing besides.
 
 Auth has more callers than any other module — Admin, Users in two separate places, and the
 application's own browser bundle — and holds the password hashes, the session rows and the one-time
@@ -135,6 +135,9 @@ language here and puts it in the event.
 A failed hand-off to Notifications never fails a security flow; it is logged instead.
 
 ## Environment
+
+Nothing in this module reads it: the composer reads these and hands over what belongs to this
+module on `c.env`. What follows is what a deployment sets on its behalf.
 
 | Variable | Purpose |
 | --- | --- |

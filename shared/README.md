@@ -5,14 +5,15 @@ Common technical utilities every module is allowed to use.
 Business logic and per-module repositories never live here — those belong to the owning module.
 A module may import its own folder, `shared/`, a neighbour's declared `@template/<name>/contract`, and
 external packages — except the ones that open a door out of the process. The database driver is the
-only one so far, and it is declared here.
+only one so far, and it is declared by the packages allowed to hold it: this one, the five modules
+that own a database, and the acceptance tests.
 
 ## Runtime modules
 
 | Module | Purpose |
 | --- | --- |
 | `env.ts` | Typed environment access, project slug, the public origin, cookie names |
-| `service-urls.ts` | The port the process listens on, and the addresses a module's client is built from |
+| `service-urls.ts` | The port the process listens on, the module-name union `createServiceApp` takes, and Adminer's address — the one real address left |
 | `logger.ts` | JSON-line logger with request-scoped child loggers |
 | `crypto.ts` | Ids, single-use tokens, scrypt password hashing, constant-time comparison |
 | `rate-limit.ts` | Fixed-window attempt counter, in memory on purpose — one account's password, not volumetric limits |
@@ -25,11 +26,11 @@ only one so far, and it is declared here.
 | `trpc/mount.ts` | Mounting a tRPC router on a path prefix, merging `set-cookie` from procedures |
 | `trpc/builders.ts` | The context every procedure has, and the two guards admin surfaces are built from |
 | `trpc/client.ts` | Typed tRPC client factory for a call carried as a request; no module uses it any more, only the composer |
-| `db/pool.ts` | One PostgreSQL pool per module database, transactions, startup wait |
+| `db/pool.ts` | Transactions and the startup wait a module uses around the pool it opened itself; the pool is built in the module, not here |
 | `db/migrator.ts` | Versioned migrations with recorded versions, checksums and advisory locks |
 | `theme.ts` | The same-origin `postMessage` protocol between Admin shell and service iframes |
 | `vocabulary.ts` | The words the whole template shares: schema primitives, service ids, admin roles, the verified admin context |
-| `index.ts` | The barrel, and what it leaves out: `vocabulary.ts` and `db/admin-pool.ts` have subpaths of their own, so neither arrives by importing `@template/shared` |
+| `index.ts` | The barrel, and what it leaves out: `vocabulary.ts` and `theme.ts` have subpaths of their own — `./vocabulary` and `./browser` — so neither arrives by importing `@template/shared`, and a browser bundle reaching for the theme never pulls the server's toolbox with it |
 
 ### Admin context is a trust boundary
 
@@ -90,8 +91,8 @@ it buys is that a procedure cannot land on the wrong surface unnoticed.
 Both are deliberate, and both cost a line — but only the first is what `check-procedures.mjs` looks
 for. That script refuses three things, and a router it turns down is failing one of them rather than
 hitting a bug: a procedure with no `.output()`; an admin procedure that changes something while built
-on a builder that does not pipe `requireCsrf` in; and a router nobody mounts, because an unmounted
-surface is one it cannot judge.
+on a builder that does not pipe `requireCsrf` in; and a router that is neither mounted nor handed to
+a caller factory, because a surface reached in a way it cannot see is one it cannot judge.
 
 ## No shared UI
 

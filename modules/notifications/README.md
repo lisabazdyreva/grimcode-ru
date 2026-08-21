@@ -60,9 +60,9 @@ module hands out; either way a type has to cross the module boundary. It crosses
 door and no other: `@template/notifications/contract` resolves to
 [`src/contract.ts`](src/contract.ts), which re-exports the admin router type, that caller type, the
 `NotificationEvent` Auth builds and the `StoredNotificationEvent` the admin screen renders — and
-nothing else, while the
-bare `@template/notifications` resolves to `createModule` and `migrations` and nothing besides. The
-repository and the routing to Email are reachable by no specifier at all.
+nothing else, while the bare `@template/notifications` resolves to `createModule` and the
+`NotificationsEnv` type and nothing besides. The repository, the migrations and the routing to Email
+are reachable by no specifier at all.
 
 That door is not an agreement about behaviour: it decides which files are visible, not what ends up
 in the type. What keeps the type honest is the `.output()` schema every procedure declares and the
@@ -86,6 +86,9 @@ itself. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are
 module itself, on the first request that opens its pool.
 
 ## Environment
+
+Nothing in this module reads it: the composer reads these and hands over what belongs to this
+module on `c.env`. What follows is what a deployment sets on its behalf.
 
 | Variable | Purpose |
 | --- | --- |

@@ -133,10 +133,10 @@ values are derived rather than chosen: the main checkout's file is the starting 
 differ is replaced — the slug, the two ports, `PUBLIC_SITE_URL` built from the picked port, and
 `ACCEPTANCE_BASE_URL` dropped so the suites do not aim at the main checkout.
 
-The database passwords are **not** among them: they carry over from the main checkout as they are.
-Nothing is lost by that — each worktree has a PostgreSQL container of its own, so the same password
-on two servers isolates as well as two would. What the slug changes is the role and database names,
-which is where the isolation actually lives.
+Database credentials are not among them either, and there is nothing to derive any more: one account
+comes with `DATABASE_URL` and carries over as it is. Each worktree has a PostgreSQL container of its
+own, so what keeps two branches apart is the container and the slug the database names are built
+from — not a credential.
 
 ## The database
 
@@ -167,9 +167,9 @@ convenient one to poke around with.
 
 | Script | Refuses |
 | --- | --- |
-| `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver belongs to the five modules that own a database and to `shared`, and nowhere else; an `.npmrc` setting that would hoist every package into reach |
-| `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool opened outside the wiring; a module reading the environment; a door that would carry code, in its source and in what it emits; a browser-facing file of `shared` importing anything but `zod` |
-| `check-procedures.mjs` | A procedure that declares no `.output()`; an admin procedure that changes something without asking for a CSRF token — the builder is followed to its definition rather than trusted by its name; a router nobody mounts |
+| `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver belongs to the five modules that own a database, to `shared` and to `tests`, and nowhere else; an `.npmrc` setting that would hoist every package into reach |
+| `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool built anywhere but the one file a module is allowed to build it in, or that file not asking which database it actually opened; a module reading the environment; a door that would carry code, in its source and in what it emits; a browser-facing file of `shared` importing anything but `zod` |
+| `check-procedures.mjs` | A procedure that declares no `.output()`; an admin procedure that changes something without asking for a CSRF token — the builder is followed to its definition rather than trusted by its name; a router that is neither mounted nor handed to a caller factory |
 | `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; a grantable service that is not an admin service; Adminer being public or grantable |
 | `check-compose.mjs` | A host port on anything but `server` or `postgres` locally, and on anything at all in production; a bind beyond loopback on anything but `server`; a PostgreSQL container in production; a service present in one topology and missing from the other |
 | `check-scripts.mjs` | A script named after a pnpm command — `pnpm up` would run pnpm's dependency update instead of starting the project |
@@ -180,9 +180,11 @@ They exist because each protects a rule that is easy to break by accident and ha
 
 1. The module under `modules/`, with its routers split by trust boundary — public, internal, admin —
    and a `src/contract.ts` re-exporting their **types** for whoever calls it.
-2. The same package exporting `createApp(deps)`. If it stores anything, it also carries its own
-   `src/db/database.ts` — creating its database, applying its migrations, opening the pool — and its name
-   goes into the composer's `DATABASE_MODULES`, which is what gets it a connection string on `c.env`.
+2. The same package exporting `createApp(deps)` — or `createModule(deps)`, returning the application
+   **and** the caller, if a neighbour has to reach its internal procedures. If it stores anything, it
+   also carries its own `src/db/database.ts` — creating its database, applying its migrations, opening
+   the pool — and its name goes into the composer's `DATABASE_MODULES`, which is what gets it a
+   connection string on `c.env`.
 3. Its id in `ADMIN_SERVICE_IDS` and, unless only the owner should reach it, in
    `ASSIGNABLE_SERVICE_IDS` — both in [`shared/src/vocabulary.ts`](../shared/src/vocabulary.ts).
 4. Its id in Gateway's `ADMIN_SERVICES` allowlist, and — only if it should be reachable without a

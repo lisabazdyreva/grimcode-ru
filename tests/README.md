@@ -7,9 +7,10 @@ router works while saying nothing about whether Gateway lets the request through
 where access is actually decided. So they speak to the stack the way a browser does: one URL, one
 cookie jar, one answer.
 
-Two checks are the exception and speak to PostgreSQL instead: that a module's credentials are
-refused a neighbour's database, and that they open its own. They have to — that refusal arrives on
-the connection and never becomes an HTTP response anywhere.
+One check is the exception and speaks to PostgreSQL instead: that the five databases exist under the
+names the modules were meant to get, each one distinct. It has to — a module creates its database on
+the first request that needs it, so the check first asks every module for something, and what it
+looks at afterwards is a fact of the server rather than anything an HTTP answer would show.
 
 ## Running them
 
@@ -49,8 +50,9 @@ answers identically for a known and an unknown address, and an administrator tri
 receives the token. Guessing a password stops being answered after enough failures, and the correct
 one is refused too for the rest of the window — otherwise the limit would only slow down a guess that
 had already failed. A second address is unaffected while that lasts. Blocking is owner-only, prevents
-signing in, is reversible, refuses another owner who still holds the rights, and an owner cannot block
-themselves.
+signing in, is reversible, and an owner cannot block themselves — blocking another owner is allowed,
+and the rule that keeps the panel reachable sits on the other side: taking the rights off the last
+owner who can still enter is refused, counting a blocked owner as unable to.
 
 **Across services** — [`flows.test.ts`](src/flows.test.ts)
 
@@ -60,7 +62,9 @@ the form asking for another link, it has no unresolved placeholder left in it, a
 that link is `***` — the log is a record, not a second copy of a one-time key. Publishing refuses a
 document using an undeclared variable and names it. A published document keeps its `{{name}}`
 placeholders, because the values are per recipient. Each service admin returns only its own service's
-data, no internal surface is reachable through Gateway, the editor is absent from the central Admin
+data — and the profile list fills in the sign-in address Users does not store, which is the one place
+a failed call to Auth would show as an empty column rather than as an error. No internal surface is
+reachable through Gateway, the editor is absent from the central Admin
 bundle and from the Email admin's first chunk, and the real Adminer survives its own redirect and
 cookie. The public site renders on the server, answers an unknown address with a real 404, and keeps
 `/app/`, `/admin/` and the placeholder pages out of `robots.txt` and the sitemap. The owner already
