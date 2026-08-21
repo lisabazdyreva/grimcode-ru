@@ -40,14 +40,15 @@ It is therefore a **section** of the panel, at `/admin/database`, next to the ad
 and the audit log. Nothing in the system calls it a service:
 
 - it is absent from `ASSIGNABLE_SERVICE_IDS`, which is what every grant is validated against, and
-  from `ADMIN_SERVICE_IDS` as well — and `check-service-ids.mjs` refuses a build where `adminer`
+  from `ADMIN_SERVICE_IDS` as well — and `check-service-ids.mjs` refuses a build where `database`
   appears in either of them, or in Gateway's public allowlist;
 - Gateway asks Admin about a **target** — `panel`, `service` or `database` — rather than about a
   service name that might be one of those things or might not;
 - the sidebar shows it under «Админка», with the panel's own sections.
 
-The application behind it is Adminer, a container of its own, reached only through Gateway and with no
-host port in any environment.
+Nothing answers behind it at the moment. Adminer, the third-party browser that did, has been removed,
+and this template's own interface is not written yet: an owner opening the section gets a 503 saying
+so. The check still runs first — an ordinary administrator gets the same 403 as before.
 
 ## The first owner
 

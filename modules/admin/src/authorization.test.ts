@@ -232,8 +232,8 @@ describe('roles and grants', () => {
     ).resolves.toEqual({ state: 'denied', reason: 'no-grant' });
   });
 
-  it('never lets a regular administrator reach Adminer, even with a grant row', async () => {
-    repo.rows.set(SECOND.id, administrator({ user_id: SECOND.id, grants: ['adminer', 'email'] }));
+  it('never lets a regular administrator reach the database area, even with a grant row', async () => {
+    repo.rows.set(SECOND.id, administrator({ user_id: SECOND.id, grants: ['database', 'email'] }));
 
     const result = await authorize(
       { sessionToken: 't', target: { area: 'database' } },

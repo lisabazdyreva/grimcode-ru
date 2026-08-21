@@ -4,15 +4,11 @@ import { ServiceUnavailableError, type Logger } from '@template/shared';
 
 import { authorizeAdminRequest } from './authorize.js';
 import { proxyRequest } from './proxy.js';
-import {
-  databaseBrowserUrl,
-  isAdminService,
-  isPublicService,
-  type GatewayTargets,
-} from './registry.js';
+import { isAdminService, isPublicService, type GatewayTargets } from './registry.js';
 import {
   awaitingFirstUser,
   badGateway,
+  databaseSectionMissing,
   forbidden,
   notFound,
   serviceUnavailable,
@@ -24,7 +20,7 @@ import {
  * | Incoming path                    | Target                        | Gateway check                        |
  * | -------------------------------- | ----------------------------- | ------------------------------------ |
  * | `/admin/embed/service/:name/**`  | admin panel of that module    | session, role and grant on `:name`   |
- * | `/admin/embed/database/**`       | Adminer                       | session and the `owner` role         |
+ * | `/admin/embed/database/**`       | nothing yet — 503             | session and the `owner` role         |
  * | `/admin/**`                      | admin                         | session and an admin role            |
  * | `/service/:name/**`              | module from the public list   | none — the module secures itself     |
  * | `/app/**`                        | app                           | none — App checks the user session   |
@@ -93,6 +89,9 @@ async function routeAdmin(
   if (result.state === 'awaiting-first-user') return awaitingFirstUser(request);
   if (result.state === 'denied') return forbidden(request);
 
+  // The owner passed the check, and there is still nothing behind the database area to send them to.
+  if (target.area === 'database') return databaseSectionMissing(request);
+
   const adminContext: AdminContext = {
     userId: result.userId,
     email: result.email,
@@ -100,12 +99,7 @@ async function routeAdmin(
     requestId,
   };
 
-  const destination =
-    target.area === 'panel'
-      ? targets.admin
-      : target.area === 'database'
-        ? databaseBrowserUrl()
-        : targets[target.service];
+  const destination = target.area === 'panel' ? targets.admin : targets[target.service];
 
   return proxyRequest(request, { target: destination, requestId, adminContext });
 }

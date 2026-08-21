@@ -1,4 +1,4 @@
-import { adminerUrl, type FetchLike } from '@template/shared';
+import type { FetchLike } from '@template/shared';
 
 import type { ProxyTarget } from './proxy.js';
 
@@ -29,25 +29,19 @@ export const ADMIN_SERVICES = {
 export type AdminServiceName = keyof typeof ADMIN_SERVICES;
 
 /**
- * Everything Gateway can route to. A target may be an application in this process or a URL — Gateway
- * routes by path and forwards the request unchanged — which keeps the door open both ways: Adminer
- * is a URL today, and a module moved back out into a service becomes one. `admin` is narrower on
- * purpose: Gateway calls it on every `/admin/**` request to ask whether it is allowed at all.
+ * Everything Gateway can route to. Every target is an application in this process, and Gateway
+ * forwards the request to it unchanged — routing goes by path, so who answers is the only thing that
+ * ever changes. `admin` is narrower on purpose: Gateway calls it on every `/admin/**` request to ask
+ * whether it is allowed at all.
+ *
+ * The database section has no entry here yet. It is not a module of this template — it reads every
+ * module's data at once, which is why only the owner reaches it and no grant names it — and until
+ * its own interface exists, Gateway answers the area itself.
  */
 export interface GatewayTargets extends Record<AdminServiceName | PublicServiceName, ProxyTarget> {
   site: ProxyTarget;
   app: ProxyTarget;
   admin: FetchLike;
-}
-
-/**
- * The database browser behind the panel's own database area. Not in `ADMIN_SERVICES` because it is
- * not a module of this template but a third-party application the panel embeds, reading every
- * module's data at once — and the one target still reached over a real network, in its own
- * container. Gateway knows where it lives; Admin decides who may reach it.
- */
-export function databaseBrowserUrl(): string {
-  return adminerUrl();
 }
 
 export function isPublicService(name: string): name is PublicServiceName {

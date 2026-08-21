@@ -2,11 +2,11 @@
 #
 # Local development runs `docker/compose.local.yaml` instead, through `pnpm start`.
 #
-# Two containers of ours and two jobs that run to completion. `server` is the whole application —
-# every module in one process — and `adminer` is a third-party console the panel embeds. Nothing is
-# reachable from outside except through `server`. PostgreSQL is not here: in production the database
-# is a managed resource of the deployment platform, reached through DATABASE_URL, so the application
-# never runs its own.
+# One container: `server`, the whole application, every module in one process. Nothing else is here
+# any more — the database console was a second container until its own interface replaced it, and the
+# two setup jobs went when each module started creating and migrating its database itself.
+# PostgreSQL is not here either: in production the database is a managed resource of the deployment
+# platform, reached through DATABASE_URL, so the application never runs its own.
 #
 # There is no host port for `server` either. The platform routes the domain to the container's
 # fixed internal port, which is why nobody has to choose a number.
@@ -19,13 +19,13 @@
 
 name: ${PROJECT_SLUG:?PROJECT_SLUG is required}
 
-# Kept apart from `x-app` because Adminer has a build of its own and still wants the same limits.
+# Kept apart from `x-app` so a container added later gets the same limits without inheriting a build.
 x-logging: &logging
   driver: json-file
   options: { max-size: '10m', max-file: '3' }
 
-# One image, three uses: the application, and two jobs that run to completion before it starts.
-# Pinning `image` means it is built once and the two jobs reuse it rather than each building a copy.
+# Pinning `image` alongside `build` names what is built, so the tag is predictable rather than
+# derived from the project and service names.
 x-app: &app
   image: ${PROJECT_SLUG}-app
   build:
@@ -67,29 +67,8 @@ services:
     # The only container the platform routes traffic to. No `ports`: publishing one would put the
     # application on the host's network instead of behind whatever terminates TLS.
     expose: ['8080']
-    depends_on:
-      adminer:
-        condition: service_started
     restart: unless-stopped
     networks: [internal]
-
-  adminer:
-    build:
-      context: adminer
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      # The wrapper prefers these over the credentials in DATABASE_URL, which is how a deployment
-      # gives the database console an account with fewer rights than the services have.
-      ADMINER_SERVER: ${ADMINER_SERVER:-}
-      ADMINER_USERNAME: ${ADMINER_USERNAME:-}
-      ADMINER_PASSWORD: ${ADMINER_PASSWORD:-}
-    # Internal only, exactly as locally: reachable through Gateway's owner-only route and nowhere
-    # else. It never gets a host port, in any environment.
-    expose: ['8080']
-    networks: [internal]
-    logging: *logging
 
 networks:
   internal:

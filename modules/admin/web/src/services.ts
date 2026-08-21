@@ -7,8 +7,9 @@ export interface AdminServiceEntry {
   /** Protected URL the iframe is pointed at. Gateway performs the same check on it directly. */
   embedHref: string;
   /**
-   * Whether the shell keeps its URL in sync with the frame through the `postMessage` bridge.
-   * Adminer navigates with ordinary server-rendered links and only receives the theme.
+   * Whether the shell keeps its URL in sync with the frame through the `postMessage` bridge. A
+   * frame that navigates with ordinary server-rendered links has no path to report and only
+   * receives the theme.
    */
   syncPath: boolean;
 }
@@ -38,14 +39,14 @@ export const ADMIN_SERVICES: readonly AdminServiceEntry[] = [
 ];
 
 /**
- * The panel's own database browser.
+ * The panel's own database area.
  *
  * Not in the list above: that list is the services of this template, each with its own admin. This
- * is a third-party application the panel embeds, showing every service's data at once, which is
- * exactly why only the owner reaches it and why no grant mentions it.
+ * one shows every service's data at once, which is exactly why only the owner reaches it and why no
+ * grant mentions it.
  *
- * It navigates with ordinary server-rendered links, so the shell only hands it the theme and never
- * tries to keep its path in sync.
+ * Nothing answers behind it yet — the third-party browser that used to is gone — so the frame shows
+ * what Gateway says about it until this template's own interface exists.
  */
 export const DATABASE_AREA = {
   label: 'База данных',

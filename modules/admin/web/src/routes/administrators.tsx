@@ -402,7 +402,7 @@ function EditAdministrator({
 /**
  * Which services an admin may open.
  *
- * The database is absent on purpose: Adminer is owner-only and cannot be granted to anyone, which
+ * The database is absent on purpose: that area is owner-only and cannot be granted to anyone, which
  * is why `ASSIGNABLE_SERVICE_IDS` is a shorter list than the sidebar.
  */
 function GrantPicker({

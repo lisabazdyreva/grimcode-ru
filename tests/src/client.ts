@@ -45,34 +45,16 @@ export class Session {
   }
 
   /**
-   * `follow` walks redirects by hand rather than letting fetch do it, so a cookie the first
-   * response set is carried into the next request — which is exactly what Adminer's own redirect
-   * needs.
+   * A redirect is returned as it is. Walking redirects by hand used to live here, for the one page
+   * that answered with one — the third-party database browser — and nothing in this template does.
    */
-  async fetch(
-    path: string,
-    init: RequestInit = {},
-    options: { follow?: boolean } = {},
-  ): Promise<Response> {
-    let target = path;
+  async fetch(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers);
+    if (this.cookies.size > 0) headers.set('cookie', this.cookieHeader);
 
-    for (let hop = 0; hop < 5; hop += 1) {
-      const headers = new Headers(init.headers);
-      if (this.cookies.size > 0) headers.set('cookie', this.cookieHeader);
-
-      const response = await fetch(`${BASE_URL}${target}`, { ...init, headers, redirect: 'manual' });
-      this.remember(response);
-
-      const location = response.headers.get('location');
-      if (!options.follow || response.status < 300 || response.status >= 400 || !location) {
-        return response;
-      }
-
-      target = new URL(location, `${BASE_URL}${target}`).pathname + new URL(location, `${BASE_URL}${target}`).search;
-      init = { ...init, method: 'GET', body: undefined };
-    }
-
-    throw new Error(`Too many redirects from ${path}`);
+    const response = await fetch(`${BASE_URL}${path}`, { ...init, headers, redirect: 'manual' });
+    this.remember(response);
+    return response;
   }
 
   /** Status of a plain GET, which is what "can this person open that page" means. */

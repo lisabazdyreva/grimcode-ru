@@ -9,9 +9,9 @@ import {
 } from './vocabulary.js';
 
 describe('service ids', () => {
-  it('never lets an owner grant Adminer to a regular administrator', () => {
-    expect(ASSIGNABLE_SERVICE_IDS).not.toContain('adminer' as never);
-    expect(assignableServiceIdSchema.safeParse('adminer').success).toBe(false);
+  it('never lets an owner grant the database area to a regular administrator', () => {
+    expect(ASSIGNABLE_SERVICE_IDS).not.toContain('database' as never);
+    expect(assignableServiceIdSchema.safeParse('database').success).toBe(false);
   });
 
   it('keeps assignable services a subset of admin services', () => {

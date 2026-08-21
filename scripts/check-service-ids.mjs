@@ -63,19 +63,23 @@ if (!same(canonicalAdmin, shellServices)) {
   );
 }
 
-// Adminer is owner-only and must never be reachable without an admin check.
-if (canonicalAdmin.includes('adminer')) {
+/*
+ * The database section is owner-only and must never become a service id. The name it is refused
+ * under used to be `adminer`, after the third-party application behind it; the application is gone
+ * and the rule is not — it is the area's own name that has to stay unclaimable.
+ */
+if (canonicalAdmin.includes('database')) {
   problems.push(
-    'Adminer is listed as an admin service. It is a section of the Admin panel, not a service: ' +
-      'it reads every service’s data at once, which is why no grant can name it.',
+    'The database section is listed as an admin service. It is a section of the Admin panel, not a ' +
+      'service: it reads every service’s data at once, which is why no grant can name it.',
   );
 }
 
-if (gatewayPublic.includes('adminer')) {
-  problems.push('Adminer must never appear in Gateway\'s public allowlist');
+if (gatewayPublic.includes('database')) {
+  problems.push("The database section must never appear in Gateway's public allowlist");
 }
-if (canonicalAssignable.includes('adminer')) {
-  problems.push('Adminer must never be an assignable service grant');
+if (canonicalAssignable.includes('database')) {
+  problems.push('The database section must never be an assignable service grant');
 }
 
 for (const service of canonicalAssignable) {

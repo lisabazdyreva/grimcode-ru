@@ -13,7 +13,7 @@ that own a database, and the acceptance tests.
 | Module | Purpose |
 | --- | --- |
 | `env.ts` | Typed environment access, project slug, the public origin, cookie names |
-| `service-urls.ts` | The port the process listens on, the module-name union `createServiceApp` takes, and Adminer's address — the one real address left |
+| `service-names.ts` | The module-name union `createServiceApp` takes. Names only: there is no address anywhere in the process |
 | `logger.ts` | JSON-line logger with request-scoped child loggers |
 | `crypto.ts` | Ids, single-use tokens, scrypt password hashing, constant-time comparison |
 | `rate-limit.ts` | Fixed-window attempt counter, in memory on purpose — one account's password, not volumetric limits |
@@ -97,14 +97,13 @@ a caller factory, because a surface reached in a way it cannot see is one it can
 ## No shared UI
 
 There is no shared stylesheet and no shared component — nothing in this package renders anything.
-Each admin vendors its own shadcn source and its own copy of the tokens, and Adminer keeps a
-stylesheet of its own: six copies of the same values on purpose, so one service restyling itself
-cannot restyle its neighbours.
+Each admin vendors its own shadcn source and its own copy of the tokens: copies of the same values
+on purpose, so one service restyling itself cannot restyle its neighbours.
 
 What is shared is the *convention*: `light` and `dark` are explicit through `[data-theme]`, and
 `system` is the absence of the attribute, which is exactly what the shell's theme bridge sends. The
-one line of code behind it is `applyTheme` in `theme.ts`, and the Adminer wrapper implements the same
-rule in PHP rather than importing it.
+one line of code behind it is `applyTheme` in `theme.ts`, and anything the panel embeds has to obey
+the same rule whether it imports that line or reimplements it.
 
 ## Commands
 

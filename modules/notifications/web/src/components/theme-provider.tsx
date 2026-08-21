@@ -6,8 +6,8 @@ import * as React from "react"
  *
  * `system` is resolved here rather than left to CSS, because Tailwind's `dark:` variant needs a
  * concrete state on the document. The resolved theme is written to `data-theme` — the same
- * attribute the non-React admin kit and the Adminer wrapper use — and mirrored to the `dark`
- * class that the shadcn components expect.
+ * attribute the non-React admin kit reads, and the one anything the panel embeds has to honour —
+ * and mirrored to the `dark` class that the shadcn components expect.
  *
  * A service admin runs inside the shell's iframe and does not own the choice: it applies whatever
  * the shell sends and hides its own switch. `controlled` expresses that.

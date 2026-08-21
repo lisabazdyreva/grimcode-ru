@@ -34,8 +34,9 @@ account, which becomes the owner — the rule it is testing anyway.
 
 Anonymous and ordinary users are refused the admin panel; the owner sees every service; an
 administrator opens what they were granted and nothing else; a change or revocation of a grant takes
-effect on the next request; a disabled administrator loses everything. Adminer is owner-only, cannot
-be granted to anyone at all, and has no public route. The admin **assets** are protected too, not
+effect on the next request; a disabled administrator loses everything. The database section is
+owner-only, cannot be granted to anyone at all, and has no public route — and the owner passing that
+check gets a 503, because the section has no interface behind it yet. The admin **assets** are protected too, not
 only its pages — serving them would hand out the panel itself. Forged `x-template-admin-*` headers
 are replaced by Gateway, and a service that is not on the public allowlist answers 404 while the two
 that are on it answer for themselves. A change sent without a CSRF token is refused with a 403, and
@@ -64,9 +65,8 @@ document using an undeclared variable and names it. A published document keeps i
 placeholders, because the values are per recipient. Each service admin returns only its own service's
 data — and the profile list fills in the sign-in address Users does not store, which is the one place
 a failed call to Auth would show as an empty column rather than as an error. No internal surface is
-reachable through Gateway, the editor is absent from the central Admin
-bundle and from the Email admin's first chunk, and the real Adminer survives its own redirect and
-cookie. The public site renders on the server, answers an unknown address with a real 404, and keeps
+reachable through Gateway, and the editor is absent from the central Admin bundle and from the Email
+admin's first chunk. The public site renders on the server, answers an unknown address with a real 404, and keeps
 `/app/`, `/admin/` and the placeholder pages out of `robots.txt` and the sitemap. The owner already
 in place stays the owner, and registering promotes nobody.
 
@@ -87,11 +87,9 @@ one fixture template rather than a hundred.
 pnpm test:browser
 ```
 
-Twenty-eight checks in Chromium, for the questions an HTTP request cannot answer. Ten of them also
+Twenty-five checks in Chromium, for the questions an HTTP request cannot answer. Ten of them also
 fail on any console error or uncaught exception, so a bundle that renders but throws does not pass. It
-is asked for per check, with `collectPageErrors`, and which ones ask is a choice rather than a rule —
-the three Adminer checks do not, because that page is server-rendered PHP and what they are about is
-the colour it ends up.
+is asked for per check, with `collectPageErrors`, and which ones ask is a choice rather than a rule.
 
 **The shell** — [`admin-shell.spec.ts`](browser/admin-shell.spec.ts). The panel loads and renders;
 the owner sees every service; the owner-only screens open. The theme applies, survives a reload
@@ -99,11 +97,6 @@ without flashing white, and **reaches an embedded service admin**, which then sh
 own. Navigation started inside an iframe is followed by the shell's URL and is **not** cancelled by
 the shell sending its old path back — the failure this protocol exists to avoid. A deep link opens
 straight into the embedded admin, and the same protected URL works on its own.
-
-**The database** — [`adminer.spec.ts`](browser/adminer.spec.ts). It is the real Adminer, and it
-follows the panel's theme on the overview, on a table listing and on a table's rows — checked by
-reading computed background colours, because those three are styled by different rules and a wrapper
-that handles one of them looks finished while it is not.
 
 **The email admin** — [`email-admin.spec.ts`](browser/email-admin.spec.ts). Templates list, the
 editor opens on its own route and runs, a delivery shows its stored message as a preview and as

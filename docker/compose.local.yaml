@@ -5,7 +5,7 @@
 #
 # Отличий ровно четыре:
 #   1. PostgreSQL — контейнер проекта; в продакшне это внешняя управляемая база;
-#   2. server и adminer ждут, пока этот контейнер начнёт отвечать;
+#   2. server ждёт, пока этот контейнер начнёт отвечать;
 #   3. server публикует порт на хост, потому что снаружи его никто не проксирует;
 #   4. база публикует порт на localhost — для psql и прочих инструментов на машине.
 #
@@ -33,11 +33,6 @@ services:
       timeout: 3s
       retries: 20
     networks: [internal]
-
-  adminer:
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   server:
     depends_on:

@@ -3,7 +3,7 @@
  * Compose configuration check.
  *
  * Verifies that the topology really matches the trust boundary: only Gateway is published to the
- * outside, the database never leaves loopback, and Adminer never gets a host port at all.
+ * outside, and the database never leaves loopback.
  *
  * Gateway may be opened to the local network — reaching the application from a virtual machine's
  * port forwarding or from a phone needs it — and that is reported rather than refused. The
@@ -151,12 +151,6 @@ for (const [name, service] of Object.entries(config.services ?? {})) {
       );
     }
   }
-}
-
-if (!config.services?.adminer) {
-  problems.push('The adminer service is missing from the Compose topology');
-} else if ((config.services.adminer.ports ?? []).length > 0) {
-  problems.push('Adminer must never have a host port; it is reachable only through Gateway');
 }
 
 if (!config.services?.server) problems.push('The server service is missing');

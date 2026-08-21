@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 import { newId } from '../crypto.js';
 import type { Logger } from '../logger.js';
-import type { InternalServiceName } from '../service-urls.js';
+import type { InternalServiceName } from '../service-names.js';
 import { REQUEST_ID_HEADER } from './admin-context.js';
 
 export interface ServiceAppVariables {

@@ -1,6 +1,6 @@
 import type { AuthorizationResult } from '@template/admin/contract';
 import { ADMIN_CONTEXT_HEADERS, createLogger, ServiceUnavailableError } from '@template/shared';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isAdminService, isPublicService, type GatewayTargets } from './registry.js';
 import { routeRequest } from './router.js';
@@ -85,23 +85,6 @@ beforeEach(() => {
   stub.authorize = async () => DENIED;
   upstreamResponse = () => new Response('upstream', { status: 200 });
   targets = fakeTargets();
-
-  // Adminer is the one target that is still a real address over a real network: it stays its own
-  // container, so it is still the global `fetch` that answers for it.
-  vi.stubGlobal('fetch', async (input: URL | RequestInfo, init?: RequestInit) => {
-    const url = new URL(input instanceof URL ? input.toString() : String(input));
-    forwarded.push({
-      target: url.host,
-      path: url.pathname + url.search,
-      method: init?.method ?? 'GET',
-      headers: new Headers(init?.headers as HeadersInit),
-    });
-    return upstreamResponse();
-  });
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
 });
 
 /** Admin's caller, unused: the module that reads it is mocked above. */
@@ -119,12 +102,12 @@ async function route(path: string, init?: RequestInit): Promise<Response> {
 
 describe('allowlists', () => {
   /**
-   * The database browser is not a module of this template. It is a section of the admin panel, so
+   * The database section is not a module of this template. It is a section of the admin panel, so
    * it appears in neither list and is reached by its own area instead.
    */
-  it('keeps Adminer out of both service lists', () => {
-    expect(isPublicService('adminer')).toBe(false);
-    expect(isAdminService('adminer')).toBe(false);
+  it('keeps the database section out of both service lists', () => {
+    expect(isPublicService('database')).toBe(false);
+    expect(isAdminService('database')).toBe(false);
   });
 
   it('does not recognise an unknown service name', () => {
@@ -158,8 +141,8 @@ describe('public routing', () => {
     expect(forwarded).toHaveLength(0);
   });
 
-  it('never exposes Adminer through the public service path', async () => {
-    const response = await route('/service/adminer/');
+  it('never exposes the database section through the public service path', async () => {
+    const response = await route('/service/database/');
     expect(response.status).toBe(404);
     expect(forwarded).toHaveLength(0);
   });
@@ -222,12 +205,17 @@ describe('admin authorization', () => {
     expect(stub.calls).toEqual([{ area: 'service', service: 'email' }]);
   });
 
-  it('asks Admin about the database area and proxies it to the browser', async () => {
+  /**
+   * The area is still asked about — the owner check is the part that has to keep working — and the
+   * answer is Gateway's own, because there is nothing behind the area until the interface exists.
+   */
+  it('asks Admin about the database area and answers it itself', async () => {
     stub.authorize = async () => OWNER;
-    await route('/admin/embed/database/');
+    const response = await route('/admin/embed/database/');
     expect(stub.calls).toEqual([{ area: 'database' }]);
-    expect(forwarded[0]?.target).toBe('adminer:8080');
-    expect(forwarded[0]?.path).toBe('/admin/embed/database/');
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: 'database-section-missing' });
+    expect(forwarded).toHaveLength(0);
   });
 
   it('asks Admin about the panel itself for everything else', async () => {
@@ -298,14 +286,13 @@ describe('response headers', () => {
     upstreamResponse = () =>
       new Response(null, {
         status: 302,
-        headers: { location: '/admin/embed/database/?pgsql=', 'set-cookie': 'adminer_sid=abc' },
+        headers: { location: '/app/login', 'set-cookie': 'template_session=abc' },
       });
-    stub.authorize = async () => OWNER;
 
-    const response = await route('/admin/embed/database/');
+    const response = await route('/app/account');
     expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toBe('/admin/embed/database/?pgsql=');
-    expect(response.headers.get('set-cookie')).toBe('adminer_sid=abc');
+    expect(response.headers.get('location')).toBe('/app/login');
+    expect(response.headers.get('set-cookie')).toBe('template_session=abc');
   });
 
   it('drops hop-by-hop headers in both directions', async () => {

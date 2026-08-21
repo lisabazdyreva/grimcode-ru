@@ -351,19 +351,6 @@ describe('the built admin surfaces', () => {
     // The editor is a separate chunk, fetched only when its route is opened.
     expect(body).not.toMatch(/@tiptap|ProseMirror/i);
   });
-
-  it('serves the real Adminer, with its own redirect and cookie', async () => {
-    // Adminer answers the first request with a redirect and a cookie of its own; following it by
-    // hand is what proves the pair survives Gateway.
-    const page = await owner.fetch('/admin/embed/database/', {}, { follow: true });
-    const html = await page.text();
-
-    expect(page.status).toBe(200);
-    // Adminer's own markup, not a look-alike.
-    expect(html).toMatch(/adminer\.css/);
-    // And it found the service databases through the connection it was given.
-    expect(html).toMatch(/_auth|_admin|_email/);
-  });
 });
 
 describe('the public site', () => {

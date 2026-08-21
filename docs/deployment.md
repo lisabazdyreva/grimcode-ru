@@ -38,7 +38,6 @@ worse than a run that refuses to start, so Compose fails on a missing one and na
 | `AUTH_SESSION_TTL_SECONDS` | How long a session lasts. Thirty days by default. |
 | `LOG_LEVEL` | `debug`, `info`, `warn` or `error`. `info` by default; anything below the level is not written at all. |
 | `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. A full override, taken exactly as written. |
-| `ADMINER_SERVER`, `ADMINER_USERNAME`, `ADMINER_PASSWORD` | The database console's own connection, which is how it gets fewer rights than the application has. Nothing grants it anything now that `PUBLIC` keeps its `CONNECT`: what the console sees is decided entirely by whoever created that account. Empty means it reuses `DATABASE_URL` and sees everything. |
 
 ```bash
 docker compose --env-file .env.production -f docker/compose.yaml up -d --build
@@ -49,12 +48,13 @@ docker compose --env-file .env.production -f docker/compose.yaml up -d --build
 Only the application, and only to the platform. Nothing publishes a host port in production —
 `scripts/check-compose.mjs` refuses a configuration where something does.
 
-Adminer is in production, on the internal network, reachable exclusively through Gateway's
-owner-only route. It never gets a host port in any environment.
+The panel's database section has nothing behind it in any environment: the third-party console that
+used to answer there has been removed, and this template's own interface is not written yet. Gateway
+still checks the section — the owner gets a 503, anybody else the usual 403.
 
 ## What happens on start
 
-Two containers: our image, and Adminer beside it.
+One container: our image.
 
 1. **`server`** builds every module, hands each the connection string of its own database and mounts
    Gateway on the port. No database work happens here,
@@ -121,10 +121,6 @@ Our application is one Dockerfile and one image, run once: the server. The jobs 
 are gone — a module sets its own database up on the first request that needs it. The image contains
 the production dependency closure of the composer — `pnpm deploy --prod` — which is the union of what
 all eight modules need at runtime, and no build tooling.
-
-Adminer is the second image, built from `docker/adminer/Dockerfile`: the upstream
-`adminer:5.4.2-standalone` release, the wrapper that logs it in and themes it, and a router script in
-`CMD` without which PHP's built-in server would answer 404 to every proxied path.
 
 ## Upgrading
 

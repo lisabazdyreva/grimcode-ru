@@ -152,16 +152,18 @@ describe('grants', () => {
 });
 
 /**
- * The database browser is a section of the panel, not a service admin.
+ * The database area is a section of the panel, not a service admin.
  *
  * That is why it lives at `/admin/database/`, why only the owner reaches it, and why no grant can
  * name it: there is nothing to hand out, so nothing can be handed out by mistake.
+ *
+ * Nothing answers behind it right now — the third-party browser is gone and this template's own
+ * interface is not written — so the owner gets a 503 saying exactly that. The distinction from the
+ * ordinary administrator's 403 below is the point: the check still runs.
  */
 describe('the database area', () => {
-  it('is open to the owner', async () => {
-    // Adminer answers a first request with its own redirect and cookie.
-    const status = await owner.status('/admin/embed/database/');
-    expect([200, 302]).toContain(status);
+  it('lets the owner through to a section that is not built yet', async () => {
+    expect(await owner.status('/admin/embed/database/')).toBe(503);
   });
 
   it('is closed to an ordinary administrator, whatever their grants', async () => {
@@ -179,7 +181,7 @@ describe('the database area', () => {
     const result = await owner.rpc(
       ADMIN,
       'updateAdministrator',
-      { userId: grantedAdmin.userId, grants: ['adminer'] },
+      { userId: grantedAdmin.userId, grants: ['database'] },
       { csrf: true },
     );
 
@@ -188,12 +190,12 @@ describe('the database area', () => {
   });
 
   it('is not reachable as a service admin either', async () => {
-    expect(await owner.status('/admin/embed/service/adminer/')).toBe(404);
+    expect(await owner.status('/admin/embed/service/database/')).toBe(404);
   });
 
   it('has no public route', async () => {
     const anonymous = new Session();
-    expect(await anonymous.status('/service/adminer/')).toBe(404);
+    expect(await anonymous.status('/service/database/')).toBe(404);
   });
 });
 
@@ -282,7 +284,7 @@ describe('public routing', () => {
         // Gateway builds these itself and strips whatever arrived.
         'x-template-admin-user-id': '00000000-0000-4000-8000-000000000001',
         'x-template-admin-role': 'owner',
-        'x-template-admin-grants': 'auth,users,notifications,email,adminer',
+        'x-template-admin-grants': 'auth,users,notifications,email',
       },
       body: JSON.stringify({}),
     });

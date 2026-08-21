@@ -12,14 +12,13 @@ It has no database and contains no product business logic.
 
 ## Routing
 
-The path is never rewritten — a module receives exactly the address the browser asked for. That is
-what makes the two kinds of target interchangeable: routing has always gone by path, and a module in
-this process reads the path off the very same `Request`.
+The path is never rewritten — a module receives exactly the address the browser asked for. Routing
+has always gone by path, and a module in this process reads the path off the very same `Request`.
 
 | Incoming path | Target | Gateway check |
 | --- | --- | --- |
 | `/admin/embed/service/:name/**` | admin surface of that module | session, admin role, grant on `:name` |
-| `/admin/embed/database/**` | Adminer, the panel's database browser | session and the `owner` role |
+| `/admin/embed/database/**` | nothing yet — Gateway answers 503 itself | session and the `owner` role |
 | `/admin/**` | `admin` | session and an admin role |
 | `/service/:name/**` | module from the public allowlist | none — the module secures itself |
 | `/app/**` | `app` | none — App verifies the user session itself |
@@ -34,14 +33,16 @@ this process reads the path off the very same `Request`.
 An unknown name has no entry, so nothing is proxied and Admin is not even asked about it — the answer
 is 404.
 
-Adminer is in neither list, and not because it was forgotten: it is not a module of this template but
-a third-party application the panel embeds, and it reads every module's data at once. So it has no
-`:name` and no grant can name it — it is reached only by its own path above, which the owner alone
-passes.
+The database section is in neither list, and not because it was forgotten: it is not a module of this
+template, and it reads every module's data at once. So it has no `:name` and no grant can name it —
+it is reached only by its own path above, which the owner alone passes. Behind that path there is
+nothing right now: the third-party browser that used to answer is gone and this template's own
+interface is not written, so Gateway answers the area itself with a 503 — after the owner check, not
+instead of it.
 
 `scripts/check-service-ids.mjs` reconciles these lists with `shared/src/vocabulary.ts` and the central
 Admin shell, so a service can never be reachable here while being invisible in the shell — and it
-rejects `adminer` in either list outright, for the reason just given.
+rejects `database` in either list outright, for the reason just given.
 
 ## Admin authorization
 
@@ -97,8 +98,7 @@ forwards — those headers would otherwise no longer describe the body. Hop-by-h
 dropped in both directions.
 
 Upstream redirects are passed through untouched (`redirect: 'manual'`), because a service's own
-redirect belongs to the browser. Adminer's very first response is exactly that: a redirect that
-also sets its own session cookie.
+redirect belongs to the browser — together with any cookie that redirect sets.
 
 ## Environment
 
@@ -106,17 +106,13 @@ also sets its own session cookie.
 | --- | --- |
 | `PROJECT_SLUG` | Session cookie name Gateway reads to find the session token |
 | `PUBLIC_SITE_URL` | External origin, used in the sign-in link of the 403 page |
-| `SERVICE_URL_ADMINER` | Where Adminer lives — the one address Gateway still resolves for itself |
 
-Gateway does not hold addresses any more: the composer builds every module and hands the whole set
-over as `targets`. A target may be an application in this process or a URL, and Gateway does not care
-which — Adminer is a URL today, and anything put behind a real network would become one without
-touching this package.
+Gateway holds no addresses at all: the composer builds every module and hands the whole set over as
+`targets`, and every target is an application in this process. The database browser in its own
+container was the last real address anywhere, and it is gone — nothing in the process dials outwards.
 
-Adminer's is the only such variable left anywhere, and the only real address in the process. A module
-calling a neighbour takes no address at all — it is handed a caller built from the neighbour's own
-router and invokes a procedure on it, so there is no request and nothing to dial. `SERVICE_URL_AUTH`
-and the rest are read by nobody.
+A module calling a neighbour takes no address either: it is handed a caller built from the
+neighbour's own router and invokes a procedure on it, so there is no request and nothing to dial.
 
 The process's listening port is fixed inside the image. Locally the published host port comes from
 `GATEWAY_PORT` in `.env`; in production nothing is published at all.

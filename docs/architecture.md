@@ -37,8 +37,6 @@ flowchart LR
     notifications -.->|send| email
   end
 
-  gateway -->|/admin/embed/database| adminer[(Database browser)]
-
   auth --- authDb[(auth)]
   users --- usersDb[(users)]
   admin --- adminDb[(admin)]
@@ -56,8 +54,9 @@ when the call was carried as a request. The only such call Gateway itself makes 
 A dotted label names the procedure where there is only one of them, and the subject where there are
 several — the callee's own README lists which procedures each neighbour calls.
 
-Adminer is outside the box on purpose: it is the one target Gateway routes to that is still a real
-address over a real network.
+There is no box outside the process any more. The database section is still routed — Gateway checks
+it and answers 503 itself — but the third-party browser that used to answer, the one target reached
+over a real network, is gone.
 
 ## Two entry points, and they are not the same thing
 

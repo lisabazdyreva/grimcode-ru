@@ -66,13 +66,8 @@ address as the container it replaces, so nothing else has to be told about it. P
 through `LOCAL_POSTGRES_HOST` from `.env`: the host `postgres` exists only inside the Compose
 network, and the published port differs per worktree.
 
-Four things this mode does not give you:
+Three things this mode does not give you:
 
-- **`/admin/database` does not work**, which is why the line above starts PostgreSQL alone. Adminer
-  answers at `adminer:8080`, a name that exists only inside the Compose network, and it may never be
-  given a host port — that is a documented rule `check-compose.mjs` enforces. Starting the container
-  changes nothing: the name still does not resolve from the machine, and the area answers 502 either
-  way. Everything else in the panel works.
 - **Error bodies carry a stack.** `NODE_ENV` is not `production` outside the container, so an RPC
   failure answers with more detail than a deployment would.
 - **It is your machine's Node.** The image pins one; here you get whatever `node -v` says, which is
@@ -140,10 +135,13 @@ from — not a credential.
 
 ## The database
 
-The panel's database browser is at `/admin/database`, owner-only, through Gateway. It is the real
-Adminer, themed to match the panel around it; it has no host port in any environment.
+The panel's database section is at `/admin/database`, owner-only, through Gateway — and there is
+nothing behind it right now: the third-party browser that answered there has been removed, and this
+template's own interface is not written yet. The owner gets a 503 saying so, everybody else the usual
+403.
 
-`psql` works too — PostgreSQL is published on loopback for exactly that:
+`psql` is how you read the databases meanwhile — PostgreSQL is published on loopback for exactly
+that:
 
 ```bash
 node scripts/compose.mjs exec postgres psql -U template -d "${PROJECT_SLUG}_auth"
@@ -170,7 +168,7 @@ convenient one to poke around with.
 | `check-dependencies.mjs` | A manifest declaring a neighbouring service, or a package that reaches outside the process — the database driver belongs to the five modules that own a database, to `shared` and to `tests`, and nowhere else; an `.npmrc` setting that would hoist every package into reach |
 | `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool built anywhere but the one file a module is allowed to build it in, or that file not asking which database it actually opened; a module reading the environment; a door that would carry code, in its source and in what it emits; a browser-facing file of `shared` importing anything but `zod` |
 | `check-procedures.mjs` | A procedure that declares no `.output()`; an admin procedure that changes something without asking for a CSRF token — the builder is followed to its definition rather than trusted by its name; a router that is neither mounted nor handed to a caller factory |
-| `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; a grantable service that is not an admin service; Adminer being public or grantable |
+| `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; a grantable service that is not an admin service; the database section being public or grantable |
 | `check-compose.mjs` | A host port on anything but `server` or `postgres` locally, and on anything at all in production; a bind beyond loopback on anything but `server`; a PostgreSQL container in production; a service present in one topology and missing from the other |
 | `check-scripts.mjs` | A script named after a pnpm command — `pnpm up` would run pnpm's dependency update instead of starting the project |
 
