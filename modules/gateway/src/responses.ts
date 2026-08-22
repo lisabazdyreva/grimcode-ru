@@ -97,23 +97,6 @@ export function serviceUnavailable(request: Request): Response {
   );
 }
 
-/**
- * The database section exists as a route and is checked like one, but has nothing behind it yet:
- * Adminer is gone and this template's own interface is not written.
- *
- * Deliberately answered after the owner check rather than before it, so the check itself stays
- * exercised — an ordinary administrator still gets 403 here, not this.
- */
-export function databaseSectionMissing(request: Request): Response {
-  return respond(
-    request,
-    503,
-    'database-section-missing',
-    'Database section is unavailable',
-    'The third-party database browser has been removed and this template’s own interface is not ready yet.',
-  );
-}
-
 export function badGateway(request: Request): Response {
   return respond(request, 502, 'bad-gateway', 'Service unreachable', 'The service did not answer.');
 }

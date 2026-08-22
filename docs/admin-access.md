@@ -46,9 +46,13 @@ and the audit log. Nothing in the system calls it a service:
   service name that might be one of those things or might not;
 - the sidebar shows it under «Админка», with the panel's own sections.
 
-Nothing answers behind it at the moment. Adminer, the third-party browser that did, has been removed,
-and this template's own interface is not written yet: an owner opening the section gets a 503 saying
-so. The check still runs first — an ordinary administrator gets the same 403 as before.
+Behind it is this template's own interface, [`pg-interface`](../pg-interface/README.md) — the tables of
+each module's database, a page of rows, and changing or removing one row. It never changes the schema:
+that belongs to the modules' migrations. Its screen is still to come; its API answers today.
+
+It opens connections of its own rather than borrowing the modules' — two per database, on the first
+request that looks at one — so a heavy query typed into the console cannot hold a connection the site
+needs.
 
 ## The first owner
 

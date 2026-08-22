@@ -14,6 +14,7 @@
   },
   "include": ["index.ts"],
   "references": [
+    { "path": "pg-interface" },
     { "path": "shared" },
     { "path": "modules/admin" },
     { "path": "modules/app" },

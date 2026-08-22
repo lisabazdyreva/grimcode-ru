@@ -34,14 +34,15 @@ export type AdminServiceName = keyof typeof ADMIN_SERVICES;
  * ever changes. `admin` is narrower on purpose: Gateway calls it on every `/admin/**` request to ask
  * whether it is allowed at all.
  *
- * The database section has no entry here yet. It is not a module of this template — it reads every
- * module's data at once, which is why only the owner reaches it and no grant names it — and until
- * its own interface exists, Gateway answers the area itself.
+ * `database` is not in either allowlist above and is named on its own here: it is not a module of this
+ * template but the panel's own section, reading every module's data at once — which is why only the
+ * owner reaches it, why no grant can name it, and why it has no `:name` a URL could ask for.
  */
 export interface GatewayTargets extends Record<AdminServiceName | PublicServiceName, ProxyTarget> {
   site: ProxyTarget;
   app: ProxyTarget;
   admin: FetchLike;
+  database: ProxyTarget;
 }
 
 export function isPublicService(name: string): name is PublicServiceName {

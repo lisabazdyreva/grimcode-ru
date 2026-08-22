@@ -117,12 +117,12 @@ of databases.
 
 ## The database
 
-The panel's database section is at `/admin/database`, owner-only, through Gateway — and there is
-nothing behind it right now: the third-party browser that answered there has been removed, and this
-template's own interface is not written yet. The owner gets a 503 saying so, everybody else the usual
-403.
+The panel's database section is at `/admin/database`, owner-only, through Gateway. Behind it is
+[`pg-interface`](../pg-interface/README.md), this template's own interface: the tables of every
+module's database, a page of rows, and changing or removing one row. The schema is not its business —
+that belongs to the migrations.
 
-`psql` is how you read the databases meanwhile:
+`psql` is the other way in, and the one that can do what the interface will not:
 
 ```bash
 psql "postgres://template:template@127.0.0.1:5432/${PROJECT_SLUG}_auth"

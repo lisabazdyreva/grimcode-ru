@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 
+import { createDatabaseInterface } from '@grimcode/pg-interface';
 import { serve } from '@hono/node-server';
 import { createModule as createAdminModule, type AdminEnv } from '@template/admin';
 import { createApp as createAppApp } from '@template/app';
@@ -96,8 +97,34 @@ export async function compose(): Promise<Composition> {
 
   const site = createSiteApp({ origin: publicSiteUrl() });
 
+  /*
+   * The panel's database section. Not a module: it looks at every module's database at once, which is
+   * why only the owner reaches it and why no grant can name it. It opens its own small pools rather
+   * than borrowing the modules' — a heavy query typed into the console would otherwise hold
+   * connections the site needs.
+   *
+   * The path is Gateway's to route; it is repeated here because the interface has to know where it is
+   * mounted to tell its own paths from the rest of the URL.
+   */
+  const databaseInterface = createDatabaseInterface({
+    basePath: '/admin/embed/database',
+    databases: DATABASE_MODULES.map((module) => ({
+      name: serviceDatabaseName(module),
+      connectionString: serviceDatabaseUrl(module),
+    })),
+    log: (event) => {
+      const write = event.level === 'error' ? logger.error : logger.info;
+      write.call(logger, event.message, {
+        module: 'pg-interface',
+        ...(event.database === undefined ? {} : { database: event.database }),
+        ...(event.error === undefined ? {} : { error: event.error }),
+      });
+    },
+  });
+
   const targets: GatewayTargets = {
     site: (request) => site.fetch(request),
+    database: (request) => databaseInterface.fetch(request),
     app: call('app'),
     admin: call('admin'),
     auth: call('auth'),

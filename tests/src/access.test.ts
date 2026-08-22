@@ -156,13 +156,35 @@ describe('grants', () => {
  * That is why it lives at `/admin/database/`, why only the owner reaches it, and why no grant can
  * name it: there is nothing to hand out, so nothing can be handed out by mistake.
  *
- * Nothing answers behind it right now — the third-party browser is gone and this template's own
- * interface is not written — so the owner gets a 503 saying exactly that. The distinction from the
- * ordinary administrator's 403 below is the point: the check still runs.
+ * Behind it is this template's own interface — its API today, its screen next — and the owner is the
+ * only one who reaches either. The distinction from the ordinary administrator's 403 below is the
+ * point: the check runs before anything is served.
  */
 describe('the database area', () => {
-  it('lets the owner through to a section that is not built yet', async () => {
-    expect(await owner.status('/admin/embed/database/')).toBe(503);
+  it('serves the interface to the owner', async () => {
+    expect(await owner.status('/admin/embed/database/')).toBe(200);
+  });
+
+  it('shows the owner the databases of this installation, and only those', async () => {
+    const response = await owner.fetch('/admin/embed/database/api/databases');
+    const body = (await response.json()) as { databases: { name: string }[] };
+
+    const names = body.databases.map((database) => database.name).sort();
+    expect(names).toEqual(
+      ['admin', 'auth', 'email', 'notifications', 'users']
+        .map((module) => `${process.env.PROJECT_SLUG}_${module}`)
+        .sort(),
+    );
+  });
+
+  it('refuses a changing request that carries no header of ours', async () => {
+    const response = await owner.fetch('/admin/embed/database/api/databases/x/rows/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ schema: 'public', table: 'identities', key: {} }),
+    });
+
+    expect(response.status).toBe(403);
   });
 
   it('is closed to an ordinary administrator, whatever their grants', async () => {

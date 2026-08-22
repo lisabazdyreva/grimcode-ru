@@ -43,6 +43,12 @@ export const AREA_RULES = [
    * exist needs their names, and it derives them from `PROJECT_SLUG` itself. That is the better test
    * anyway — importing the derivation would compare the code with itself.
    */
+  /*
+   * The database interface reaches for nothing of ours, and that is the point: it is meant to be
+   * publishable on its own, and a single import of `@template/shared` would tie it to this
+   * repository. Everything it needs — connection strings, a way to log — arrives as an argument.
+   */
+  { area: 'pg-interface', mayUse: [] },
   { area: 'tests', mayUse: ['@template/shared'] },
   { area: 'scripts', mayUse: [] },
   { area: '.', mayUse: [] },
@@ -78,7 +84,10 @@ export function describeAllowance(rule) {
  * nothing to do with each other, and a shared list would let whoever needs one hold the other.
  *
  * `pg`: it used to be `shared` alone, and the rule said what it meant — nothing but `shared` talks to
- * a database, and a module is handed a pool. A module now opens its own, so the driver is its
+ * a database, and a module is handed a pool. `pg-interface` is the one home here that owns no database
+ * and is on the list anyway: it is the panel's database interface, so looking at all of them at once is
+ * its whole job. It opens its own small pools rather than borrowing a module's, which is what keeps a
+ * heavy query typed into the console away from the pool a request needs. A module now opens its own, so the driver is its
  * dependency too. What that costs is worth stating: the check no longer says "only one package talks
  * to the database", it says "only a package that owns a database, or checks one, does". `app`, `site`
  * and `gateway` are still refused, and a new module that needs the driver has to be added here —
@@ -102,6 +111,7 @@ export const OUTSIDE_PROCESS_PACKAGES = {
   pg: [
     'shared',
     'tests',
+    'pg-interface',
     'modules/admin',
     'modules/auth',
     'modules/email',

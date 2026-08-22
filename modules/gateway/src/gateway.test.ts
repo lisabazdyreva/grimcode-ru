@@ -64,6 +64,7 @@ function fakeTargets(): GatewayTargets {
     users: fakeModule('users'),
     notifications: fakeModule('notifications'),
     email: fakeModule('email'),
+    database: fakeModule('database'),
   };
 }
 
@@ -205,17 +206,13 @@ describe('admin authorization', () => {
     expect(stub.calls).toEqual([{ area: 'service', service: 'email' }]);
   });
 
-  /**
-   * The area is still asked about — the owner check is the part that has to keep working — and the
-   * answer is Gateway's own, because there is nothing behind the area until the interface exists.
-   */
-  it('asks Admin about the database area and answers it itself', async () => {
+  it('asks Admin about the database area and proxies it to the interface', async () => {
     stub.authorize = async () => OWNER;
-    const response = await route('/admin/embed/database/');
+    await route('/admin/embed/database/api/databases');
     expect(stub.calls).toEqual([{ area: 'database' }]);
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ error: 'database-section-missing' });
-    expect(forwarded).toHaveLength(0);
+    expect(forwarded[0]?.target).toBe('database');
+    // Unrewritten, like every other target: the interface reads its own path off the request.
+    expect(forwarded[0]?.path).toBe('/admin/embed/database/api/databases');
   });
 
   it('asks Admin about the panel itself for everything else', async () => {

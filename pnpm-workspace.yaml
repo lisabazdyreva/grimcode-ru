@@ -1,4 +1,5 @@
 packages:
+  - pg-interface
   - shared
   - modules/*
   - tests

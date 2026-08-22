@@ -24,6 +24,7 @@
     "test:browser": "pnpm --filter @template/acceptance browser"
   },
   "dependencies": {
+    "@grimcode/pg-interface": "workspace:*",
     "@hono/node-server": "2.0.11",
     "@template/admin": "workspace:*",
     "@template/app": "workspace:*",

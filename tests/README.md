@@ -36,7 +36,8 @@ Anonymous and ordinary users are refused the admin panel; the owner sees every s
 administrator opens what they were granted and nothing else; a change or revocation of a grant takes
 effect on the next request; a disabled administrator loses everything. The database section is
 owner-only, cannot be granted to anyone at all, and has no public route — and the owner passing that
-check gets a 503, because the section has no interface behind it yet. The admin **assets** are protected too, not
+check reaches the interface, which lists this installation's five databases and refuses a changing
+request that carries none of its headers. The admin **assets** are protected too, not
 only its pages — serving them would hand out the panel itself. Forged `x-template-admin-*` headers
 are replaced by Gateway, and a service that is not on the public allowlist answers 404 while the two
 that are on it answer for themselves. A change sent without a CSRF token is refused with a 403, and
