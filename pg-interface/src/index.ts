@@ -9,6 +9,7 @@ import {
   type PoolLog,
 } from './pools.js';
 import { deleteRow, selectRows, updateRow } from './statements.js';
+import { serveScreen } from './static.js';
 
 export type { DatabaseSource } from './pools.js';
 export { MAX_PAGE } from './statements.js';
@@ -71,14 +72,10 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const path = url.pathname.startsWith(base) ? url.pathname.slice(base.length) : url.pathname;
     const segments = path.split('/').filter(Boolean);
 
-    /*
-     * `api` is the whole surface for now: the screen is a separate step. Until it exists, a request
-     * for a page gets a page saying so — the panel embeds this section in a frame, and a frame
-     * showing a JSON error would read as a broken deployment rather than as unfinished work.
-     */
+    // Everything that is not the API is the screen: its files, or its page for any other path.
     if (segments[0] !== 'api') {
       if (request.method !== 'GET') return methodNotAllowed();
-      return placeholder();
+      return await serveScreen(path);
     }
 
     if (request.method === 'GET' && segments.length === 2 && segments[1] === 'databases') {
@@ -234,23 +231,6 @@ function describe(table: Table): string {
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
-}
-
-/** What a person sees until the screen exists. Replaced, not added to, when it does. */
-function placeholder(): Response {
-  return new Response(
-    `<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>Database</title>
-</head><body style="font: 15px/1.6 ui-sans-serif, system-ui, sans-serif; padding: 2rem">
-<h1 style="font-size: 1.25rem">The database interface has no screen yet</h1>
-<p>Its API answers under <code>api/</code>. The tables and rows are the next step.</p>
-</body></html>
-`,
-    { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } },
-  );
 }
 
 function methodNotAllowed(): Response {

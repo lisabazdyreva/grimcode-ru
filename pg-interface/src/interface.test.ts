@@ -9,6 +9,7 @@ import {
   REQUEST_HEADER_VALUE,
 } from './index.js';
 import { deleteRow, pageOf, selectRows, updateRow } from './statements.js';
+import { serveScreen } from './static.js';
 
 /** A table with a single-column key, and one with a key of two — both shapes exist in this project. */
 const rows: Table = {
@@ -286,13 +287,40 @@ describe('the API', () => {
     expect(response.status).toBe(404);
   });
 
-  it('serves a page saying the screen is unfinished, rather than a JSON error', async () => {
+  it('serves the screen at its root', async () => {
     const { api } = build();
     const response = await api.fetch(at('/'));
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
-    expect(await response.text()).toContain('no screen yet');
+    expect(await response.text()).toContain('<div id="app">');
+  });
+
+  it('serves a built asset, and lets it be cached', async () => {
+    const { api } = build();
+    const page = await (await api.fetch(at('/'))).text();
+    const asset = /src="\.\/(assets\/[^"]+\.js)"/.exec(page)?.[1];
+    expect(asset).toBeDefined();
+
+    const response = await api.fetch(at(`/${asset}`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('javascript');
+    expect(response.headers.get('cache-control')).toContain('immutable');
+  });
+
+  /**
+   * The guard is tested on `serveScreen` itself rather than through a request, and that is the point:
+   * `new Request(…)` collapses `..` in a URL before this package ever sees it, so a test that went in
+   * over HTTP would pass without the guard existing at all. What is checked here is the function that
+   * would read the file.
+   */
+  it('refuses a path that walks out of the built screen', async () => {
+    // Two levels up from `web/dist` is this package's own manifest — a file that certainly exists, which
+    // is what makes this a probe rather than a path that happens to resolve to nothing.
+    const response = await serveScreen('/../../package.json');
+
+    expect(response.headers.get('content-type')).toContain('text/html');
+    expect(await response.text()).not.toContain('@grimcode/pg-interface');
   });
 
   it('answers a method a path does not take', async () => {

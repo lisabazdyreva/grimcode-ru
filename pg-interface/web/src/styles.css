@@ -1,0 +1,16 @@
+/*
+ * The screen's own frame. Everything else is element-plus, whose variables follow the `dark` class the
+ * theme bridge sets, so light and dark come from the panel rather than from here.
+ */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}

@@ -68,6 +68,28 @@ procedures cannot see this package, whatever it does.
 **Row values never reach the log.** These databases hold password hashes and session identifiers. The
 log gets table names and counts.
 
+## The screen
+
+`web/` is a Vue 3 application with element-plus, built by vite into `web/dist` and served by this
+package itself — the server reads the files, because a package that depends on nothing cannot borrow a
+static-file helper either. Two details are load-bearing:
+
+- **`base: './'`** in the vite config. The host decides where this is mounted, so asset URLs are
+  relative to the page; an absolute base would bake one project's path into the package;
+- **the theme comes from the host** over `postMessage`, message type `template.admin.theme`, written
+  to `data-theme` on the root element and mirrored to element-plus's `dark` class. The type and the
+  convention are copied rather than imported — see `web/src/theme.ts`, which says what would break if
+  one side renamed it.
+
+What the screen shows: the databases it was handed, the tables of one of them with the key and a rough
+row count, and a page of rows. Per column: sort, filter, hide. Filters offer the conditions the server
+said that column takes, joined with "and" or "or". A row opens in a dialog, where the key is read-only
+and everything else is editable; only what actually changed is sent.
+
+**Named views are deliberately absent.** The interface this one is modelled on stores them on its
+server; ours has nowhere to store them, because it creates no table of its own — so the current view
+lives in the URL hash instead, which is what made named views worth having: a link somebody can send.
+
 ## What it does not do
 
 Change the schema. No table is created, dropped or altered, and no column either: in this project the
