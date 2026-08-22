@@ -45,8 +45,9 @@ export const ADMIN_SERVICES: readonly AdminServiceEntry[] = [
  * one shows every service's data at once, which is exactly why only the owner reaches it and why no
  * grant mentions it.
  *
- * Nothing answers behind it yet — the third-party browser that used to is gone — so the frame shows
- * what Gateway says about it until this template's own interface exists.
+ * Behind it is this template's own interface, a package of its own. It reports no path to the shell —
+ * its view lives in its URL hash — so unlike a service admin it has nothing to keep in sync, which is
+ * why it is a constant here rather than an entry in the list above.
  */
 export const DATABASE_AREA = {
   label: 'База данных',

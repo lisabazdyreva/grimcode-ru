@@ -14,7 +14,7 @@ One panel at `/admin`, made of parts that belong to different services.
 | **Email** | the Email service | templates, the editor, the delivery log |
 | **Администраторы** | the panel itself | who may open it and what they may reach |
 | **Журнал** | the panel itself | every change to administrator access |
-| **База данных** | the panel itself | the database browser, owner-only |
+| **База данных** | the panel itself | this template's own database interface, owner-only |
 
 The sidebar also links to the site and the application. They open in their own tab: they are the
 product, not part of the panel.
@@ -32,8 +32,8 @@ paths:
 | `/admin/` | the panel's own home, which opens nothing by itself |
 | `/admin/service/email#/templates/123` | the panel's page, showing the Email admin |
 | `/admin/embed/service/email/templates/123` | the Email admin itself, embedded |
-| `/admin/database` | the panel's page, showing the database browser |
-| `/admin/embed/database/` | the browser itself |
+| `/admin/database` | the panel's page, showing the database interface |
+| `/admin/embed/database/` | the interface itself, and its API under `api/` |
 | `/admin/administrators`, `/admin/audit` | the panel's own sections |
 
 An embedded URL can also be opened directly — Gateway performs the very same check either way.
@@ -63,6 +63,11 @@ silently cancel it. That failure is covered by a browser test, because nothing e
 An embedded admin also works standing alone at its own URL, and then it owns its theme and shows
 its own switch. Inside the shell it hides that switch rather than offering a second, disagreeing
 one.
+
+The database section speaks a smaller half of this: it takes the theme and reports no path, because
+its own view lives in its URL hash — which the shell never sees and never has to replay. It is not in
+the shell's list of service admins at all, so it has no `syncPath` to set: it is a constant of its own
+in [`services.ts`](../modules/admin/web/src/services.ts), for the same reason no grant can name it.
 
 ## Adding a section to the panel
 
@@ -115,9 +120,14 @@ Each admin keeps **its own copy** of the shadcn components it uses, its own `com
 its own design tokens. Nothing is shared at runtime, so a service can restyle or replace its admin
 without touching another's, and no common component can break every screen in the panel at once.
 
-The values are deliberately the same across all of them: six copies inside the panel — the shell, the
-four service admins, and the database browser, which keeps a stylesheet of its own — and no shared
-file. That is the price of the isolation above, and it is paid knowingly.
+The values are deliberately the same across the five that are ours: the shell and the four service
+admins, with no shared file between them. That is the price of the isolation above, and it is paid
+knowingly.
+
+The database section is the exception, and a deliberate one: it is a package that imports nothing of
+this repository, so it brings element-plus and that library's own light and dark themes. What it does
+share is the *convention* — the panel sends its theme, the section writes `data-theme` on its root —
+because a section that ignored it would sit white inside a dark panel.
 
 ## Related
 

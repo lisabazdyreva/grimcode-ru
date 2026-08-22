@@ -107,8 +107,8 @@ not a configuration matrix.
 ## Sessions and cookies
 
 The session cookie is `HttpOnly` and `SameSite=Lax`, and is marked `Secure` when `PUBLIC_SITE_URL`
-is `https`. That follows the origin rather than an environment name, because the same production
-images also run locally over plain http, where a `Secure` cookie would never come back.
+is `https`. That follows the origin rather than an environment name, because the same build also runs
+locally over plain http, where a `Secure` cookie would never come back.
 
 ## Rate limits
 

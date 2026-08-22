@@ -28,6 +28,7 @@ flowchart LR
     gateway -->|/admin/embed/service/:name| users
     gateway -->|/admin/embed/service/:name| notifications[Notifications]
     gateway -->|/admin/embed/service/:name| email[Email]
+    gateway -->|/admin/embed/database| database[Database interface]
 
     gateway -.->|authorize| admin
     admin -.->|sessions, identities| auth
@@ -41,6 +42,12 @@ flowchart LR
   admin --- adminDb[(admin)]
   notifications --- notificationsDb[(notifications)]
   email --- emailDb[(email)]
+
+  database -.-> authDb
+  database -.-> usersDb
+  database -.-> adminDb
+  database -.-> notificationsDb
+  database -.-> emailDb
 ```
 
 Solid lines are requests arriving from outside; dotted lines are calls modules make to each other,
@@ -53,9 +60,12 @@ when the call was carried as a request. The only such call Gateway itself makes 
 A dotted label names the procedure where there is only one of them, and the subject where there are
 several — the callee's own README lists which procedures each neighbour calls.
 
-There is no box outside the process any more. The database section is still routed — Gateway checks
-it and answers 503 itself — but the third-party browser that used to answer, the one target reached
-over a real network, is gone.
+There is no box outside the process any more: the third-party console this project used to embed, the
+one target reached over a real network, is gone. What answers the database section now is
+[`pg-interface`](../pg-interface/README.md), a package of ours — and the one thing in the process that
+looks at all five databases, which is why the owner alone reaches it. It opens its own small pools
+rather than borrowing the modules', so a heavy query typed into it cannot hold a connection a request
+needs; that is what the dotted lines from it mean.
 
 ## Two entry points, and they are not the same thing
 
@@ -70,9 +80,11 @@ After this move the words are close enough to be worth separating:
 The program is one process. The module inside it that traffic enters through is called `gateway`, and
 that name belongs to the module, not to the program.
 
-The composer is allowed to know every module, which makes it the widest permission in the
-repository. It can afford that only while the wiring holds no decisions — just the order of calls.
-The moment one moves in, that permission becomes the hole the decision is made through.
+That entry is allowed to import every package, which makes it the widest permission in the
+repository — granted to the file by name in `scripts/workspace-rules.mjs`, not to the root directory,
+so a folder nobody has written a rule for does not inherit it. It can afford the permission only while
+the wiring holds no decisions — just the order of calls. The moment one moves in, that permission
+becomes the hole the decision is made through.
 
 ## Why it is split this way
 
@@ -111,9 +123,10 @@ a delete, never touches the account.
 
 ## One way in
 
-Gateway is the only application mounted on the public listener — locally reached by a single
-published port, in production by the platform routing a domain to the process. Nothing else is
-reachable from outside, including the database browser, which has no host port in any environment.
+Gateway is the only application mounted on the public listener, and the process opens exactly one
+port: `@hono/node-server` — the import that opens one — may be written in the entry and nowhere else,
+which `check-boundaries` enforces. Nothing else is reachable from outside, the database interface
+included: it has no listener of its own at all, only the section Gateway routes to it.
 
 That is now a property of the wiring rather than of the network, and it went one step further: an
 internal surface is not mounted on a path at all. A neighbour reaches those procedures through a

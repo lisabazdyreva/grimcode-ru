@@ -146,8 +146,8 @@ module on `c.env`. What follows is what a deployment sets on its behalf.
 | `PUBLIC_SITE_URL` | Origin of verification and recovery links, and what decides `Secure` on the session cookie |
 | `AUTH_SESSION_TTL_SECONDS` | Session lifetime, 30 days by default |
 
-`Secure` follows that origin and **not** `NODE_ENV`, which this module never reads: the local stack
-runs the very same production images over plain http, and a `Secure` cookie would never come back.
+`Secure` follows that origin and **not** `NODE_ENV`, which this module never reads: the same build runs
+locally over plain http, and a `Secure` cookie would never come back from it.
 
 ## Commands
 

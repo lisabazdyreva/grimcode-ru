@@ -1,6 +1,6 @@
 # Acceptance tests
 
-Fifty-eight checks that run against a **running stack**, over HTTP, through Gateway.
+Fifty-nine checks that run against a **running application**, over HTTP, through Gateway.
 
 They deliberately do not import module code. A test that called a router directly would prove the
 router works while saying nothing about whether Gateway lets the request through — and Gateway is
@@ -25,8 +25,14 @@ The suite reads `.env` itself, so it finds the port the stack is on. It needs an
 | `ACCEPTANCE_BASE_URL` | Only to aim the suite at another stack: it defaults to `GATEWAY_PORT` on loopback, so it is not in `.env`. |
 | `ACCEPTANCE_OWNER_EMAIL`, `ACCEPTANCE_OWNER_PASSWORD` | An existing owner. Add them to `.env` when the stack already has accounts; the suite says so itself when it needs them. |
 
-On a stack with no accounts at all, the credentials can be left out: the suite registers the first
-account, which becomes the owner — the rule it is testing anyway.
+**On a stack with no accounts, leaving the credentials out is not enough**, and the file used to say
+it was. Each of the three files resolves its own owner, so the first one to run registers an account
+and becomes the owner, and the other two register accounts that are not — 17 checks pass and two files
+fail with "this stack already has accounts". Measured on a clean stack, 21 August.
+
+What works on a clean stack is letting it fail once and running it again with the owner it made: the
+run id in `acceptance+<id>-owner@example.test` is the same id as in the password,
+`acceptance-<id>-passphrase`.
 
 ## What they cover
 

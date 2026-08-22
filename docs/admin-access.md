@@ -32,7 +32,7 @@ the protected URL of a hidden service goes through the very same Gateway check, 
 
 ## The database is a section of the panel, not a service
 
-Every service admin is one service's own window onto its own data. The database browser is not that:
+Every service admin is one service's own window onto its own data. The database interface is not that:
 it reads every service's data at once, so calling it a service admin would have been calling it
 something it is not.
 
@@ -47,8 +47,8 @@ and the audit log. Nothing in the system calls it a service:
 - the sidebar shows it under «Админка», with the panel's own sections.
 
 Behind it is this template's own interface, [`pg-interface`](../pg-interface/README.md) — the tables of
-each module's database, a page of rows, and changing or removing one row. It never changes the schema:
-that belongs to the modules' migrations. Its screen is still to come; its API answers today.
+each module's database, a page of rows with filters and sorting, and changing or removing one row. It
+never changes the schema: that belongs to the modules' migrations.
 
 It opens connections of its own rather than borrowing the modules' — two per database, on the first
 request that looks at one — so a heavy query typed into the console cannot hold a connection the site

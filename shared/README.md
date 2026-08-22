@@ -4,9 +4,10 @@ Common technical utilities every module is allowed to use.
 
 Business logic and per-module repositories never live here — those belong to the owning module.
 A module may import its own folder, `shared/`, a neighbour's declared `@template/<name>/contract`, and
-external packages — except the ones that open a door out of the process. The database driver is the
-only one so far, and it is declared by the packages allowed to hold it: this one, the five modules
-that own a database, and the acceptance tests.
+external packages — except the ones that open a door out of the process. There are two of those, each
+with its own list of who may hold it: the database driver belongs to this package, the five modules
+that own a database, the acceptance tests and the panel's database interface; the server that opens a
+port belongs to the program's entry, and the import that opens one may be written nowhere else.
 
 ## Runtime modules
 

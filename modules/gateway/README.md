@@ -35,10 +35,9 @@ is 404.
 
 The database section is in neither list, and not because it was forgotten: it is not a module of this
 template, and it reads every module's data at once. So it has no `:name` and no grant can name it —
-it is reached only by its own path above, which the owner alone passes. Behind that path there is
-nothing right now: the third-party browser that used to answer is gone and this template's own
-interface is not written, so Gateway answers the area itself with a 503 — after the owner check, not
-instead of it.
+it is reached only by its own path above, which the owner alone passes. Behind that path is
+`pg-interface`, a target like any other in this process: named on its own in `GatewayTargets`, reached
+after the check and never instead of it.
 
 `scripts/check-service-ids.mjs` reconciles these lists with `shared/src/vocabulary.ts` and the central
 Admin shell, so a service can never be reachable here while being invisible in the shell — and it

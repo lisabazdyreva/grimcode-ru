@@ -170,8 +170,9 @@ They exist because each protects a rule that is easy to break by accident and ha
 4. Its id in Gateway's `ADMIN_SERVICES` allowlist, and — only if it should be reachable without a
    session — in `PUBLIC_SERVICES` as well; plus its entry in the Admin shell's
    [`services.ts`](../modules/admin/web/src/services.ts).
-5. Its directory in `OUTSIDE_PROCESS_HOMES` in [`scripts/workspace-rules.mjs`](../scripts/workspace-rules.mjs)
-   if it stores anything — that is what lets it declare the database driver. Nothing has to be added
+5. Its directory under `pg` in `OUTSIDE_PROCESS_PACKAGES` in
+   [`scripts/workspace-rules.mjs`](../scripts/workspace-rules.mjs) if it stores anything — that is what
+   lets it declare the database driver. Nothing has to be added
    to the environment: `DATABASE_URL_<MODULE>` works without being declared anywhere, because the
    composer reads it by name when it is set.
 

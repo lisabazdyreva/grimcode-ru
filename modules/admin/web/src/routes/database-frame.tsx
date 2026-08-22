@@ -9,11 +9,11 @@ import { ADMIN_FRAME_MESSAGES, type AdminFrameMessage } from '@template/shared/b
  * The panel's database area, embedded same-origin.
  *
  * Not a service admin: it shows every service's data at once, which is why it is the owner's alone.
- * Gateway checks the same thing whether it is opened here or by its own URL — and answers it itself
- * for now, because the interface that belongs behind this frame is not written yet.
+ * Gateway checks the same thing whether it is opened here or by its own URL.
  *
- * There is no path to keep in sync — the shell only hands it the theme, and does that again on every
- * load, because a frame that navigates by ordinary links is a fresh document each time.
+ * There is no path to keep in sync — the interface inside keeps its view in its own URL hash — so the
+ * shell only hands it the theme, and does that again on every load, because a frame's listener may not
+ * be attached when `load` fires.
  */
 export function DatabaseFrame() {
   const frame = React.useRef<HTMLIFrameElement>(null);
