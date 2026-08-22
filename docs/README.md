@@ -19,10 +19,10 @@ Each module has a README beside its code, describing what only that module knows
 [auth](../modules/auth/README.md), [users](../modules/users/README.md),
 [notifications](../modules/notifications/README.md), [email](../modules/email/README.md).
 
-Three more READMEs sit outside `modules/`: the [composer](../composition/README.md), which builds them
-all and wires them together; [shared](../shared/README.md), the toolbox every module may use and where
-adding a procedure is explained; and the [acceptance tests](../tests/README.md), which describe what is
-verified against a running stack.
+Three more documents sit outside `modules/`: [the composer](composer.md) — the root `index.ts`, which
+builds every module and wires them together; [shared](../shared/README.md), the toolbox every module
+may use and where adding a procedure is explained; and the [acceptance tests](../tests/README.md),
+which describe what is verified against a running application.
 
 ## What this template decides for you
 

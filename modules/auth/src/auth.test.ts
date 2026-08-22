@@ -9,7 +9,7 @@ import { DUMMY_PASSWORD_HASH } from './routers/public.js';
 //
 // The session lifetime used to be checked here, while Auth still read `AUTH_SESSION_TTL_SECONDS`
 // itself. It is the composer's to read now, and the defaults are pinned in
-// `composition/src/index.test.ts`.
+// the entry's own `index.test.ts`.
 
 describe('this module opening its own database', () => {
   /**

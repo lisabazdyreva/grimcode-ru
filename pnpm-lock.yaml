@@ -7,6 +7,37 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@hono/node-server':
+        specifier: 2.0.11
+        version: 2.0.11(hono@4.12.32)
+      '@template/admin':
+        specifier: workspace:*
+        version: link:modules/admin
+      '@template/app':
+        specifier: workspace:*
+        version: link:modules/app
+      '@template/auth':
+        specifier: workspace:*
+        version: link:modules/auth
+      '@template/email':
+        specifier: workspace:*
+        version: link:modules/email
+      '@template/gateway':
+        specifier: workspace:*
+        version: link:modules/gateway
+      '@template/notifications':
+        specifier: workspace:*
+        version: link:modules/notifications
+      '@template/shared':
+        specifier: workspace:*
+        version: link:shared
+      '@template/site':
+        specifier: workspace:*
+        version: link:modules/site
+      '@template/users':
+        specifier: workspace:*
+        version: link:modules/users
     devDependencies:
       '@eslint/js':
         specifier: 10.0.1
@@ -35,49 +66,6 @@ importers:
       typescript-eslint:
         specifier: 8.65.0
         version: 8.65.0(eslint@10.8.0(jiti@2.7.0))(typescript@5.9.3)
-      vitest:
-        specifier: 4.1.10
-        version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
-
-  composition:
-    dependencies:
-      '@hono/node-server':
-        specifier: 2.0.11
-        version: 2.0.11(hono@4.12.32)
-      '@template/admin':
-        specifier: workspace:*
-        version: link:../modules/admin
-      '@template/app':
-        specifier: workspace:*
-        version: link:../modules/app
-      '@template/auth':
-        specifier: workspace:*
-        version: link:../modules/auth
-      '@template/email':
-        specifier: workspace:*
-        version: link:../modules/email
-      '@template/gateway':
-        specifier: workspace:*
-        version: link:../modules/gateway
-      '@template/notifications':
-        specifier: workspace:*
-        version: link:../modules/notifications
-      '@template/shared':
-        specifier: workspace:*
-        version: link:../shared
-      '@template/site':
-        specifier: workspace:*
-        version: link:../modules/site
-      '@template/users':
-        specifier: workspace:*
-        version: link:../modules/users
-    devDependencies:
-      '@types/node':
-        specifier: 22.20.1
-        version: 22.20.1
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@types/node@22.20.1)(vite@8.1.5(@types/node@22.20.1)(jiti@2.7.0))
@@ -711,9 +699,6 @@ importers:
       '@playwright/test':
         specifier: 1.62.0
         version: 1.62.0
-      '@template/composition':
-        specifier: workspace:*
-        version: link:../composition
       '@template/shared':
         specifier: workspace:*
         version: link:../shared

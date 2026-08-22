@@ -17,22 +17,33 @@ export const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
  * A `*` in an area makes every directory under it a compartment of its own, so a relative import
  * from `modules/admin` into `modules/auth` is a violation even though both match the same rule.
  *
- * `composition` holds the widest permission in the repository, affordable only while it contains
- * nothing but the order of calls: the day it decides something, this line is the hole it decides
- * through.
+ * An area is usually a directory; `index.ts` is one file, and deliberately. It is the program's
+ * entry, and it holds the widest permission in the repository — affordable only while it contains
+ * nothing but the order of calls, because the day it decides something, this line is the hole the
+ * decision is made through. Naming the file rather than the root keeps the last rule closed: `.` is
+ * also what anything unmatched falls back to, so widening it would hand the same permission to a
+ * directory nobody has written a rule for yet.
  */
 export const EVERY_PACKAGE = '*';
 
+/**
+ * The program's entry, as the rules and the checks refer to it — and its test beside it, because a
+ * test and the file it tests have to be one compartment: the rule below also refuses a relative
+ * import that leaves one.
+ */
+export const ENTRY_FILE = 'index.ts';
+export const ENTRY_FILES = [ENTRY_FILE, 'index.test.ts'];
+
 export const AREA_RULES = [
-  { area: 'composition', mayUse: EVERY_PACKAGE },
+  { area: ENTRY_FILE, files: ENTRY_FILES, mayUse: EVERY_PACKAGE },
   { area: 'shared', mayUse: [] },
   { area: 'modules/*', mayUse: ['@template/shared'], neighbourSubpath: true },
   /*
-   * The suite imports no module. It reaches for `shared`, and for the composer in one place: asking
-   * PostgreSQL which databases exist needs the names, and deriving them is the composer's. Allowed
-   * because the composer is not a module — importing it borrows a name, not somebody's data.
+   * The suite imports no module, and no longer the entry either: asking PostgreSQL which databases
+   * exist needs their names, and it derives them from `PROJECT_SLUG` itself. That is the better test
+   * anyway — importing the derivation would compare the code with itself.
    */
-  { area: 'tests', mayUse: ['@template/shared', '@template/composition'] },
+  { area: 'tests', mayUse: ['@template/shared'] },
   { area: 'scripts', mayUse: [] },
   { area: '.', mayUse: [] },
 ];
@@ -59,35 +70,59 @@ export function describeAllowance(rule) {
 }
 
 /**
- * Packages that open a door out of the process. Written out one by one because this is not a class a
- * check can recognise, and a mail client added tomorrow would have to be added by hand. `@types/pg` is
- * absent: types are erased at build time and open nothing.
+ * Packages that open a door out of the process, and who may hold each one.
+ *
+ * Written out one by one because this is not a class a check can recognise — a mail client added
+ * tomorrow would have to be added by hand — and per package rather than as one list of homes, because
+ * the two doors here are not the same door: a database driver and a server that opens a port have
+ * nothing to do with each other, and a shared list would let whoever needs one hold the other.
+ *
+ * `pg`: it used to be `shared` alone, and the rule said what it meant — nothing but `shared` talks to
+ * a database, and a module is handed a pool. A module now opens its own, so the driver is its
+ * dependency too. What that costs is worth stating: the check no longer says "only one package talks
+ * to the database", it says "only a package that owns a database, or checks one, does". `app`, `site`
+ * and `gateway` are still refused, and a new module that needs the driver has to be added here —
+ * which is the moment to ask whether it really owns a database of its own. `tests` is here for the
+ * one acceptance check that asks PostgreSQL directly which databases exist.
+ *
+ * `@hono/node-server`: this is what opens the port, and the process has one. It lived in `shared`
+ * until 19 August, where every module could import it and open a port of its own with nothing to
+ * refuse them; it then moved into the composer's manifest, which was a package, so a module reaching
+ * for it had to declare it. The composer is a file at the root now, and the root's `node_modules` is
+ * on every package's lookup path — so without this line the door would be open again, and silently.
+ *
+ * `modules/site` is on that list for a different reason and does not open anything: it serves the
+ * built pages, and static file serving comes from the `/serve-static` subpath. A manifest cannot say
+ * "only this subpath", so this half is the wider one — `check-boundaries.mjs` holds the other half
+ * and refuses the bare specifier, the one that exports `serve`, anywhere but the entry.
+ *
+ * `@types/pg` is absent: types are erased at build time and open nothing.
  */
-export const OUTSIDE_PROCESS_PACKAGES = ['pg'];
+export const OUTSIDE_PROCESS_PACKAGES = {
+  pg: [
+    'shared',
+    'tests',
+    'modules/admin',
+    'modules/auth',
+    'modules/email',
+    'modules/notifications',
+    'modules/users',
+  ],
+  '@hono/node-server': [ENTRY_FILE, 'modules/site'],
+};
 
 /**
- * Who may declare one, as repository-relative directories.
- *
- * It used to be `shared` alone, and the rule said what it meant: nothing but `shared` talks to a
- * database, and a module is handed a pool. A module now opens its own — it decides how many
- * connections it wants and when — so the driver is its dependency too, and the list grew from one to
- * six.
- *
- * What that costs is worth stating: the check no longer says "only one package talks to the database",
- * it says "only a package that owns a database, or checks one, does". `app`, `site` and `gateway` are
- * still refused, and a new module that needs the driver has to be added here — which is the moment to
- * ask whether it really owns a database of its own. `tests` is here for the one acceptance check that
- * asks PostgreSQL directly which databases exist.
+ * The import that opens a port, and the only compartment allowed to write it. The subpath imports of
+ * the same package — `@hono/node-server/serve-static` — cannot open one and are governed by the
+ * manifest rule above.
  */
-export const OUTSIDE_PROCESS_HOMES = [
-  'shared',
-  'tests',
-  'modules/admin',
-  'modules/auth',
-  'modules/email',
-  'modules/notifications',
-  'modules/users',
-];
+export const PORT_OPENING_IMPORT = '@hono/node-server';
+export const PORT_OPENING_HOMES = [ENTRY_FILE];
+
+/** Where a package that opens a door out of the process may be held, or an empty list. */
+export function outsideProcessHomes(packageName) {
+  return OUTSIDE_PROCESS_PACKAGES[packageName] ?? [];
+}
 
 /**
  * The compartment a repository-relative path belongs to, with the rule that governs it. `dir` is
@@ -97,6 +132,9 @@ export function compartmentOf(relative) {
   const segments = relative.split('/');
 
   for (const rule of AREA_RULES) {
+    // A rule may name files instead of a directory; then the compartment is those files together.
+    if (rule.files?.includes(relative)) return { rule, dir: rule.area };
+
     if (rule.area === '.') continue;
     const areaSegments = rule.area.split('/');
     const matches = areaSegments.every((segment, index) =>

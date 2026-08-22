@@ -3,7 +3,7 @@
 The entry for traffic. The composer mounts Gateway, and only Gateway, on the public listener, so
 every request from outside reaches it before it reaches anything else.
 
-It is not the entry of the *program* — that is `composition/`, which starts first and builds
+It is not the entry of the *program* — that is the root `index.ts`, which starts first and builds
 everything — and it stays a module rather than becoming the composer. The composer has to know every
 module; Gateway holds the access policy. Together they would be the widest permission in the
 repository handed to the narrowest job.

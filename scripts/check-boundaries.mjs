@@ -4,7 +4,7 @@
  * `workspace-rules.mjs`, and the walk covers the whole repository, so `shared/` reaching into a
  * module is caught by the same rule as the reverse.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import ts from 'typescript';
@@ -13,6 +13,8 @@ import {
   allows,
   compartmentOf,
   describeAllowance,
+  PORT_OPENING_HOMES,
+  PORT_OPENING_IMPORT,
   repoRoot,
   workspacePackages,
 } from './workspace-rules.mjs';
@@ -96,6 +98,24 @@ function repoRelative(file) {
   return path.relative(repoRoot, file).split(path.sep).join('/');
 }
 
+/**
+ * The source file a relative specifier names.
+ *
+ * Under NodeNext a specifier says `./index.js` and the file on disk is `index.ts`. That only matters
+ * where a compartment is a single file — the entry is one — because there the difference between
+ * `index.js` and `index.ts` is the difference between "the same compartment" and "the root".
+ */
+function sourceOf(relative) {
+  const compiled = /\.(js|mjs|cjs)$/.exec(relative);
+  if (!compiled) return relative;
+
+  for (const extension of ['ts', 'tsx', 'mts', 'cts']) {
+    const candidate = relative.replace(/\.(js|mjs|cjs)$/, `.${extension}`);
+    if (existsSync(path.join(repoRoot, candidate))) return candidate;
+  }
+  return relative;
+}
+
 /** The workspace package a bare specifier names, or null for a third-party or node: import. */
 function workspacePackageOf(specifier) {
   const scoped = /^(@[^/]+\/[^/]+)/.exec(specifier);
@@ -111,6 +131,7 @@ const unbuiltDoors = [];
 const browserProblems = [];
 const driverProblems = [];
 const unguardedDatabases = [];
+const listenerProblems = [];
 
 function inspect(file) {
   const relative = repoRelative(file);
@@ -139,7 +160,7 @@ function inspect(file) {
 
     if (!specifier.startsWith('.')) return;
 
-    const resolved = repoRelative(path.resolve(path.dirname(file), specifier));
+    const resolved = sourceOf(repoRelative(path.resolve(path.dirname(file), specifier)));
     if (resolved.startsWith('..')) return;
 
     const there = compartmentOf(resolved);
@@ -188,6 +209,20 @@ function inspect(file) {
   if (DOOR_FILE.test(relative)) {
     inspectDoor(relative, source, at);
     inspectDoorEmit(relative);
+  }
+
+  /*
+   * The port is the program's, not a module's. The manifest rule cannot say this on its own — it
+   * cannot distinguish `@hono/node-server` from `@hono/node-server/serve-static`, and the site needs
+   * the second one — so the exact specifier is refused here instead.
+   */
+  if (!PORT_OPENING_HOMES.includes(dir)) {
+    for (const statement of source.statements) {
+      const specifier = ts.isImportDeclaration(statement) ? literalOf(statement.moduleSpecifier) : null;
+      if (specifier === PORT_OPENING_IMPORT) {
+        listenerProblems.push(`${at(statement)} imports "${specifier}" in ${dir}`);
+      }
+    }
   }
 
   if (rule.area === 'modules/*' && !/\.test\.tsx?$/.test(relative) && !DATABASE_FILE.test(relative)) {
@@ -339,6 +374,21 @@ if (driverProblems.length > 0) {
   );
 }
 
+if (listenerProblems.length > 0) {
+  const earlier =
+    importProblems.length > 0 ||
+    envProblems.length > 0 ||
+    browserProblems.length > 0 ||
+    driverProblems.length > 0;
+  console.error(`${earlier ? '\n' : ''}Files that could open a port of their own:`);
+  for (const problem of listenerProblems) console.error(`- ${problem}`);
+  console.error(
+    `\nOnly ${PORT_OPENING_HOMES.join(', ')} may import ${PORT_OPENING_IMPORT}: the process has one ` +
+      'listener, and everything reachable from outside passes Gateway because that listener is the ' +
+      'only one. The `/serve-static` subpath opens nothing and is not this rule.',
+  );
+}
+
 if (unguardedDatabases.length > 0) {
   console.error(`\nModule databases opened without checking which one answered:`);
   for (const file of unguardedDatabases) console.error(`- ${file}`);
@@ -365,6 +415,7 @@ const earlierProblem = () =>
   doorProblems.length > 0 ||
   browserProblems.length > 0 ||
   driverProblems.length > 0 ||
+  listenerProblems.length > 0 ||
   unguardedDatabases.length > 0;
 
 if (emitProblems.length > 0) {

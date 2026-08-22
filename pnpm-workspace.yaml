@@ -1,5 +1,4 @@
 packages:
-  - composition
   - shared
   - modules/*
   - tests

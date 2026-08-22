@@ -61,8 +61,9 @@ over a real network, is gone.
 
 After this move the words are close enough to be worth separating:
 
-- the **entry of the program** is `composition/`. It starts first, reads the environment, builds
-  every module, hands each its own environment and a way to reach its neighbours, and listens;
+- the **entry of the program** is [`index.ts`](../index.ts) at the root. It starts first, reads the
+  environment, builds every module, hands each its own environment and a way to reach its neighbours,
+  and listens;
 - the **entry for traffic** is Gateway. The composer mounts it, and only it, on the public listener,
   so every request from outside reaches Gateway before it reaches anything else.
 

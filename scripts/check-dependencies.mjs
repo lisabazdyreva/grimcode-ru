@@ -7,6 +7,12 @@
  * driver can open a connection, whether or not it does today. The five modules that own a database
  * may; `app`, `site`, `gateway` and `tests` may not, and that is what this refuses.
  *
+ * The root manifest is read along with the packages, and it matters more than it looks: the root's
+ * `node_modules` is on every package's lookup path, so a dependency declared there is resolvable from
+ * every file in the repository. It is governed by the entry's rule — the entry is what the root
+ * manifest exists for — which is why it may declare every module and why `pg` there is still a
+ * problem.
+ *
  * Every dependency section is read, not just `dependencies` — a rule that reads one section is
  * obeyed by moving a line into another. And only the two rules below: a check that goes red on
  * honest code teaches whoever meets it to loosen the rule instead of describing the exception.
@@ -18,8 +24,8 @@ import {
   allows,
   compartmentOf,
   describeAllowance,
-  OUTSIDE_PROCESS_HOMES,
-  OUTSIDE_PROCESS_PACKAGES,
+  ENTRY_FILE,
+  outsideProcessHomes,
   repoRoot,
   workspacePackages,
 } from './workspace-rules.mjs';
@@ -61,7 +67,13 @@ const problems = [];
 const packages = workspacePackages();
 const workspaceNames = new Set(packages.map((entry) => entry.name));
 
-for (const { name, dir, manifest } of packages) {
+const rootManifest = {
+  name: 'the root manifest',
+  dir: ENTRY_FILE,
+  manifest: JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')),
+};
+
+for (const { name, dir, manifest } of [...packages, rootManifest]) {
   const { rule } = compartmentOf(dir);
 
   for (const section of SECTIONS) {
@@ -80,11 +92,11 @@ for (const { name, dir, manifest } of packages) {
         );
       }
 
-      if (OUTSIDE_PROCESS_PACKAGES.includes(dependency) && !OUTSIDE_PROCESS_HOMES.includes(dir)) {
+      const homes = outsideProcessHomes(dependency);
+      if (homes.length > 0 && !homes.includes(dir)) {
         problems.push(
-          `${dir} declares "${dependency}" in ${section}; the database driver belongs to a package ` +
-            `that owns a database — ${OUTSIDE_PROCESS_HOMES.join(', ')} — and everything else is ` +
-            'handed what it may use',
+          `${dir} declares "${dependency}" in ${section}; that package opens a door out of the ` +
+            `process and belongs to ${homes.join(', ')} — everything else is handed what it may use`,
         );
       }
     }
@@ -145,6 +157,6 @@ if (problems.length > 0) {
 }
 
 console.log(
-  `Dependency check passed (${packages.length} packages, ${npmrcs.length} .npmrc ` +
-    `file${npmrcs.length === 1 ? '' : 's'}).`,
+  `Dependency check passed (${packages.length} packages and the root manifest, ${npmrcs.length} ` +
+    `.npmrc file${npmrcs.length === 1 ? '' : 's'}).`,
 );

@@ -1,4 +1,3 @@
-import { maintenanceDatabaseUrl, serviceDatabaseName } from '@template/composition';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -325,9 +324,22 @@ describe('a database per module', () => {
     await owner.call(USERS, 'getOwnProfile', {});
     await owner.rpc(ADMIN, 'listAdministrators', {});
 
-    const pool = new pg.Pool({ connectionString: maintenanceDatabaseUrl(), max: 1 });
+    /*
+     * The names are spelled out here rather than imported from the program that builds them. That is
+     * the point of the check: importing the derivation would compare the code with itself, and what
+     * is being verified is the rule — one database per module, named `<slug>_<module>`.
+     */
+    const slug = process.env.PROJECT_SLUG;
+    if (!slug) throw new Error('PROJECT_SLUG is not set, so the database names cannot be known');
+
+    const pool = new pg.Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 1,
+    });
     try {
-      const names = ['admin', 'auth', 'email', 'notifications', 'users'].map(serviceDatabaseName);
+      const names = ['admin', 'auth', 'email', 'notifications', 'users'].map(
+        (module) => `${slug}_${module}`,
+      );
       expect(new Set(names).size).toBe(names.length);
 
       const { rows } = await pool.query<{ datname: string }>(
