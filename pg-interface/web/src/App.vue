@@ -18,6 +18,7 @@ import {
 } from './api';
 import FilterPanel from './components/FilterPanel.vue';
 import RowDialog from './components/RowDialog.vue';
+import ValueDialog from './components/ValueDialog.vue';
 import { CELL_LIMIT, cellText, rowCountLabel, shortType } from './labels';
 import { emptyView, PAGE_SIZES, readHash, writeHash, type View } from './view';
 
@@ -31,6 +32,16 @@ const loadingRows = ref(false);
 const saving = ref(false);
 const editing = ref<Record<string, unknown> | null>(null);
 const filtersOpen = ref(false);
+
+/** The one cell a person clicked, shown in full. Null when nothing is open. */
+const peeking = ref<{ column: Column; value: unknown } | null>(null);
+
+/** A cell with nothing in it has nothing to show, so it does not pretend to be clickable. */
+function peek(column: Column, row: Record<string, unknown>): void {
+  const value = row[column.name];
+  if (value === null || value === undefined || value === '') return;
+  peeking.value = { column, value };
+}
 
 const table = computed(() =>
   tables.value.find((entry) => entry.schema === view.value.schema && entry.name === view.value.table),
@@ -338,10 +349,16 @@ onMounted(async () => {
             </template>
 
             <template #default="{ row }">
-              <span v-if="row[column.name] === null" class="cell-null">null</span>
-              <span v-else class="cell" :title="cellText(row[column.name]).slice(0, CELL_LIMIT)">
+              <span v-if="row[column.name] === null" class="value-cell value-cell_null">null</span>
+              <button
+                v-else
+                type="button"
+                class="value-cell"
+                title="Показать значение целиком"
+                @click="peek(column, row)"
+              >
                 {{ cellText(row[column.name]).slice(0, CELL_LIMIT) }}
-              </span>
+              </button>
             </template>
           </el-table-column>
 
@@ -403,6 +420,12 @@ onMounted(async () => {
     </el-main>
     </el-container>
   </el-config-provider>
+
+  <ValueDialog
+    :column="peeking?.column ?? null"
+    :value="peeking?.value"
+    @close="peeking = null"
+  />
 
   <RowDialog
     :open="editing !== null"
@@ -520,18 +543,39 @@ onMounted(async () => {
 
 /*
  * One line per cell, cut with an ellipsis. A hash or a long text otherwise makes one row as tall as
- * the screen, and a table where a row is a screen is not a table; the whole value is in the row's own
- * dialog, and the title attribute shows it on hover.
+ * the screen, and a table where a row is a screen is not a table.
+ *
+ * It is a button because the cut is not the end of the story: clicking shows the whole value. A `title`
+ * would only hold a little of it and cannot be selected or copied.
  */
-.cell {
+.value-cell {
   display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
 
-.cell-null {
+.value-cell:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+
+.value-cell_null {
   color: var(--el-text-color-placeholder);
+  cursor: default;
+}
+
+.value-cell_null:hover {
+  text-decoration: none;
 }
 
 .foot {

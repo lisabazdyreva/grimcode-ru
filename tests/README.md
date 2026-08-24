@@ -94,7 +94,7 @@ one fixture template rather than a hundred.
 pnpm test:browser
 ```
 
-Twenty-nine checks in Chromium, for the questions an HTTP request cannot answer. Ten of them also
+Thirty checks in Chromium, for the questions an HTTP request cannot answer. Ten of them also
 fail on any console error or uncaught exception, so a bundle that renders but throws does not pass. It
 is asked for per check, with `collectPageErrors`, and which ones ask is a choice rather than a rule.
 
@@ -106,9 +106,9 @@ the shell sending its old path back — the failure this protocol exists to avoi
 straight into the embedded admin, and the same protected URL works on its own.
 
 **The database section** — [`database.spec.ts`](browser/database.spec.ts). The screen reads the
-catalogue of a live database, sorts through a column's own menu and keeps the view in its URL, shows a
-two-column key as that table's key, and follows the theme the panel sends it — the one contract between
-a React shell and a frame that is not React.
+catalogue of a live database, sorts through a column's own menu and keeps the view in its URL, opens a
+cut cell in full when it is clicked, shows a two-column key as that table's key, and follows the theme
+the panel sends it — the one contract between a React shell and a frame that is not React.
 
 **The email admin** — [`email-admin.spec.ts`](browser/email-admin.spec.ts). Templates list, the
 editor opens on its own route and runs, a delivery shows its stored message as a preview and as

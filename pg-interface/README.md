@@ -92,7 +92,9 @@ static-file helper either. Two details are load-bearing:
   one side renamed it.
 
 What the screen shows: the databases it was handed, the tables of one of them with the key and how many
-rows each holds, and a page of rows. Per column: sort, filter, hide. Filters offer the conditions the server
+rows each holds, and a page of rows. A cell shows one line of its value and **opens the whole of it when
+clicked** — a hash, a uuid or a json document does not fit a line, and a tooltip cannot be selected or
+copied. json opens indented, with the stored form one button away. Per column: sort, filter, hide. Filters offer the conditions the server
 said that column takes, joined with "and" or "or". A row opens in a dialog, where the key is read-only
 and everything else is editable; only what actually changed is sent.
 

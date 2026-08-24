@@ -70,6 +70,29 @@ test.describe('the database section', () => {
   });
 
   /**
+   * A table shows a line of a value, and a hash or a json document is longer than the line. Clicking
+   * the cell is how the rest of it is seen — and the check is that what opens is the whole value, not
+   * the truncated text the cell was showing.
+   */
+  test('shows a cut value in full when the cell is clicked', async ({ page }) => {
+    const frame = await openDatabaseSection(page);
+
+    await chooseDatabase(page, frame, /_auth$/);
+    await frame.locator('.shell-table-name').filter({ hasText: 'identities' }).click();
+    await expect(frame.locator('.el-table__row').first()).toBeVisible({ timeout: 20_000 });
+
+    const cell = frame.locator('.el-table__row .value-cell').first();
+    const shown = ((await cell.textContent()) ?? '').trim();
+    await cell.click();
+
+    const full = frame.locator('.value-dialog textarea');
+    await expect(full).toBeVisible();
+    await expect(full).toHaveValue(shown);
+    // The name of the column it came from, so a value out of context is still identifiable.
+    await expect(frame.locator('.value-dialog .head-name')).toHaveText('id');
+  });
+
+  /**
    * A table whose key is two columns is the case a screen gets wrong: addressing a row by `id` would
    * either fail or, worse, match several rows. This one exists in the admin database.
    */
