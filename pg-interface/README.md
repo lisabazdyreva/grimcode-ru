@@ -111,6 +111,17 @@ copied. json opens indented, with the stored form one button away. Per column: s
 said that column takes, joined with "and" or "or". A row opens in a dialog, where the key is read-only
 and everything else is editable; only what actually changed is sent.
 
+**A filter is asked only once it can be answered.** A condition appears with nothing typed in it, and
+an empty value means "not finished", not "match the empty string" — sending it anyway made PostgreSQL
+answer `invalid input syntax for type uuid: ""` for the act of adding a row to a form. The count on the
+button is of filters actually being asked, so a half-filled one is visibly not one of them. Conditions
+that ask about presence (`is-empty`, `is-not-empty`) need no value and are asked at once.
+
+**A value the column cannot hold answers 400, not 500.** PostgreSQL error classes 22 and 23 — a value
+the type refuses, a constraint the row breaks — are answers to what the request carried, so they read as
+a refusal; the message is shown, because it names the type and not the row. Anything else is this side
+failing and stays a 500.
+
 **Named views are deliberately absent.** The interface this one is modelled on stores them on its
 server; ours has nowhere to store them, because it creates no table of its own — so the current view
 lives in the URL hash instead, which is what made named views worth having: a link somebody can send.

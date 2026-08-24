@@ -17,6 +17,20 @@ export const CONDITION_LABELS: Record<string, string> = {
 /** Conditions that ask about presence, so the value field is hidden for them. */
 export const WITHOUT_VALUE = new Set(['is-empty', 'is-not-empty']);
 
+/**
+ * Whether a filter can be asked yet.
+ *
+ * A filter appears the moment a condition is added, with nothing typed in it — and an empty value is not
+ * "match the empty string", it is "the person has not finished". Sending it anyway is what produced
+ * `invalid input syntax for type uuid: ""` from PostgreSQL for the act of adding a row to a form. Not
+ * trimmed: a single space is a value a text column can hold.
+ */
+export function isFilterReady(filter: { column: string; condition: string; value?: unknown }): boolean {
+  if (filter.column === '') return false;
+  if (WITHOUT_VALUE.has(filter.condition)) return true;
+  return filter.value !== undefined && filter.value !== null && String(filter.value) !== '';
+}
+
 /** A cell as text: short enough to read in a row, and never a broken `[object Object]`. */
 export function cellText(value: unknown): string {
   if (value === null || value === undefined) return '';

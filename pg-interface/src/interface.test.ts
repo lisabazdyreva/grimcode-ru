@@ -65,6 +65,12 @@ const ESTIMATES: Record<string, string> = {
   auth_audit: '-1',
 };
 
+/** A value no uuid column can hold, which the fake pool refuses the way PostgreSQL would. */
+const UNHOLDABLE = 'нет';
+
+/** A value that makes the fake pool fail the way an unreachable database does: no code of its own. */
+const UNREACHABLE = 'обрыв';
+
 /** What counting returns for each table, once the estimate has sent it to be counted. */
 const COUNTS: Record<string, string> = {
   sessions: '3',
@@ -226,6 +232,15 @@ function fakePool(tables: Table[]): Queryable & { asked: { text: string; values:
         return { rows: [{ total: COUNTS[named ?? ''] ?? '3' }] as Row[], rowCount: 1 };
       }
       if (text.includes('count(*)')) return { rows: [{ total: '7' }] as Row[], rowCount: 1 };
+
+      // What PostgreSQL does with a value the column cannot hold: refuses, with a code in class 22.
+      if (values.includes(UNHOLDABLE)) {
+        throw Object.assign(new Error('invalid input syntax for type uuid: "нет"'), { code: '22P02' });
+      }
+      // And what a database that is simply not there does, which is not the caller's fault at all.
+      if (values.includes(UNREACHABLE)) {
+        throw Object.assign(new Error('connection terminated unexpectedly'), { code: 'ECONNRESET' });
+      }
       if (text.startsWith('SELECT')) return { rows: [{ id: 'u-1' }] as Row[], rowCount: 1 };
 
       return { rows: [] as Row[], rowCount: 1 };
@@ -354,6 +369,52 @@ describe('the API', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ updated: 1 });
     expect(pool.asked.at(-1)?.text).toMatch(/^UPDATE/);
+  });
+
+  /**
+   * A value the column cannot hold is the caller's mistake, so it reads as a refusal rather than as
+   * this interface breaking. It used to answer 500, which on screen looked like the section was broken —
+   * and the filter panel produced one the moment it opened on a uuid column.
+   */
+  it('answers a value the column cannot hold as a refusal, not a failure', async () => {
+    const { api, logged } = build();
+    const response = await api.fetch(
+      post(
+        '/api/databases/demo_auth/rows',
+        {
+          schema: 'public',
+          table: 'identities',
+          filters: [{ column: 'id', condition: 'is', value: UNHOLDABLE }],
+        },
+        marked,
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'refused' });
+
+    // The code says what happened; the value that caused it is not written down.
+    expect(logged.join(' ')).toContain('22P02');
+    expect(logged.join(' ')).not.toContain(UNHOLDABLE);
+  });
+
+  /** The other side of the same fork: a database that is not answering is still this side's failure. */
+  it('still answers a database that fails as a failure', async () => {
+    const { api } = build();
+    const response = await api.fetch(
+      post(
+        '/api/databases/demo_auth/rows',
+        {
+          schema: 'public',
+          table: 'identities',
+          filters: [{ column: 'id', condition: 'is', value: UNREACHABLE }],
+        },
+        marked,
+      ),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ error: 'database-failed' });
   });
 
   it('refuses a table the database does not have', async () => {

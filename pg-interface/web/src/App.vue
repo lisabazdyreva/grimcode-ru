@@ -19,7 +19,7 @@ import {
 import FilterPanel from './components/FilterPanel.vue';
 import RowDialog from './components/RowDialog.vue';
 import ValueDialog from './components/ValueDialog.vue';
-import { CELL_LIMIT, cellText, rowCountLabel, shortType } from './labels';
+import { CELL_LIMIT, cellText, isFilterReady, rowCountLabel, shortType } from './labels';
 import { emptyView, PAGE_SIZES, readHash, writeHash, type View } from './view';
 
 const databases = ref<string[]>([]);
@@ -55,6 +55,9 @@ const shown = computed<Column[]>(() => {
 });
 
 const sortOf = (column: string) => view.value.order.find((entry) => entry.column === column);
+
+/** Filters that are actually narrowing the page — a half-filled one is not counted, because it is not asked. */
+const asked = computed(() => view.value.filters.filter(isFilterReady).length);
 
 function report(error: unknown): void {
   const message = error instanceof ApiError ? error.message : String(error);
@@ -97,7 +100,7 @@ async function load(): Promise<void> {
     page.value = await readRows(view.value.database, {
       schema: view.value.schema,
       table: view.value.table,
-      filters: view.value.filters.filter((filter) => filter.column !== ''),
+      filters: view.value.filters.filter(isFilterReady),
       combine: view.value.combine,
       order: view.value.order,
       limit: view.value.size,
@@ -292,8 +295,8 @@ onMounted(async () => {
 
           <el-popover v-model:visible="filtersOpen" trigger="click" placement="bottom-start" width="auto">
             <template #reference>
-              <el-button size="small">
-                Фильтры<span v-if="view.filters.length > 0"> · {{ view.filters.length }}</span>
+              <el-button size="small" class="filters-button">
+                Фильтры<span v-if="asked > 0"> · {{ asked }}</span>
               </el-button>
             </template>
             <FilterPanel

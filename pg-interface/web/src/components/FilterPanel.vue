@@ -109,7 +109,7 @@ function change(index: number, patch: Partial<Filter>): void {
       <el-button size="small" text @click="remove(index)">убрать</el-button>
     </div>
 
-    <el-button size="small" @click="add">Добавить условие</el-button>
+    <el-button size="small" class="filters-add" @click="add">Добавить условие</el-button>
   </div>
 </template>
 

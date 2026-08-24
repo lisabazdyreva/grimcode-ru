@@ -93,6 +93,42 @@ test.describe('the database section', () => {
   });
 
   /**
+   * A filter with nothing typed in it must not be asked. Adding a condition is what sends the view to
+   * the server, and the new filter starts empty — so an empty value went to a uuid column and PostgreSQL
+   * answered `invalid input syntax for type uuid: ""`. An error message for doing nothing but adding a
+   * row to a form. The count on the button says how many filters are really being asked, which is how a
+   * half-filled one is visibly not one of them.
+   */
+  test('adds an empty filter without asking anything yet', async ({ page }) => {
+    const problems = collectPageErrors(page);
+    const frame = await openDatabaseSection(page);
+
+    await chooseDatabase(page, frame, /_auth$/);
+    await frame.locator('.shell-table-name').filter({ hasText: 'identities' }).click();
+    await expect(frame.locator('.el-table__row').first()).toBeVisible({ timeout: 20_000 });
+
+    await frame.locator('.filters-button').click();
+    await frame.locator('.filters-add').click();
+
+    // The filter is in the panel, the rows are still there, and nothing was refused.
+    await expect(frame.locator('.filters-row')).toHaveCount(1);
+    await expect(frame.locator('.el-table__row').first()).toBeVisible();
+    await expect(frame.locator('.el-message--error')).toHaveCount(0);
+    await expect(frame.locator('.filters-button')).toHaveText('Фильтры');
+
+    // Filling it in does ask, and the count then says one. The column is switched to a text one first:
+    // a filter starts on the first column, which here is a uuid, and `probe` is not a uuid.
+    await frame.locator('.filters-column').click();
+    await frame.locator('.el-select-dropdown__item:visible').filter({ hasText: 'email' }).first().click();
+    await frame.locator('.filters-value input').fill('probe');
+
+    await expect(frame.locator('.filters-button')).toHaveText('Фильтры · 1');
+    await expect(frame.locator('.el-message--error')).toHaveCount(0);
+
+    expectNoPageErrors(problems);
+  });
+
+  /**
    * A table whose key is two columns is the case a screen gets wrong: addressing a row by `id` would
    * either fail or, worse, match several rows. This one exists in the admin database.
    */

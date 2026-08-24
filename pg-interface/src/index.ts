@@ -62,6 +62,21 @@ const JSON_HEADERS = {
   'cache-control': 'no-store',
 } as const;
 
+/**
+ * The two classes of PostgreSQL error code that mean "your value", not "our database".
+ *
+ * `22` is a data exception — `invalid input syntax for type uuid`, a number out of range, a bad date.
+ * `23` is a constraint the row would break — not-null, unique, a foreign key. Both are answers to what
+ * the request carried, so they belong in a 4xx; everything else is this side failing and stays a 500.
+ */
+const INPUT_CLASSES = new Set(['22', '23']);
+
+/** The `code` PostgreSQL puts on its errors, or an empty string when the error is not one of its. */
+function pgCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : '';
+}
+
 export function createDatabaseInterface(options: DatabaseInterfaceOptions): DatabaseInterface {
   const log: PoolLog = options.log ?? (() => undefined);
   const pools = createPools(options.databases, log, options.connect);
@@ -212,11 +227,26 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         }
 
         /*
-         * Anything else is PostgreSQL refusing, or being unreachable. Its message says what went
-         * wrong — a column that does not exist any more, a value of the wrong type — and it does not
-         * carry the row, so it is safe both to log and to show.
+         * Anything else is PostgreSQL, and its message says what went wrong — a column that does not
+         * exist any more, a value of the wrong type. It does not carry the row, so it is safe to show.
+         * What it does not say is whose fault it is, and that decides the status.
          */
         const message = error instanceof Error ? error.message : String(error);
+        const code = pgCode(error);
+
+        /*
+         * A value the request carried, refused by the column that would hold it, is the caller's
+         * mistake and not a failure here: `1abc` in a filter on a uuid column answered 500 and read as
+         * "the interface is broken". Classes 22 and 23 are exactly that case — a value the type cannot
+         * take, and a value the table's own constraints reject.
+         */
+        if (INPUT_CLASSES.has(code.slice(0, 2))) {
+          log({ level: 'info', message: `database refused the request: ${code}` });
+          return json({ error: 'refused', message }, 400);
+        }
+
+        // Everything left is this side failing: unreachable, out of connections, a broken pool.
+
         log({ level: 'error', message: `request failed: ${message}` });
         return json({ error: 'database-failed', message }, 500);
       }
