@@ -2,10 +2,12 @@
 import { computed, ref, watch } from 'vue';
 
 import type { Column } from '../api';
-import { cellText } from '../labels';
+import { cellText, shortType } from '../labels';
 
 const props = defineProps<{
   open: boolean;
+  schema: string;
+  table: string;
   columns: Column[];
   primaryKey: string[];
   row: Record<string, unknown> | null;
@@ -19,7 +21,6 @@ const emit = defineEmits<{
 
 /** What is being typed, as text. Converted back on save, so an empty field can mean null. */
 const draft = ref<Record<string, string>>({});
-const cleared = ref<Set<string>>(new Set());
 
 watch(
   () => props.row,
@@ -27,30 +28,36 @@ watch(
     draft.value = Object.fromEntries(
       props.columns.map((column) => [column.name, cellText(row?.[column.name])]),
     );
-    cleared.value = new Set();
   },
   { immediate: true },
 );
 
-const editable = computed(() => props.columns.filter((column) => !props.primaryKey.includes(column.name)));
 const keyColumns = computed(() => props.columns.filter((column) => props.primaryKey.includes(column.name)));
+const editable = computed(() => props.columns.filter((column) => !props.primaryKey.includes(column.name)));
 
 /**
- * Only what changed is sent.
+ * Which columns get a box to write in and which get a line.
  *
- * Sending every column would overwrite a value somebody else changed while this dialog was open, and
- * would also mean sending a timestamp back as text it may not parse to.
+ * Every field used to be a growing textarea, which gave a uuid the same tall box with a resize corner
+ * as a template body — and made a form of eight short values look like a wall. A line is the default;
+ * a box is for the types that really do hold something long, or for a value that already is.
  */
+const LONG_TYPES = /text|json|xml|bytea/i;
+
+function isLong(column: Column): boolean {
+  return LONG_TYPES.test(column.type) && (draft.value[column.name] ?? '').length > 80;
+}
+
+/** The columns that changed, and nothing else: two people editing one row do not overwrite each other. */
 function save(): void {
   const values: Record<string, unknown> = {};
 
   for (const column of editable.value) {
     const typed = draft.value[column.name] ?? '';
-    const original = cellText(props.row?.[column.name]);
-    if (typed === original) continue;
+    if (typed === cellText(props.row?.[column.name])) continue;
 
-    // An emptied field means null where the column allows it, and an empty string where it does not:
-    // a person clearing a `not null` text column means "make it empty", not "break the row".
+    // An emptied field means null where the column allows it, and an empty string where it does not: a
+    // person clearing a `not null` text column means "make it empty", not "break the row".
     values[column.name] = typed === '' ? (column.nullable ? null : '') : typed;
   }
 
@@ -65,33 +72,126 @@ const changed = computed(() =>
 <template>
   <el-dialog
     :model-value="open"
-    title="Строка"
-    width="46rem"
+    width="40rem"
     :close-on-click-modal="false"
+    class="row-dialog"
     @update:model-value="emit('close')"
   >
-    <el-form label-position="top">
-      <el-form-item v-for="column in keyColumns" :key="column.name" :label="`${column.name} · ключ`">
-        <el-input :model-value="draft[column.name]" disabled />
-      </el-form-item>
+    <template #header>
+      <div class="head">
+        <span class="head-title">Строка</span>
+        <span class="head-where">{{ schema }}.{{ table }}</span>
+      </div>
+    </template>
 
-      <el-form-item
-        v-for="column in editable"
-        :key="column.name"
-        :label="`${column.name} · ${column.type}${column.nullable ? '' : ' · not null'}`"
-      >
+    <section v-if="keyColumns.length > 0" class="block">
+      <h2 class="block-title">Ключ — только чтение</h2>
+      <div class="field" v-for="column in keyColumns" :key="column.name">
+        <div class="field-label">
+          <span class="field-name">{{ column.name }}</span>
+          <span class="field-type" :title="column.type">{{ shortType(column.type) }}</span>
+        </div>
+        <el-input :model-value="draft[column.name]" size="small" disabled />
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="field" v-for="column in editable" :key="column.name">
+        <div class="field-label">
+          <span class="field-name">{{ column.name }}</span>
+          <span class="field-type" :title="column.type">{{ shortType(column.type) }}</span>
+          <span v-if="column.nullable" class="field-hint">пусто = null</span>
+        </div>
         <el-input
           v-model="draft[column.name]"
-          type="textarea"
-          :autosize="{ minRows: 1, maxRows: 8 }"
-          :placeholder="column.nullable ? 'пусто = null' : ''"
+          size="small"
+          :type="isLong(column) ? 'textarea' : 'text'"
+          :autosize="isLong(column) ? { minRows: 3, maxRows: 10 } : undefined"
         />
-      </el-form-item>
-    </el-form>
+      </div>
+    </section>
 
     <template #footer>
-      <el-button @click="emit('close')">Отмена</el-button>
-      <el-button type="primary" :disabled="!changed" :loading="saving" @click="save">Сохранить</el-button>
+      <el-button size="small" @click="emit('close')">Отмена</el-button>
+      <el-button size="small" type="primary" :disabled="!changed" :loading="saving" @click="save">
+        Сохранить
+      </el-button>
     </template>
   </el-dialog>
 </template>
+
+<!--
+  Not scoped: element-plus renders the dialog outside this component's tree, so a scoped rule would
+  never reach its body. A wide table has thirty columns, and without this the dialog grows past the
+  screen and takes its own buttons with it.
+-->
+<style>
+.row-dialog .el-dialog__body {
+  max-height: 62vh;
+  overflow: auto;
+}
+
+.row-dialog .el-dialog__header {
+  margin-right: 0;
+}
+</style>
+
+<style scoped>
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.head-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.head-where {
+  color: var(--el-text-color-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+.block + .block {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.block-title {
+  margin: 0 0 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field + .field {
+  margin-top: 10px;
+}
+
+.field-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.field-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+}
+
+.field-type,
+.field-hint {
+  color: var(--el-text-color-placeholder);
+  font-size: 0.72rem;
+}
+
+.field-hint {
+  margin-left: auto;
+}
+</style>

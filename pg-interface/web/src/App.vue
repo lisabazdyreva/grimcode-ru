@@ -18,7 +18,7 @@ import {
 } from './api';
 import FilterPanel from './components/FilterPanel.vue';
 import RowDialog from './components/RowDialog.vue';
-import { CELL_LIMIT, cellText, rowCountLabel } from './labels';
+import { CELL_LIMIT, cellText, rowCountLabel, shortType } from './labels';
 import { emptyView, PAGE_SIZES, readHash, writeHash, type View } from './view';
 
 const databases = ref<string[]>([]);
@@ -323,7 +323,7 @@ onMounted(async () => {
                   <span v-if="sortOf(column.name)" class="column-sort">
                     {{ sortOf(column.name)?.direction === 'asc' ? '↑' : '↓' }}
                   </span>
-                  <span class="column-type">{{ column.type }}</span>
+                  <span class="column-type" :title="column.type">{{ shortType(column.type) }}</span>
                 </span>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -406,6 +406,8 @@ onMounted(async () => {
 
   <RowDialog
     :open="editing !== null"
+    :schema="view.schema"
+    :table="view.table"
     :columns="page?.columns ?? []"
     :primary-key="page?.primaryKey ?? []"
     :row="editing"

@@ -37,3 +37,31 @@ export function rowCountLabel(rows: { count: number; approximate: boolean }): st
   if (!rows.approximate) return String(rows.count);
   return rows.count === 0 ? '~0' : `~${rows.count}`;
 }
+
+/**
+ * A type name short enough to sit beside a column name.
+ *
+ * `information_schema` spells types out in full — `timestamp with time zone`, `character varying` —
+ * and in a table header that wraps onto three lines and makes every header as tall as the longest
+ * name. These are PostgreSQL's own short forms, the ones `psql \d` prints; the full name stays in the
+ * element's title.
+ */
+const SHORT_TYPES: [RegExp, string][] = [
+  [/^timestamp with time zone$/, 'timestamptz'],
+  [/^timestamp without time zone$/, 'timestamp'],
+  [/^time with time zone$/, 'timetz'],
+  [/^time without time zone$/, 'time'],
+  [/^character varying$/, 'varchar'],
+  [/^character$/, 'char'],
+  [/^double precision$/, 'float8'],
+  [/^boolean$/, 'bool'],
+  [/^integer$/, 'int'],
+  [/^smallint$/, 'int2'],
+  [/^bigint$/, 'int8'],
+  [/^numeric$/, 'numeric'],
+];
+
+export function shortType(type: string): string {
+  for (const [pattern, short] of SHORT_TYPES) if (pattern.test(type)) return short;
+  return type;
+}
