@@ -231,7 +231,10 @@ Notifications and Email have no public surface at all.
 ## Data
 
 One PostgreSQL server, one database per module with state, named `<PROJECT_SLUG>_<module>`. Nothing
-migrates another module's schema, and nothing but a module touches its own.
+migrates another module's schema, and nothing but a module touches its own — with one door, opened
+deliberately: the panel's database section can add a column, and rename or drop a column it added
+itself. It keeps a journal of that in the database it changed, and it will not touch a column a
+migration created. See [`pg-interface`](../pg-interface/README.md).
 
 A module prepares its own storage, on the first request that needs it: create the database if it is
 missing, apply the migrations, check what was opened, keep the pool. There is no deployment step in

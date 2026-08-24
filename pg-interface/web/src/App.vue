@@ -5,11 +5,15 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import russian from 'element-plus/es/locale/lang/ru.mjs';
 
 import {
+  addColumn,
   ApiError,
+  COLUMN_TYPES,
   deleteRow,
+  dropColumn,
   listDatabases,
   listTables,
   readRows,
+  renameColumn,
   updateRow,
   type Column,
   type Filter,
@@ -32,6 +36,10 @@ const loadingRows = ref(false);
 const saving = ref(false);
 const editing = ref<Record<string, unknown> | null>(null);
 const filtersOpen = ref(false);
+
+/** The column being added, while its dialog is open. Null the rest of the time. */
+const adding = ref<{ column: string; type: string } | null>(null);
+const reshaping = ref(false);
 
 /** The one cell a person clicked, shown in full. Null when nothing is open. */
 const peeking = ref<{ column: Column; value: unknown } | null>(null);
@@ -212,6 +220,110 @@ async function remove(row: Record<string, unknown>): Promise<void> {
   }
 }
 
+/**
+ * Changing the shape of a table.
+ *
+ * Adding is offered on every table the server calls reshapable; renaming and dropping only on a column
+ * this interface added, which the server marks with `own`. A name is checked here as well as there —
+ * not as a guard, but so a person sees "letters, digits, underscore" before a request is sent.
+ */
+const NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+async function submitColumn(): Promise<void> {
+  const request = adding.value;
+  if (!request) return;
+
+  reshaping.value = true;
+  try {
+    await addColumn(view.value.database, {
+      schema: view.value.schema,
+      table: view.value.table,
+      column: request.column,
+      type: request.type,
+    });
+
+    adding.value = null;
+    ElMessage({ type: 'success', message: 'Колонка добавлена' });
+    await reshaped();
+  } catch (error) {
+    report(error);
+  } finally {
+    reshaping.value = false;
+  }
+}
+
+async function startRename(column: string): Promise<void> {
+  let to: string;
+  try {
+    const asked = await ElMessageBox.prompt('Новое имя колонки', `Переименовать ${column}`, {
+      confirmButtonText: 'Переименовать',
+      cancelButtonText: 'Отмена',
+      inputValue: column,
+      inputPattern: NAME_PATTERN,
+      inputErrorMessage: 'Латиница, цифры и подчёркивание; начинается с буквы',
+    });
+    to = asked.value;
+  } catch {
+    return;
+  }
+
+  try {
+    await renameColumn(view.value.database, {
+      schema: view.value.schema,
+      table: view.value.table,
+      column,
+      to,
+    });
+    ElMessage({ type: 'success', message: 'Колонка переименована' });
+    await reshaped();
+  } catch (error) {
+    report(error);
+  }
+}
+
+async function removeColumn(column: string): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `Удалить колонку ${column} вместе со всеми её значениями? Это нельзя отменить.`,
+      'Удаление колонки',
+      { confirmButtonText: 'Удалить', cancelButtonText: 'Отмена', type: 'warning' },
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await dropColumn(view.value.database, {
+      schema: view.value.schema,
+      table: view.value.table,
+      column,
+    });
+    ElMessage({ type: 'success', message: 'Колонка удалена' });
+    await reshaped();
+  } catch (error) {
+    report(error);
+  }
+}
+
+/**
+ * After a change of shape both halves of the screen are stale: the table list carries the columns and
+ * their `own` flags, and the open page carries the rows. A hidden or sorted column that no longer
+ * exists is dropped from the view, or the page would ask for a column the table does not have.
+ */
+async function reshaped(): Promise<void> {
+  tables.value = (await listTables(view.value.database)).tables;
+
+  const alive = new Set(table.value?.columns.map((column) => column.name) ?? []);
+  view.value = {
+    ...view.value,
+    columns: view.value.columns.filter((name) => alive.has(name)),
+    order: view.value.order.filter((entry) => alive.has(entry.column)),
+    filters: view.value.filters.filter((filter) => alive.has(filter.column)),
+  };
+
+  await load();
+}
+
 function turnPage(next: number): void {
   view.value = { ...view.value, page: next };
   void load();
@@ -307,6 +419,15 @@ onMounted(async () => {
             />
           </el-popover>
 
+          <el-button
+            v-if="table?.reshapable !== false"
+            size="small"
+            class="add-column-button"
+            @click="adding = { column: '', type: 'text' }"
+          >
+            Добавить колонку
+          </el-button>
+
           <el-button v-if="view.columns.length > 0" size="small" text @click="showAll">
             Показать все колонки
           </el-button>
@@ -346,6 +467,17 @@ onMounted(async () => {
                     </el-dropdown-item>
                     <el-dropdown-item @click="filterBy(column.name)">Фильтровать</el-dropdown-item>
                     <el-dropdown-item divided @click="hide(column.name)">Скрыть колонку</el-dropdown-item>
+                    <!--
+                      Переименовать и удалить можно только колонку, которую добавил сам интерфейс:
+                      остальные принадлежат миграциям модуля, и его код читает их по имени. Сервер
+                      отказывает в любом случае, а меню просто не предлагает того, что будет отказано.
+                    -->
+                    <el-dropdown-item v-if="column.own" divided @click="startRename(column.name)">
+                      Переименовать колонку
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="column.own" @click="removeColumn(column.name)">
+                      Удалить колонку
+                    </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -441,6 +573,48 @@ onMounted(async () => {
     @close="editing = null"
     @save="save"
   />
+
+  <el-dialog
+    :model-value="adding !== null"
+    title="Новая колонка"
+    width="440px"
+    class="add-column-dialog"
+    @update:model-value="adding = null"
+  >
+    <template v-if="adding">
+      <el-form label-position="top">
+        <el-form-item label="Имя">
+          <el-input v-model="adding.column" class="add-column-name" placeholder="например notes" />
+        </el-form-item>
+        <el-form-item label="Тип">
+          <el-select v-model="adding.type" class="add-column-type">
+            <el-option v-for="type in COLUMN_TYPES" :key="type" :value="type" :label="type" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <!--
+        Колонка всегда необязательная, и это не упрощение: код модуля перечисляет колонки в INSERT,
+        поэтому NOT NULL сломал бы следующую вставку. Заполнить существующие строки можно правкой строк.
+      -->
+      <p class="add-column-note">
+        Колонка будет необязательной (может быть пустой) — иначе код модуля не сможет вставлять строки.
+      </p>
+    </template>
+
+    <template #footer>
+      <el-button @click="adding = null">Отмена</el-button>
+      <el-button
+        type="primary"
+        class="add-column-submit"
+        :loading="reshaping"
+        :disabled="!adding?.column"
+        @click="submitColumn"
+      >
+        Добавить
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>

@@ -144,6 +144,75 @@ test.describe('the database section', () => {
   });
 
   /**
+   * Columns from the screen, and the line the screen must not cross.
+   *
+   * A column this interface added can be renamed and dropped; a column of a module's migration cannot,
+   * because the module's code reads it by name. The server refuses either way — what is checked here is
+   * that the menu does not offer what would be refused, and that the added column arrives with the type
+   * it was asked for. The column is dropped again at the end, so the stand is left as it was found.
+   */
+  test('adds a column, offers it what a migration column is not offered, and drops it', async ({
+    page,
+  }) => {
+    const problems = collectPageErrors(page);
+    const frame = await openDatabaseSection(page);
+
+    await chooseDatabase(page, frame, /_admin$/);
+    await frame.locator('.shell-table-name').filter({ hasText: /^administrators$/ }).click();
+    await expect(frame.locator('.el-table__row').first()).toBeVisible({ timeout: 20_000 });
+
+    const column = `probe_${Date.now()}`;
+    await frame.locator('.add-column-button').click();
+    await frame.locator('.add-column-name input').fill(column);
+    await frame.locator('.add-column-submit').click();
+
+    // It arrives in the table, with the type it was given.
+    const head = frame.locator('.column-head').filter({ hasText: new RegExp(`^${column}`) }).first();
+    await expect(head).toBeVisible({ timeout: 20_000 });
+    await expect(head).toContainText('text');
+
+    // Its own column may be renamed and dropped; a migration's column may not.
+    await head.scrollIntoViewIfNeeded();
+    await head.click();
+    await expect(
+      frame.locator('.el-dropdown-menu__item:visible').filter({ hasText: 'Удалить колонку' }),
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await frame.locator('.column-head').filter({ hasText: /^email/ }).first().click();
+    await expect(
+      frame.locator('.el-dropdown-menu__item:visible').filter({ hasText: 'Переименовать колонку' }),
+    ).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    // And back to how the table was: drop it, confirming as a person would.
+    await head.scrollIntoViewIfNeeded();
+    await head.click();
+    await frame
+      .locator('.el-dropdown-menu__item:visible')
+      .filter({ hasText: 'Удалить колонку' })
+      .click();
+    await frame.locator('.el-message-box__btns button').filter({ hasText: 'Удалить' }).click();
+
+    await expect(
+      frame.locator('.column-head').filter({ hasText: new RegExp(`^${column}`) }),
+    ).toHaveCount(0, { timeout: 20_000 });
+
+    expectNoPageErrors(problems);
+  });
+
+  /** The two tables that record what has been applied are not reshapable, and the screen knows it. */
+  test('offers no new column on the tables that record migrations', async ({ page }) => {
+    const frame = await openDatabaseSection(page);
+
+    await chooseDatabase(page, frame, /_admin$/);
+    await frame.locator('.shell-table-name').filter({ hasText: /^schema_migrations$/ }).click();
+    await expect(frame.locator('.column-head').first()).toBeVisible({ timeout: 20_000 });
+
+    await expect(frame.locator('.add-column-button')).toHaveCount(0);
+  });
+
+  /**
    * The theme is the one contract this screen keeps with the panel, and it is not a React component:
    * the panel sends a message, the screen writes the attribute. Nothing else connects the two.
    */

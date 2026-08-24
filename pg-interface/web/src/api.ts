@@ -13,7 +13,28 @@ export interface Column {
   type: string;
   nullable: boolean;
   conditions?: readonly string[];
+  /**
+   * True when this interface added the column itself.
+   *
+   * Only such a column may be renamed or dropped: the rest belong to a module's migrations, and its
+   * code reads them by name. The server decides this from its journal and refuses either way; the flag
+   * exists so the screen does not offer what would be refused.
+   */
+  own?: boolean;
 }
+
+/** The types a new column may be given, as the server's closed list. */
+export const COLUMN_TYPES = [
+  'text',
+  'integer',
+  'bigint',
+  'numeric',
+  'boolean',
+  'timestamptz',
+  'date',
+  'uuid',
+  'jsonb',
+] as const;
 
 export interface RowCount {
   count: number;
@@ -27,6 +48,8 @@ export interface TableInfo {
   primaryKey: string[];
   rows: RowCount;
   columns: Column[];
+  /** False for the tables whose shape belongs to the project: no column may be added to them. */
+  reshapable?: boolean;
 }
 
 export interface Filter {
@@ -117,4 +140,25 @@ export function deleteRow(
   input: { schema: string; table: string; key: Record<string, unknown> },
 ): Promise<{ deleted: number }> {
   return send(`databases/${encodeURIComponent(database)}/rows/delete`, input);
+}
+
+export function addColumn(
+  database: string,
+  input: { schema: string; table: string; column: string; type: string },
+): Promise<{ added: string; version: number }> {
+  return send(`databases/${encodeURIComponent(database)}/columns`, input);
+}
+
+export function renameColumn(
+  database: string,
+  input: { schema: string; table: string; column: string; to: string },
+): Promise<{ renamed: string; version: number }> {
+  return send(`databases/${encodeURIComponent(database)}/columns/rename`, input);
+}
+
+export function dropColumn(
+  database: string,
+  input: { schema: string; table: string; column: string },
+): Promise<{ dropped: string; version: number }> {
+  return send(`databases/${encodeURIComponent(database)}/columns/drop`, input);
 }

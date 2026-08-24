@@ -126,11 +126,40 @@ failing and stays a 500.
 server; ours has nowhere to store them, because it creates no table of its own — so the current view
 lives in the URL hash instead, which is what made named views worth having: a link somebody can send.
 
-## What it does not do
+## Columns, and the line this interface does not cross
 
-Change the schema. No table is created, dropped or altered, and no column either: in this project the
-schema belongs to each module's migrations, and an interface that added a column would be arguing with
-them. Read the rows, fix a row, delete a row.
+Columns can be added, renamed and dropped from the screen. Tables cannot: a table is created by a
+module's migration, and a table created here would belong to nobody.
+
+**Adding is open, renaming and dropping are not.** A new column is always nullable — the module's own
+`INSERT` names the columns it knows, so a column it has never heard of has to be satisfied by being left
+out, and `NOT NULL` would break the next insert. That is also why a new column has no default: DDL takes
+no parameters, so a default would be the one value in this package pasted into SQL as text. Filling the
+existing rows is a row edit, which goes through the parameterised path.
+
+Renaming and dropping are allowed **only on a column this interface added**. The rest come from a
+module's migrations and its code reads them by name — renaming `email` would take Auth down with the next
+request. Nothing in `information_schema` says who created a column, which is why the journal below is
+load-bearing rather than a nicety.
+
+`schema_migrations` and `pg_interface_changes` are not reshaped at all: they record what has been
+applied, and a column added to either would describe something that never happened.
+
+## The journal
+
+Every change is written to `pg_interface_changes` in the same database it changed: what was done, where,
+the exact statement, and when it was applied. A dump carries it with the data, so a database restored
+elsewhere arrives with its history.
+
+Applying and recording are one transaction — PostgreSQL runs DDL inside one — so "applied but not
+recorded" cannot happen, and a statement that fails leaves nothing behind. `applied_at` is null for a
+row that was recorded but not run here, which is what a journal carried from another installation looks
+like before it is applied.
+
+**The schema now has two sources of truth, and that is the accepted price.** A column added here is not
+in any module's `migrations.ts`, so a fresh installation will not have it, and `pnpm check` cannot see
+it. Within one installation the two agree; between installations the journal is what carries the
+difference.
 
 ## Commands
 

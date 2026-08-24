@@ -47,8 +47,13 @@ and the audit log. Nothing in the system calls it a service:
 - the sidebar shows it under «Админка», with the panel's own sections.
 
 Behind it is this template's own interface, [`pg-interface`](../pg-interface/README.md) — the tables of
-each module's database, a page of rows with filters and sorting, and changing or removing one row. It
-never changes the schema: that belongs to the modules' migrations.
+each module's database, a page of rows with filters and sorting, and changing or removing one row.
+
+It can also add a column, and rename or drop one **it added itself**. Columns that came from a module's
+migration are read and filled, never renamed or dropped: the module's code names them, and a rename
+would break it with the next request. Tables are not created here at all. Every change of shape is
+recorded in `pg_interface_changes` in the same database, so what the interface did to a schema is
+visible beside the schema.
 
 It opens connections of its own rather than borrowing the modules' — two per database, on the first
 request that looks at one — so a heavy query typed into the console cannot hold a connection the site

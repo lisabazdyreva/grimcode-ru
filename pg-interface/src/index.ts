@@ -185,8 +185,18 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     // Counts and names, never a value: what is in these rows is what a log must not keep.
     log({ level: 'info', message: `read ${page.rows.length} rows from ${describe(table)}`, database });
 
+    /*
+     * `own` belongs here as well as in the table list, and from the same place. The screen builds its
+     * column menu from this answer, so a flag stitched together on the client from two answers would
+     * disagree with itself the moment a column were renamed.
+     */
+    const owned = ownColumns(await readJournal(pool));
+
     return json({
-      columns: table.columns,
+      columns: table.columns.map((column) => ({
+        ...column,
+        own: owned.has(`${table.schema}.${table.name}.${column.name}`),
+      })),
       primaryKey: table.primaryKey,
       rows: page.rows,
       total: Number(counted.rows[0]?.total ?? 0),
