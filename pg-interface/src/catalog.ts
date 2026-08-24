@@ -99,20 +99,21 @@ export const COUNT_LIMIT = 10_000;
 
 export interface RowCount {
   count: number;
-  /** True when the number is the planner's estimate, or when counting stopped at the limit. */
+  /** True on a table too large to count: the number is the planner's estimate, or the limit itself. */
   approximate: boolean;
 }
 
 /**
  * How many rows a table holds.
  *
- * `reltuples` is what the planner keeps and costs nothing to read — but it is **-1** until something
- * analyses the table, which is most tables on a young installation. Reading that as zero is what this
- * function used to do, and it told a person a table with rows in it was empty.
+ * The exact number, unless the table is too large to count — `count(*)` reads all of it, and a list of
+ * tables must not cost that. So the planner's `reltuples` is read first, and only to answer one
+ * question: is counting cheap? Above `COUNT_LIMIT` the estimate is what comes back, marked as such;
+ * at or below it, and when the planner has no estimate at all (`-1`, which is every table nothing has
+ * analysed yet), the rows are counted for real.
  *
- * So: the estimate when there is one, and otherwise an exact count that stops at `COUNT_LIMIT`. The
- * stopping is the point — `count(*)` on a large table reads all of it, and a list of tables must not
- * cost that. What comes back says which of the two it is, and the interface shows the difference.
+ * The estimate is never shown for a small table, and that is deliberate: `~3` beside a plain `5` reads
+ * as a fault, and the difference between them was only whether autovacuum had been past.
  */
 export async function countRows(pool: Queryable, table: Table): Promise<RowCount> {
   const { rows } = await pool.query<{ estimate: string }>(
@@ -124,7 +125,7 @@ export async function countRows(pool: Queryable, table: Table): Promise<RowCount
   );
 
   const estimate = Number(rows[0]?.estimate ?? -1);
-  if (estimate >= 0) return { count: estimate, approximate: true };
+  if (estimate > COUNT_LIMIT) return { count: estimate, approximate: true };
 
   const counted = await pool.query<{ total: string }>(
     `SELECT count(*)::bigint AS total FROM (

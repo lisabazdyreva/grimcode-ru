@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Queryable } from './catalog.js';
+import { COUNT_LIMIT, type Queryable } from './catalog.js';
 import { conditionsFor } from './filters.js';
 import { RequestError, type Table } from './identifiers.js';
 import {
@@ -33,6 +33,27 @@ const grants: Table = {
     { name: 'note', type: 'text', nullable: true },
   ],
   primaryKey: ['administrator_id', 'service'],
+};
+
+/** A table the planner has an estimate for, small enough that the estimate is not used. */
+const sessions: Table = {
+  schema: 'public',
+  name: 'sessions',
+  columns: [
+    { name: 'id', type: 'uuid', nullable: false },
+    { name: 'expires_at', type: 'timestamp with time zone', nullable: false },
+  ],
+  primaryKey: ['id'],
+};
+
+/**
+ * What the planner says about each table: one too large to count, one small, one it has never looked at.
+ * `identities` is above `COUNT_LIMIT`, so its number is the estimate; the other two are counted.
+ */
+const ESTIMATES: Record<string, string> = {
+  identities: String(COUNT_LIMIT + 40_000),
+  sessions: '3',
+  administrator_grants: '-1',
 };
 
 describe('what a request may name', () => {
@@ -179,10 +200,9 @@ function fakePool(tables: Table[]): Queryable & { asked: { text: string; values:
         return { rows: rows as Row[], rowCount: rows.length };
       }
 
-      // The planner knows about one table and not the other, which is the case that used to read as zero.
       if (text.includes('pg_class')) {
-        const known = values[1] === 'identities';
-        return { rows: [{ estimate: known ? '42' : '-1' }] as Row[], rowCount: 1 };
+        const estimate = ESTIMATES[String(values[1])] ?? '-1';
+        return { rows: [{ estimate }] as Row[], rowCount: 1 };
       }
       if (text.includes('capped')) return { rows: [{ total: '3' }] as Row[], rowCount: 1 };
       if (text.includes('count(*)')) return { rows: [{ total: '7' }] as Row[], rowCount: 1 };
@@ -193,7 +213,7 @@ function fakePool(tables: Table[]): Queryable & { asked: { text: string; values:
   };
 }
 
-function build(tables: Table[] = [rows, grants]) {
+function build(tables: Table[] = [rows, grants, sessions]) {
   const pool = fakePool(tables);
   const logged: string[] = [];
 
@@ -239,22 +259,28 @@ describe('the API', () => {
       tables: { name: string; primaryKey: string[]; rows: { count: number; approximate: boolean } }[];
     };
 
-    expect(body.tables.map((table) => table.name)).toEqual(['identities', 'administrator_grants']);
+    expect(body.tables.map((table) => table.name)).toEqual([
+      'identities',
+      'administrator_grants',
+      'sessions',
+    ]);
     expect(body.tables[1]?.primaryKey).toEqual(['administrator_id', 'service']);
-    expect(body.tables[0]?.rows).toEqual({ count: 42, approximate: true });
+    expect(body.tables[0]?.rows).toEqual({ count: COUNT_LIMIT + 40_000, approximate: true });
   });
 
   /**
-   * `reltuples` is -1 until something analyses the table, and reading that as zero told a person that a
-   * table with rows in it was empty. So a table the planner knows nothing about is counted instead.
+   * The estimate decides whether counting is cheap, and nothing else. A table nothing has analysed says
+   * `-1`, a small table says a small number, and both are counted — otherwise `~3` sat beside a plain
+   * `5` and the difference between them was only autovacuum.
    */
-  it('counts a table the planner has no estimate for', async () => {
+  it('counts every table small enough to count, estimate or not', async () => {
     const { api } = build();
     const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
       tables: { name: string; rows: { count: number; approximate: boolean } }[];
     };
 
     expect(body.tables[1]?.rows).toEqual({ count: 3, approximate: false });
+    expect(body.tables[2]?.rows).toEqual({ count: 3, approximate: false });
   });
 
   it('reads a page of rows with the total beside it', async () => {

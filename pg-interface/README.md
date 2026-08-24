@@ -70,13 +70,18 @@ log gets table names and counts.
 
 ## How many rows a table has
 
-The planner's `reltuples` is free to read, and it is **-1** until something analyses the table — which
-is most tables on a young installation. Reading that as zero is what this package did at first, and it
-told a person a table with rows in it was empty.
+The exact number, unless the table is too large to count. A list of tables must not cost a full scan of
+a large table, so the planner's `reltuples` is read first — it is free — and it decides one thing only:
+whether counting is cheap. Above 10 000 rows the estimate is what the list shows, marked with a `~`;
+at or below that the rows are counted for real, and so are the tables the planner has no estimate for
+at all (`reltuples` is **-1** until something analyses a table, which is most tables on a young
+installation).
 
-So: the estimate when there is one, marked with a `~`, and otherwise an exact count that stops at
-10 000 rows and is marked the same way once it does. A list of tables must not cost a full scan of a
-large one, and it must not lie about a small one.
+Two things this got wrong before, in that order. Reading `-1` as zero told a person a table with rows
+in it was empty. Then, with that fixed, the estimate was still used whenever it existed — so a table
+autovacuum had been past showed `~3` beside a plain `5`, and the tilde marked the wrong thing: not
+"this number is big" but "this table has been analysed". Now the `~` only ever means "more rows than
+we are willing to read".
 
 ## The screen
 
