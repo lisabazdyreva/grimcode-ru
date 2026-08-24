@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { COUNT_LIMIT, type Queryable, type RowCount } from './catalog.js';
+import { JOURNAL_TABLE } from './changes.js';
 import { conditionsFor } from './filters.js';
 import { RequestError, type Table } from './identifiers.js';
 import {
@@ -188,14 +189,113 @@ describe('a row is addressed by its whole key', () => {
   });
 });
 
-/** A pool that answers the catalogue and remembers what else it was asked. */
-function fakePool(tables: Table[]): Queryable & { asked: { text: string; values: unknown[] }[] } {
-  const asked: { text: string; values: unknown[] }[] = [];
+interface JournalEntry {
+  version: number;
+  kind: string;
+  schema: string;
+  table: string;
+  column: string;
+  details: Record<string, unknown>;
+  sql: string;
+  applied_at: string | null;
+}
 
-  return {
+/**
+ * A pool that answers the catalogue, keeps a journal, and applies `ALTER TABLE` to its own tables.
+ *
+ * It has to do that last part: a test that only checked the statement text would not notice that the
+ * journal and the catalogue disagree about what a column is called after a rename.
+ */
+type FakePool = Queryable & {
+  asked: { text: string; values: unknown[] }[];
+  journal: JournalEntry[];
+  connect(): Promise<Queryable & { release(): void }>;
+  failOnAlter?: boolean;
+};
+
+function fakePool(tables: Table[]): FakePool {
+  const asked: { text: string; values: unknown[] }[] = [];
+  const journal: JournalEntry[] = [];
+
+  /** `ALTER TABLE` as this fake understands it — the three shapes `ddl.ts` can produce. */
+  function reshape(text: string): void {
+    const add = /^ALTER TABLE "(.+)"\."(.+)" ADD COLUMN "(.+)" (\w+)$/.exec(text);
+    const rename = /^ALTER TABLE "(.+)"\."(.+)" RENAME COLUMN "(.+)" TO "(.+)"$/.exec(text);
+    const drop = /^ALTER TABLE "(.+)"\."(.+)" DROP COLUMN "(.+)"$/.exec(text);
+
+    const found = (schema: string, name: string) =>
+      tables.find((table) => table.schema === schema && table.name === name);
+
+    if (add) {
+      found(add[1] ?? '', add[2] ?? '')?.columns.push({
+        name: add[3] ?? '',
+        type: add[4] ?? '',
+        nullable: true,
+      });
+      return;
+    }
+
+    if (rename) {
+      const column = found(rename[1] ?? '', rename[2] ?? '')?.columns.find(
+        (entry) => entry.name === rename[3],
+      );
+      if (column) column.name = rename[4] ?? column.name;
+      return;
+    }
+
+    if (drop) {
+      const table = found(drop[1] ?? '', drop[2] ?? '');
+      if (table) table.columns = table.columns.filter((entry) => entry.name !== drop[3]);
+    }
+  }
+
+  const pool: FakePool = {
     asked,
+    journal,
+    async connect() {
+      return { query: (text: string, values?: unknown[]) => pool.query(text, values), release() {} };
+    },
     async query<Row>(text: string, values: unknown[] = []) {
       asked.push({ text, values });
+
+      if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+        return { rows: [] as Row[], rowCount: 0 };
+      }
+      if (text.includes('pg_advisory_xact_lock')) return { rows: [] as Row[], rowCount: 0 };
+
+      if (text.includes(`CREATE TABLE IF NOT EXISTS ${JOURNAL_TABLE}`)) {
+        return { rows: [] as Row[], rowCount: 0 };
+      }
+      if (text.includes('MAX(version)')) {
+        return { rows: [{ next: journal.length + 1 }] as Row[], rowCount: 1 };
+      }
+      if (text.includes(`FROM ${JOURNAL_TABLE}`)) {
+        return { rows: journal as Row[], rowCount: journal.length };
+      }
+      if (text.includes(`INSERT INTO ${JOURNAL_TABLE}`)) {
+        journal.push({
+          version: Number(values[0]),
+          kind: String(values[1]),
+          schema: String(values[2]),
+          table: String(values[3]),
+          column: String(values[4]),
+          details: JSON.parse(String(values[5])) as Record<string, unknown>,
+          sql: String(values[6]),
+          applied_at: null,
+        });
+        return { rows: [] as Row[], rowCount: 1 };
+      }
+      if (text.includes(`UPDATE ${JOURNAL_TABLE}`)) {
+        const entry = journal.find((row) => row.version === Number(values[0]));
+        if (entry) entry.applied_at = '2026-08-24T00:00:00.000Z';
+        return { rows: [] as Row[], rowCount: 1 };
+      }
+
+      if (text.startsWith('ALTER TABLE')) {
+        if (pool.failOnAlter) throw Object.assign(new Error('permission denied'), { code: '42501' });
+        reshape(text);
+        return { rows: [] as Row[], rowCount: 0 };
+      }
 
       if (text.includes('information_schema.columns')) {
         const rows = tables.flatMap((table) =>
@@ -246,10 +346,14 @@ function fakePool(tables: Table[]): Queryable & { asked: { text: string; values:
       return { rows: [] as Row[], rowCount: 1 };
     },
   };
+
+  return pool;
 }
 
 function build(tables: Table[] = [rows, grants, sessions, audit]) {
-  const pool = fakePool(tables);
+  // Cloned: the fake applies `ALTER TABLE` to these objects, and a column added by one test would
+  // otherwise still be there in the next one.
+  const pool = fakePool(structuredClone(tables));
   const logged: string[] = [];
 
   const api = createDatabaseInterface({
@@ -486,5 +590,148 @@ describe('the API', () => {
 
     expect(logged.join(' ')).not.toContain('secret@example.test');
     expect(logged.join(' ')).toContain('public.identities');
+  });
+});
+
+/**
+ * Columns: what this interface may do to the shape of a table, and what it may not.
+ *
+ * The rule the whole group is about: **adding is open, renaming and dropping are not.** A nullable
+ * column nobody reads cannot break a module; a renamed column its code reads breaks it with the next
+ * request. Which columns are which is not in `information_schema` — it is in this package's journal.
+ */
+describe('the shape of a table', () => {
+  const addColumnAt = (column: string, type: string, table = 'identities') =>
+    post('/api/databases/demo_auth/columns', { schema: 'public', table, column, type }, marked);
+
+  it('adds a nullable column and remembers that it added it', async () => {
+    const { api, pool } = build();
+    const response = await api.fetch(addColumnAt('nickname', 'text'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ added: 'nickname', version: 1 });
+
+    // The statement, once, and always nullable: `NOT NULL` would break the module's own INSERT.
+    const altered = pool.asked.filter((query) => query.text.startsWith('ALTER TABLE'));
+    expect(altered).toHaveLength(1);
+    expect(altered[0]?.text).toBe('ALTER TABLE "public"."identities" ADD COLUMN "nickname" text');
+
+    // Recorded as applied, with the statement kept beside it.
+    expect(pool.journal).toHaveLength(1);
+    expect(pool.journal[0]).toMatchObject({ kind: 'add', column: 'nickname', applied_at: expect.any(String) });
+  });
+
+  it('marks its own columns as its own, and the rest as not', async () => {
+    const { api } = build();
+    await api.fetch(addColumnAt('nickname', 'text'));
+
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; columns: { name: string; own: boolean }[] }[];
+    };
+    const identities = body.tables.find((table) => table.name === 'identities');
+
+    expect(identities?.columns.find((column) => column.name === 'nickname')?.own).toBe(true);
+    expect(identities?.columns.find((column) => column.name === 'email')?.own).toBe(false);
+  });
+
+  /** The test this whole feature stands on. A column of a migration is the module's, not ours. */
+  it('refuses to rename or drop a column that came from a migration', async () => {
+    const { api } = build();
+
+    const renamed = await api.fetch(
+      post(
+        '/api/databases/demo_auth/columns/rename',
+        { schema: 'public', table: 'identities', column: 'email', to: 'mail' },
+        marked,
+      ),
+    );
+    const dropped = await api.fetch(
+      post(
+        '/api/databases/demo_auth/columns/drop',
+        { schema: 'public', table: 'identities', column: 'email' },
+        marked,
+      ),
+    );
+
+    expect(renamed.status).toBe(400);
+    expect(await renamed.text()).toContain('migrations');
+    expect(dropped.status).toBe(400);
+  });
+
+  it('renames and drops a column it added, and the journal follows the new name', async () => {
+    const { api, pool } = build();
+    await api.fetch(addColumnAt('nickname', 'text'));
+
+    const renamed = await api.fetch(
+      post(
+        '/api/databases/demo_auth/columns/rename',
+        { schema: 'public', table: 'identities', column: 'nickname', to: 'handle' },
+        marked,
+      ),
+    );
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toMatchObject({ renamed: 'handle' });
+
+    // Renaming keeps it ours: otherwise the next rename would be refused as a migration's column.
+    const listed = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; columns: { name: string; own: boolean }[] }[];
+    };
+    const columns = listed.tables.find((table) => table.name === 'identities')?.columns ?? [];
+    expect(columns.find((column) => column.name === 'handle')?.own).toBe(true);
+    expect(columns.some((column) => column.name === 'nickname')).toBe(false);
+
+    const dropped = await api.fetch(
+      post(
+        '/api/databases/demo_auth/columns/drop',
+        { schema: 'public', table: 'identities', column: 'handle' },
+        marked,
+      ),
+    );
+    expect(dropped.status).toBe(200);
+    expect(pool.journal.map((entry) => entry.kind)).toEqual(['add', 'rename', 'drop']);
+  });
+
+  it('refuses a name that would be a nuisance, and a type it does not offer', async () => {
+    const { api } = build();
+
+    expect((await api.fetch(addColumnAt('two words', 'text'))).status).toBe(400);
+    expect((await api.fetch(addColumnAt('пробел', 'text'))).status).toBe(400);
+    expect((await api.fetch(addColumnAt('a'.repeat(64), 'text'))).status).toBe(400);
+    expect((await api.fetch(addColumnAt('ok_name', 'money'))).status).toBe(400);
+    // A name the table already has, which PostgreSQL would refuse anyway — but with its own message.
+    expect((await api.fetch(addColumnAt('email', 'text'))).status).toBe(400);
+  });
+
+  it('will not reshape the tables that record what has been applied', async () => {
+    const { api } = build([{ ...rows, name: JOURNAL_TABLE }, { ...rows, name: 'schema_migrations' }]);
+
+    expect((await api.fetch(addColumnAt('note', 'text', JOURNAL_TABLE))).status).toBe(400);
+    expect((await api.fetch(addColumnAt('note', 'text', 'schema_migrations'))).status).toBe(400);
+  });
+
+  it('needs the header for a change of shape, like any other change', async () => {
+    const { api } = build();
+    const response = await api.fetch(
+      post('/api/databases/demo_auth/columns', {
+        schema: 'public',
+        table: 'identities',
+        column: 'nickname',
+        type: 'text',
+      }),
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  /** Applied and recorded are one transaction, so a statement that fails leaves no record behind. */
+  it('rolls back the record when the statement fails', async () => {
+    const { api, pool } = build();
+    pool.failOnAlter = true;
+
+    const response = await api.fetch(addColumnAt('nickname', 'text'));
+
+    expect(response.status).toBe(500);
+    expect(pool.asked.map((query) => query.text)).toContain('ROLLBACK');
+    expect(pool.journal.every((entry) => entry.applied_at === null)).toBe(true);
   });
 });

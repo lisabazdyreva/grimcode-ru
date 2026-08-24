@@ -1,6 +1,16 @@
 import { countRows, readCatalogue } from './catalog.js';
+import { applyChange, ownColumns, readJournal, type ChangeKind } from './changes.js';
+import {
+  addColumn,
+  checkName,
+  checkReshapable,
+  dropColumn,
+  PROTECTED_TABLES,
+  renameColumn,
+  typeOf,
+} from './ddl.js';
 import { conditionsFor } from './filters.js';
-import { findTable, RequestError, type Table } from './identifiers.js';
+import { findColumn, findTable, RequestError, type Table } from './identifiers.js';
 import {
   createPools,
   UnknownDatabase,
@@ -116,6 +126,20 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
       return await change(request, decodeURIComponent(segments[2] ?? ''), action);
     }
 
+    if (segments[1] === 'databases' && segments.length === 4 && segments[3] === 'columns') {
+      if (request.method !== 'POST') return methodNotAllowed();
+      return await reshape(request, decodeURIComponent(segments[2] ?? ''), 'add');
+    }
+
+    if (segments[1] === 'databases' && segments.length === 5 && segments[3] === 'columns') {
+      if (request.method !== 'POST') return methodNotAllowed();
+      const action = segments[4];
+      if (action !== 'rename' && action !== 'drop') {
+        return json({ error: 'not-found', message: `Unknown action "${action}".` }, 404);
+      }
+      return await reshape(request, decodeURIComponent(segments[2] ?? ''), action);
+    }
+
     return json({ error: 'not-found', message: 'No such path in this interface.' }, 404);
   }
 
@@ -124,15 +148,20 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const pool = await pools.of(database);
     const { tables: found } = await readCatalogue(pool);
 
+    // Who added each column: `own` is what lets the screen offer rename and drop on some columns only.
+    const owned = ownColumns(await readJournal(pool));
+
     const described = await Promise.all(
       found.map(async (table) => ({
         schema: table.schema,
         name: table.name,
         primaryKey: table.primaryKey,
         rows: await countRows(pool, table),
+        reshapable: !PROTECTED_TABLES.has(table.name),
         columns: table.columns.map((column) => ({
           ...column,
           conditions: conditionsFor(column.type),
+          own: owned.has(`${table.schema}.${table.name}.${column.name}`),
         })),
       })),
     );
@@ -188,6 +217,85 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     }
 
     return json({ [action === 'update' ? 'updated' : 'deleted']: affected });
+  }
+
+  /**
+   * Adding, renaming or dropping one column.
+   *
+   * Adding is open: a nullable column nothing reads cannot break a module. Renaming and dropping are
+   * allowed only on a column this interface added, because the rest belong to a module's migrations and
+   * its code reads them by name — a rename would take the module down with the next request. Which is
+   * which comes from the journal; `information_schema` does not record who created a column.
+   */
+  async function reshape(
+    request: Request,
+    database: string,
+    action: ChangeKind,
+  ): Promise<Response> {
+    const body = await readBody(request);
+    const pool = await pools.of(database);
+    const table = checkReshapable(
+      findTable((await readCatalogue(pool)).tables, body.schema, body.table),
+    );
+
+    if (action === 'add') {
+      const column = checkName(body.column);
+      const type = typeOf(body.type);
+      const sql = addColumn(table, column, type);
+
+      const version = await applyChange(pool, {
+        kind: 'add',
+        schema: table.schema,
+        table: table.name,
+        column,
+        details: { type: body.type },
+        sql,
+      });
+
+      log({ level: 'info', message: `added column ${column} to ${describe(table)}`, database });
+      return json({ added: column, version });
+    }
+
+    const column = findColumn(table, body.column).name;
+    const owned = ownColumns(await readJournal(pool));
+
+    if (!owned.has(`${table.schema}.${table.name}.${column}`)) {
+      throw new RequestError(
+        400,
+        `Column ${column} of ${describe(table)} belongs to this project's migrations, ` +
+          'so this interface will not rename or drop it — the code that reads it would stop working.',
+      );
+    }
+
+    if (action === 'rename') {
+      const to = checkName(body.to);
+      const sql = renameColumn(table, column, to);
+
+      const version = await applyChange(pool, {
+        kind: 'rename',
+        schema: table.schema,
+        table: table.name,
+        column,
+        details: { to },
+        sql,
+      });
+
+      log({ level: 'info', message: `renamed ${column} to ${to} in ${describe(table)}`, database });
+      return json({ renamed: to, version });
+    }
+
+    const sql = dropColumn(table, column);
+    const version = await applyChange(pool, {
+      kind: 'drop',
+      schema: table.schema,
+      table: table.name,
+      column,
+      details: {},
+      sql,
+    });
+
+    log({ level: 'info', message: `dropped column ${column} from ${describe(table)}`, database });
+    return json({ dropped: column, version });
   }
 
   /** The body of a changing or querying request, once the header guard has passed. */
