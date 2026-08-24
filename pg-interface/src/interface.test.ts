@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COUNT_LIMIT, type Queryable } from './catalog.js';
+import { COUNT_LIMIT, type Queryable, type RowCount } from './catalog.js';
 import { conditionsFor } from './filters.js';
 import { RequestError, type Table } from './identifiers.js';
 import {
@@ -46,14 +46,30 @@ const sessions: Table = {
   primaryKey: ['id'],
 };
 
+/** A table with no estimate that turns out to hold more rows than the count is willing to read. */
+const audit: Table = {
+  schema: 'public',
+  name: 'auth_audit',
+  columns: [{ name: 'id', type: 'uuid', nullable: false }],
+  primaryKey: ['id'],
+};
+
 /**
- * What the planner says about each table: one too large to count, one small, one it has never looked at.
- * `identities` is above `COUNT_LIMIT`, so its number is the estimate; the other two are counted.
+ * What the planner says about each table. `identities` is above `COUNT_LIMIT`, so its number is the
+ * estimate; the rest are counted, whether the planner has a small estimate or none at all.
  */
 const ESTIMATES: Record<string, string> = {
   identities: String(COUNT_LIMIT + 40_000),
   sessions: '3',
   administrator_grants: '-1',
+  auth_audit: '-1',
+};
+
+/** What counting returns for each table, once the estimate has sent it to be counted. */
+const COUNTS: Record<string, string> = {
+  sessions: '3',
+  administrator_grants: '3',
+  auth_audit: String(COUNT_LIMIT + 1),
 };
 
 describe('what a request may name', () => {
@@ -204,7 +220,11 @@ function fakePool(tables: Table[]): Queryable & { asked: { text: string; values:
         const estimate = ESTIMATES[String(values[1])] ?? '-1';
         return { rows: [{ estimate }] as Row[], rowCount: 1 };
       }
-      if (text.includes('capped')) return { rows: [{ total: '3' }] as Row[], rowCount: 1 };
+      // The counting query names its table in the text, not in a parameter — that is how it is found here.
+      if (text.includes('capped')) {
+        const named = Object.keys(COUNTS).find((name) => text.includes(`"${name}"`));
+        return { rows: [{ total: COUNTS[named ?? ''] ?? '3' }] as Row[], rowCount: 1 };
+      }
       if (text.includes('count(*)')) return { rows: [{ total: '7' }] as Row[], rowCount: 1 };
       if (text.startsWith('SELECT')) return { rows: [{ id: 'u-1' }] as Row[], rowCount: 1 };
 
@@ -213,7 +233,7 @@ function fakePool(tables: Table[]): Queryable & { asked: { text: string; values:
   };
 }
 
-function build(tables: Table[] = [rows, grants, sessions]) {
+function build(tables: Table[] = [rows, grants, sessions, audit]) {
   const pool = fakePool(tables);
   const logged: string[] = [];
 
@@ -256,16 +276,17 @@ describe('the API', () => {
   it('describes tables with their key and the conditions each column takes', async () => {
     const { api } = build();
     const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
-      tables: { name: string; primaryKey: string[]; rows: { count: number; approximate: boolean } }[];
+      tables: { name: string; primaryKey: string[]; rows: RowCount }[];
     };
 
     expect(body.tables.map((table) => table.name)).toEqual([
       'identities',
       'administrator_grants',
       'sessions',
+      'auth_audit',
     ]);
     expect(body.tables[1]?.primaryKey).toEqual(['administrator_id', 'service']);
-    expect(body.tables[0]?.rows).toEqual({ count: COUNT_LIMIT + 40_000, approximate: true });
+    expect(body.tables[0]?.rows).toEqual({ count: COUNT_LIMIT + 40_000, kind: 'estimate' });
   });
 
   /**
@@ -276,11 +297,24 @@ describe('the API', () => {
   it('counts every table small enough to count, estimate or not', async () => {
     const { api } = build();
     const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
-      tables: { name: string; rows: { count: number; approximate: boolean } }[];
+      tables: { name: string; rows: RowCount }[];
     };
 
-    expect(body.tables[1]?.rows).toEqual({ count: 3, approximate: false });
-    expect(body.tables[2]?.rows).toEqual({ count: 3, approximate: false });
+    expect(body.tables[1]?.rows).toEqual({ count: 3, kind: 'exact' });
+    expect(body.tables[2]?.rows).toEqual({ count: 3, kind: 'exact' });
+  });
+
+  /**
+   * Counting stops at the limit, and what comes back is a floor rather than an estimate — the screen
+   * says `>10000`, not `~10000`. The two are different statements and used to share one sign.
+   */
+  it('stops counting a table larger than the limit and says so', async () => {
+    const { api } = build();
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; rows: RowCount }[];
+    };
+
+    expect(body.tables[3]?.rows).toEqual({ count: COUNT_LIMIT, kind: 'more' });
   });
 
   it('reads a page of rows with the total beside it', async () => {

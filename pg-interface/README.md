@@ -72,16 +72,24 @@ log gets table names and counts.
 
 The exact number, unless the table is too large to count. A list of tables must not cost a full scan of
 a large table, so the planner's `reltuples` is read first — it is free — and it decides one thing only:
-whether counting is cheap. Above 10 000 rows the estimate is what the list shows, marked with a `~`;
-at or below that the rows are counted for real, and so are the tables the planner has no estimate for
-at all (`reltuples` is **-1** until something analyses a table, which is most tables on a young
-installation).
+whether counting is cheap. Above 10 000 rows the estimate is what the list shows; at or below that the
+rows are counted for real, and so are the tables the planner has no estimate for at all (`reltuples` is
+**-1** until something analyses a table, which is most tables on a young installation).
+
+Three signs, because these are three different statements:
+
+| On screen | What it says |
+| --- | --- |
+| `42` | the count |
+| `~25002` | the planner's estimate, which can be off in either direction |
+| `>10000` | counting stopped at the limit, so there are at least this many |
 
 Two things this got wrong before, in that order. Reading `-1` as zero told a person a table with rows
-in it was empty. Then, with that fixed, the estimate was still used whenever it existed — so a table
+in it was empty. Then, with that fixed, the estimate was used whenever it existed — so a table
 autovacuum had been past showed `~3` beside a plain `5`, and the tilde marked the wrong thing: not
-"this number is big" but "this table has been analysed". Now the `~` only ever means "more rows than
-we are willing to read".
+"this number is big" but "this table has been analysed". The `>` is from the same round: a count that
+stopped at the limit is a floor, and showing it as `~10000` read as "roughly ten thousand" when the
+table held 25 000.
 
 ## The screen
 

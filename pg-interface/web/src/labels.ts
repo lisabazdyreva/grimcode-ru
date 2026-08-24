@@ -30,11 +30,14 @@ export const CELL_LIMIT = 600;
 /**
  * How many rows a table has, as the list shows it.
  *
- * `~` only on a table too large to count, where it means "more than we are willing to read". Small
- * tables are counted exactly, so the tilde never sits beside a number a person could check by hand.
+ * Three signs for three different statements. A plain number is the count. `~` is the planner's
+ * estimate for a table too large to count — it can be off in either direction. `>` is a floor: the
+ * count stopped at the server's limit, so there are at least this many. The tilde never sits beside a
+ * small number a person could check by hand, and it never stands in for "at least".
  */
-export function rowCountLabel(rows: { count: number; approximate: boolean }): string {
-  return rows.approximate ? `~${rows.count}` : String(rows.count);
+export function rowCountLabel(rows: { count: number; kind: 'exact' | 'estimate' | 'more' }): string {
+  if (rows.kind === 'estimate') return `~${rows.count}`;
+  return rows.kind === 'more' ? `>${rows.count}` : String(rows.count);
 }
 
 /**

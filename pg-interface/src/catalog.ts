@@ -99,8 +99,12 @@ export const COUNT_LIMIT = 10_000;
 
 export interface RowCount {
   count: number;
-  /** True on a table too large to count: the number is the planner's estimate, or the limit itself. */
-  approximate: boolean;
+  /**
+   * Where the number came from, because the three cases read differently on screen: `exact` is the
+   * count, `estimate` is the planner's `reltuples` for a table too large to count, and `more` says the
+   * count stopped at `COUNT_LIMIT` — the number is a floor, not an approximation.
+   */
+  kind: 'exact' | 'estimate' | 'more';
 }
 
 /**
@@ -125,7 +129,7 @@ export async function countRows(pool: Queryable, table: Table): Promise<RowCount
   );
 
   const estimate = Number(rows[0]?.estimate ?? -1);
-  if (estimate > COUNT_LIMIT) return { count: estimate, approximate: true };
+  if (estimate > COUNT_LIMIT) return { count: estimate, kind: 'estimate' };
 
   const counted = await pool.query<{ total: string }>(
     `SELECT count(*)::bigint AS total FROM (
@@ -134,7 +138,5 @@ export async function countRows(pool: Queryable, table: Table): Promise<RowCount
   );
 
   const total = Number(counted.rows[0]?.total ?? 0);
-  return total > COUNT_LIMIT
-    ? { count: COUNT_LIMIT, approximate: true }
-    : { count: total, approximate: false };
+  return total > COUNT_LIMIT ? { count: COUNT_LIMIT, kind: 'more' } : { count: total, kind: 'exact' };
 }

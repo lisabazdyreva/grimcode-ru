@@ -17,8 +17,8 @@ export interface Column {
 
 export interface RowCount {
   count: number;
-  /** The planner's estimate, or a count that stopped at the server's limit. */
-  approximate: boolean;
+  /** The count itself, the planner's estimate for a table too large to count, or a floor. */
+  kind: 'exact' | 'estimate' | 'more';
 }
 
 export interface TableInfo {
