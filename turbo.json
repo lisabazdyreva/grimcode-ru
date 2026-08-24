@@ -12,7 +12,11 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".output/**"]
+      // `web/dist` is the screen of `pg-interface`, built by vite. Without it here a cache hit skips
+      // `vite build` and leaves the previous bundle on disk: the source has the change, the served
+      // screen does not, and every check is green. Anything a package builds outside `dist` needs a
+      // line here for the same reason.
+      "outputs": ["dist/**", ".output/**", "web/dist/**"]
     },
     "typecheck": {
       "dependsOn": ["^build"],
