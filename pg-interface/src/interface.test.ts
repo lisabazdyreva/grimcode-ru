@@ -179,7 +179,12 @@ function fakePool(tables: Table[]): Queryable & { asked: { text: string; values:
         return { rows: rows as Row[], rowCount: rows.length };
       }
 
-      if (text.includes('pg_class')) return { rows: [{ estimate: '42' }] as Row[], rowCount: 1 };
+      // The planner knows about one table and not the other, which is the case that used to read as zero.
+      if (text.includes('pg_class')) {
+        const known = values[1] === 'identities';
+        return { rows: [{ estimate: known ? '42' : '-1' }] as Row[], rowCount: 1 };
+      }
+      if (text.includes('capped')) return { rows: [{ total: '3' }] as Row[], rowCount: 1 };
       if (text.includes('count(*)')) return { rows: [{ total: '7' }] as Row[], rowCount: 1 };
       if (text.startsWith('SELECT')) return { rows: [{ id: 'u-1' }] as Row[], rowCount: 1 };
 
@@ -231,12 +236,25 @@ describe('the API', () => {
   it('describes tables with their key and the conditions each column takes', async () => {
     const { api } = build();
     const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
-      tables: { name: string; primaryKey: string[]; estimatedRows: number }[];
+      tables: { name: string; primaryKey: string[]; rows: { count: number; approximate: boolean } }[];
     };
 
     expect(body.tables.map((table) => table.name)).toEqual(['identities', 'administrator_grants']);
     expect(body.tables[1]?.primaryKey).toEqual(['administrator_id', 'service']);
-    expect(body.tables[0]?.estimatedRows).toBe(42);
+    expect(body.tables[0]?.rows).toEqual({ count: 42, approximate: true });
+  });
+
+  /**
+   * `reltuples` is -1 until something analyses the table, and reading that as zero told a person that a
+   * table with rows in it was empty. So a table the planner knows nothing about is counted instead.
+   */
+  it('counts a table the planner has no estimate for', async () => {
+    const { api } = build();
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; rows: { count: number; approximate: boolean } }[];
+    };
+
+    expect(body.tables[1]?.rows).toEqual({ count: 3, approximate: false });
   });
 
   it('reads a page of rows with the total beside it', async () => {

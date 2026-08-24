@@ -15,11 +15,17 @@ export interface Column {
   conditions?: readonly string[];
 }
 
+export interface RowCount {
+  count: number;
+  /** The planner's estimate, or a count that stopped at the server's limit. */
+  approximate: boolean;
+}
+
 export interface TableInfo {
   schema: string;
   name: string;
   primaryKey: string[];
-  estimatedRows: number;
+  rows: RowCount;
   columns: Column[];
 }
 

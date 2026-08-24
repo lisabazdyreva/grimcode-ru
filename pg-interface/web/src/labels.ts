@@ -26,3 +26,14 @@ export function cellText(value: unknown): string {
 
 /** How much of one value a table cell shows. The rest is in the row's own dialog. */
 export const CELL_LIMIT = 600;
+
+/**
+ * How many rows a table has, as the list shows it.
+ *
+ * `~` only when the number really is approximate: the tilde used to sit in front of a zero that meant
+ * "the planner has not looked at this table yet", which reads as "empty" and was wrong.
+ */
+export function rowCountLabel(rows: { count: number; approximate: boolean }): string {
+  if (!rows.approximate) return String(rows.count);
+  return rows.count === 0 ? '~0' : `~${rows.count}`;
+}

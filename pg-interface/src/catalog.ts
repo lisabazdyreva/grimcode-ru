@@ -1,4 +1,4 @@
-import type { Column, Table } from './identifiers.js';
+import { quote, type Column, type Table } from './identifiers.js';
 
 /** What the interface needs to run a query, and the only source of table and column names. */
 export interface Catalogue {
@@ -94,21 +94,46 @@ export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
   return { tables: [...tables.values()] };
 }
 
+/** Above this many rows the list stops counting and says "more than". */
+export const COUNT_LIMIT = 10_000;
+
+export interface RowCount {
+  count: number;
+  /** True when the number is the planner's estimate, or when counting stopped at the limit. */
+  approximate: boolean;
+}
+
 /**
- * How many rows a table holds, roughly.
+ * How many rows a table holds.
  *
- * `reltuples` is what the planner keeps and costs nothing to read; `count(*)` reads the whole table,
- * which is not a price a list of tables should pay. It is an estimate, and the interface says so —
- * the exact number for a filtered view comes with the rows themselves.
+ * `reltuples` is what the planner keeps and costs nothing to read — but it is **-1** until something
+ * analyses the table, which is most tables on a young installation. Reading that as zero is what this
+ * function used to do, and it told a person a table with rows in it was empty.
+ *
+ * So: the estimate when there is one, and otherwise an exact count that stops at `COUNT_LIMIT`. The
+ * stopping is the point — `count(*)` on a large table reads all of it, and a list of tables must not
+ * cost that. What comes back says which of the two it is, and the interface shows the difference.
  */
-export async function estimateRows(pool: Queryable, table: Table): Promise<number> {
+export async function countRows(pool: Queryable, table: Table): Promise<RowCount> {
   const { rows } = await pool.query<{ estimate: string }>(
-    `SELECT GREATEST(c.reltuples, 0)::bigint AS estimate
+    `SELECT c.reltuples::bigint AS estimate
        FROM pg_class c
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = $1 AND c.relname = $2`,
     [table.schema, table.name],
   );
 
-  return Number(rows[0]?.estimate ?? 0);
+  const estimate = Number(rows[0]?.estimate ?? -1);
+  if (estimate >= 0) return { count: estimate, approximate: true };
+
+  const counted = await pool.query<{ total: string }>(
+    `SELECT count(*)::bigint AS total FROM (
+       SELECT 1 FROM ${quote(table.schema)}.${quote(table.name)} LIMIT ${COUNT_LIMIT + 1}
+     ) AS capped`,
+  );
+
+  const total = Number(counted.rows[0]?.total ?? 0);
+  return total > COUNT_LIMIT
+    ? { count: COUNT_LIMIT, approximate: true }
+    : { count: total, approximate: false };
 }

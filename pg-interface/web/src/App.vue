@@ -18,7 +18,7 @@ import {
 } from './api';
 import FilterPanel from './components/FilterPanel.vue';
 import RowDialog from './components/RowDialog.vue';
-import { CELL_LIMIT, cellText } from './labels';
+import { CELL_LIMIT, cellText, rowCountLabel } from './labels';
 import { emptyView, PAGE_SIZES, readHash, writeHash, type View } from './view';
 
 const databases = ref<string[]>([]);
@@ -267,7 +267,7 @@ onMounted(async () => {
           @click="openTable(entry)"
         >
           <span class="shell-table-name">{{ entry.name }}</span>
-          <span class="shell-table-rows">~{{ entry.estimatedRows }}</span>
+          <span class="shell-table-rows">{{ rowCountLabel(entry.rows) }}</span>
         </button>
 
         <p v-if="!loadingTables && tables.length === 0" class="shell-empty">Таблиц нет</p>
@@ -345,10 +345,43 @@ onMounted(async () => {
             </template>
           </el-table-column>
 
-          <el-table-column v-if="changeable" label="" width="120" fixed="right">
+          <!--
+            The row's own actions: an icon to open it, and everything that cannot be undone behind a
+            menu. Two buttons side by side put "delete" under the cursor of somebody aiming at "edit",
+            and in a narrow column they wrapped onto two lines.
+          -->
+          <el-table-column v-if="changeable" label="" width="84" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button size="small" @click="editing = row">Правка</el-button>
-              <el-button size="small" text type="danger" @click="remove(row)">Удалить</el-button>
+              <div class="actions">
+                <el-button size="small" text title="Открыть строку" @click="editing = row">
+                  <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
+                    <path
+                      d="M10.5 1.5l4 4-8 8H2.5v-4l8-8z"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </el-button>
+
+                <el-dropdown trigger="click">
+                  <el-button size="small" text title="Ещё">
+                    <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
+                      <circle cx="3" cy="8" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                      <circle cx="13" cy="8" r="1.3" fill="currentColor" />
+                    </svg>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item class="actions-delete" @click="remove(row)">
+                        Удалить строку
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -502,5 +535,21 @@ onMounted(async () => {
 .foot {
   display: flex;
   justify-content: flex-end;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.icon {
+  width: 14px;
+  height: 14px;
+}
+
+.actions-delete {
+  color: var(--el-color-danger);
 }
 </style>

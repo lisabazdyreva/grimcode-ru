@@ -68,6 +68,16 @@ procedures cannot see this package, whatever it does.
 **Row values never reach the log.** These databases hold password hashes and session identifiers. The
 log gets table names and counts.
 
+## How many rows a table has
+
+The planner's `reltuples` is free to read, and it is **-1** until something analyses the table — which
+is most tables on a young installation. Reading that as zero is what this package did at first, and it
+told a person a table with rows in it was empty.
+
+So: the estimate when there is one, marked with a `~`, and otherwise an exact count that stops at
+10 000 rows and is marked the same way once it does. A list of tables must not cost a full scan of a
+large one, and it must not lie about a small one.
+
 ## The screen
 
 `web/` is a Vue 3 application with element-plus, built by vite into `web/dist` and served by this
@@ -81,8 +91,8 @@ static-file helper either. Two details are load-bearing:
   convention are copied rather than imported — see `web/src/theme.ts`, which says what would break if
   one side renamed it.
 
-What the screen shows: the databases it was handed, the tables of one of them with the key and a rough
-row count, and a page of rows. Per column: sort, filter, hide. Filters offer the conditions the server
+What the screen shows: the databases it was handed, the tables of one of them with the key and how many
+rows each holds, and a page of rows. Per column: sort, filter, hide. Filters offer the conditions the server
 said that column takes, joined with "and" or "or". A row opens in a dialog, where the key is read-only
 and everything else is editable; only what actually changed is sent.
 

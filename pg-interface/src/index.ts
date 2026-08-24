@@ -1,4 +1,4 @@
-import { estimateRows, readCatalogue } from './catalog.js';
+import { countRows, readCatalogue } from './catalog.js';
 import { conditionsFor } from './filters.js';
 import { findTable, RequestError, type Table } from './identifiers.js';
 import {
@@ -114,7 +114,7 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         schema: table.schema,
         name: table.name,
         primaryKey: table.primaryKey,
-        estimatedRows: await estimateRows(pool, table),
+        rows: await countRows(pool, table),
         columns: table.columns.map((column) => ({
           ...column,
           conditions: conditionsFor(column.type),
