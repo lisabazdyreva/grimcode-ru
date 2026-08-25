@@ -22,7 +22,11 @@ export async function withTransaction<T>(
   }
 }
 
-/** Waits for the database to accept connections, which matters on a cold local Compose start. */
+/**
+ * Waits for the server to accept connections, which is what makes a cold start work: `pnpm dev`
+ * starts listening without waiting for PostgreSQL, and the local server is started by hand, so the
+ * first request can arrive before the database is up. Called by each module while creating its own.
+ */
 export async function waitForDatabase(pool: Pool, attempts = 30, delayMs = 1000): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {

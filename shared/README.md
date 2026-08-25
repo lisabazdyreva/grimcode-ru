@@ -26,7 +26,6 @@ port belongs to the program's entry, and the import that opens one may be writte
 | `rpc.ts` | What a call to a neighbour needs whichever library carries it: `FetchLike`, the deadline and `withDeadlineOn`, which puts it on every procedure of a caller, `ServiceUnavailableError` |
 | `trpc/mount.ts` | Mounting a tRPC router on a path prefix, merging `set-cookie` from procedures |
 | `trpc/builders.ts` | The context every procedure has, and the two guards admin surfaces are built from |
-| `trpc/client.ts` | Typed tRPC client factory for a call carried as a request; no module uses it any more, only the composer |
 | `db/pool.ts` | Transactions and the startup wait a module uses around the pool it opened itself; the pool is built in the module, not here |
 | `db/migrator.ts` | Versioned migrations with recorded versions, checksums and advisory locks |
 | `theme.ts` | The same-origin `postMessage` protocol between Admin shell and service iframes |
