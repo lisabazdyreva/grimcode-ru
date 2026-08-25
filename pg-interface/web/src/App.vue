@@ -576,6 +576,15 @@ onMounted(async () => {
             />
           </el-popover>
 
+          <el-button v-if="view.columns.length > 0" size="small" text @click="showAll">
+            Показать все колонки
+          </el-button>
+
+          <span v-if="!changeable" class="head-note">
+            У таблицы нет первичного ключа — строки можно читать, но не менять
+          </span>
+
+          <!-- Last in the row and pushed to the far edge: the one action here, away from the filters. -->
           <el-button
             v-if="insertable"
             size="small"
@@ -584,14 +593,6 @@ onMounted(async () => {
           >
             Добавить строку
           </el-button>
-
-          <el-button v-if="view.columns.length > 0" size="small" text @click="showAll">
-            Показать все колонки
-          </el-button>
-
-          <span v-if="!changeable" class="head-note">
-            У таблицы нет первичного ключа — строки можно читать, но не менять
-          </span>
         </header>
 
         <el-table
@@ -922,6 +923,11 @@ onMounted(async () => {
 .head-note {
   color: var(--el-text-color-secondary);
   font-size: 0.85rem;
+}
+
+/* Pushed to the right edge of the header, whatever stands to its left. */
+.new-row-button {
+  margin-left: auto;
 }
 
 .rows {
