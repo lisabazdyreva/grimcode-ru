@@ -249,8 +249,9 @@ the life of the process anyway, so the deletion bought a reader that remembered 
 little else.
 
 In production the server is a managed resource, reached through `DATABASE_URL`. Locally it is a
-PostgreSQL on the machine, one server for every copy of the project — what keeps two copies apart is
-the slug in the database names, not the server.
+PostgreSQL on the machine, usually one server for every copy of the project — what keeps two copies
+apart is the slug in the database names, not the server, so a copy may equally be pointed at one of
+its own.
 
 ## What this gave up
 

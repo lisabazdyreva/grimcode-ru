@@ -4,8 +4,9 @@
 
 ## Getting it running
 
-PostgreSQL has to be on the machine — one server for every copy of the project, worktrees included.
-On Debian or Ubuntu:
+PostgreSQL has to be on the machine. One server usually serves every copy of the project, worktrees
+included — what keeps them apart is the slug in the database names, not the server. On Debian or
+Ubuntu:
 
 ```bash
 sudo apt install postgresql
@@ -81,8 +82,8 @@ the owner of the panel. On a network you do not control, register immediately af
 ## Worktrees
 
 A worktree is a separate checkout on another branch, with its own `.env`, its own port and its own
-databases on the one PostgreSQL this machine runs. Worktrees never share a database: one branch
-changing a schema would break the other.
+databases — normally on the same PostgreSQL the main checkout uses. Worktrees never share a database:
+one branch changing a schema would break the other.
 
 ```bash
 git worktree add ../project-feature -b feature
@@ -114,9 +115,13 @@ values are derived rather than chosen: the main checkout's file is the starting 
 differ is replaced — the slug, the port, `PUBLIC_SITE_URL` built from that port, and
 `ACCEPTANCE_BASE_URL` dropped so the suites do not aim at the main checkout.
 
-Database credentials are not among them: one account comes with `DATABASE_URL` and carries over as it
-is. What keeps two branches apart is the slug the database names are built from — one server, two sets
-of databases.
+Database credentials are not among them: `DATABASE_URL` carries over as it is. What keeps two branches
+apart is the slug the database names are built from — one server, two sets of databases.
+
+Point a worktree at a **different** server and that works too: edit `DATABASE_URL` in its `.env`
+before running bootstrap. Both connections are built from their own file, so the databases are dumped
+from the main checkout's server and restored onto this one, and each address is probed separately —
+a server that does not answer names the file its address came from.
 
 ## The database
 
