@@ -9,8 +9,8 @@ application that already knows who is asking.
 
 ## Nothing of this repository is imported here
 
-Not a style: this package is meant to be publishable on its own, and one import of a workspace
-package would tie it to the repository forever. `check-boundaries.mjs` refuses one — the rule is
+Not a style: the package stays independent on its own terms, and one import of a workspace package
+would tie it to the repository forever. `check-boundaries.mjs` refuses one — the rule is
 `{ area: 'pg-interface', mayUse: [] }` in `scripts/workspace-rules.mjs`.
 
 Everything arrives as an argument:

@@ -24,7 +24,7 @@ builds every module and wires them together; [shared](../shared/README.md), the 
 may use and where adding a procedure is explained; the [acceptance tests](../tests/README.md), which
 describe what is verified against a running application; and
 [the database interface](../pg-interface/README.md), the panel's own database section — a package that
-imports nothing of this repository, so that it can be published on its own.
+imports nothing of this repository, so that it stays independent of it.
 
 ## What this template decides for you
 

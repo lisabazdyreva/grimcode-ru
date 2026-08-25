@@ -114,8 +114,9 @@ nothing in the process dials outwards.
 A module calling a neighbour takes no address either: it is handed a caller built from the
 neighbour's own router and invokes a procedure on it, so there is no request and nothing to dial.
 
-The process's listening port is fixed inside the image. Locally the published host port comes from
-`GATEWAY_PORT` in `.env`; in production nothing is published at all.
+The port itself is not Gateway's either: the entry reads it and opens the listener. Locally it comes
+from `GATEWAY_PORT` in `.env`, so two worktrees can run at once; in production `PORT` takes
+precedence, because that is what a hosting platform sets.
 
 ## Commands
 
