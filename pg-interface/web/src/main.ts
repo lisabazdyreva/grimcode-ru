@@ -10,6 +10,7 @@ import {
   ElDropdownMenu,
   ElForm,
   ElFormItem,
+  ElIcon,
   ElInput,
   ElLoading,
   ElMain,
@@ -19,6 +20,7 @@ import {
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSwitch,
   ElTable,
   ElTableColumn,
 } from 'element-plus';
@@ -44,6 +46,7 @@ const COMPONENTS = [
   ElDropdownMenu,
   ElForm,
   ElFormItem,
+  ElIcon,
   ElInput,
   ElMain,
   ElOption,
@@ -52,6 +55,7 @@ const COMPONENTS = [
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSwitch,
   ElTable,
   ElTableColumn,
 ];

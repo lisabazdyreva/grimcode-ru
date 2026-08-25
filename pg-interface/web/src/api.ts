@@ -50,6 +50,11 @@ export interface TableInfo {
   columns: Column[];
   /** False for the tables whose shape belongs to the project: no column may be added to them. */
   reshapable?: boolean;
+  /**
+   * The column that records the order rows arrived in — a counter or a creation time — if the table has
+   * one. The table opens sorted by it: sorting by a uuid key is stable but reads as no order at all.
+   */
+  naturalOrder?: string | null;
 }
 
 export interface Filter {
@@ -144,7 +149,16 @@ export function deleteRow(
 
 export function addColumn(
   database: string,
-  input: { schema: string; table: string; column: string; type: string },
+  input: {
+    schema: string;
+    table: string;
+    column: string;
+    type: string;
+    /** `NOT NULL`, which the server allows only together with a default. */
+    required?: boolean;
+    /** A default of one's own. Omitted means the type's own for a required column, none otherwise. */
+    default?: string;
+  },
 ): Promise<{ added: string; version: number }> {
   return send(`databases/${encodeURIComponent(database)}/columns`, input);
 }

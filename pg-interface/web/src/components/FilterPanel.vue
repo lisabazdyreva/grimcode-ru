@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 import type { Column, Filter } from '../api';
-import { CONDITION_LABELS, WITHOUT_VALUE } from '../labels';
+import { CONDITION_LABELS, WITH_LIST, WITH_RANGE, WITHOUT_VALUE } from '../labels';
 
 const props = defineProps<{
   columns: Column[];
@@ -55,7 +55,43 @@ function change(index: number, patch: Partial<Filter>): void {
     }
   }
 
+  /*
+   * A value shaped for the old condition is not a value for the new one: one string where a range needs
+   * two, a list where one value is asked for. Cleared rather than converted, because a half-carried
+   * value is what makes a filter ask something nobody meant.
+   */
+  if (patch.condition !== undefined) {
+    const current = next[index];
+    const previous = props.filters[index]?.condition ?? '';
+    if (current && shapeOf(patch.condition) !== shapeOf(previous)) current.value = undefined;
+  }
+
   emit('update', next, props.combine);
+}
+
+/** What kind of value a condition takes. Two conditions of the same shape can keep the value. */
+function shapeOf(condition: string): 'none' | 'one' | 'range' | 'list' {
+  if (WITHOUT_VALUE.has(condition)) return 'none';
+  if (WITH_RANGE.has(condition)) return 'range';
+  if (WITH_LIST.has(condition)) return 'list';
+  return 'one';
+}
+
+/** One end of a range, as text for its field. */
+function endOf(entry: Filter, at: 0 | 1): string {
+  const range = Array.isArray(entry.value) ? entry.value : [];
+  return String(range[at] ?? '');
+}
+
+function changeEnd(index: number, entry: Filter, at: 0 | 1, value: string): void {
+  const range = Array.isArray(entry.value) ? [...entry.value] : ['', ''];
+  range[at] = value;
+  change(index, { value: [range[0] ?? '', range[1] ?? ''] });
+}
+
+/** The values of a list condition, as the select wants them. */
+function listOf(entry: Filter): unknown[] {
+  return Array.isArray(entry.value) ? entry.value : [];
 }
 </script>
 
@@ -73,10 +109,16 @@ function change(index: number, patch: Partial<Filter>): void {
     </div>
 
     <div v-for="(filter, index) in filters" :key="index" class="filters-row">
+      <!--
+        `teleported: false` у каждого списка, и это несущее: element-plus по умолчанию рисует
+        выпадающий список в конце документа, то есть вне поповера с фильтрами, — а поповер считает
+        клик по нему кликом наружу и закрывается. Выбрать колонку было нельзя: панель захлопывалась.
+      -->
       <el-select
         :model-value="filter.column"
         size="small"
         class="filters-column"
+        :teleported="false"
         @update:model-value="change(index, { column: $event as string })"
       >
         <el-option v-for="column in columns" :key="column.name" :value="column.name" :label="column.name" />
@@ -86,6 +128,7 @@ function change(index: number, patch: Partial<Filter>): void {
         :model-value="filter.condition"
         size="small"
         class="filters-condition"
+        :teleported="false"
         @update:model-value="change(index, { condition: $event as string })"
       >
         <el-option
@@ -96,15 +139,53 @@ function change(index: number, patch: Partial<Filter>): void {
         />
       </el-select>
 
+      <!-- Каким бывает значение: его нет, оно одно, их два конца или это список. -->
+      <span v-if="WITHOUT_VALUE.has(filter.condition)" class="filters-value filters-value_absent">—</span>
+
+      <div v-else-if="WITH_RANGE.has(filter.condition)" class="filters-value filters-range">
+        <el-input
+          :model-value="endOf(filter, 0)"
+          size="small"
+          placeholder="от"
+          @update:model-value="changeEnd(index, filter, 0, $event)"
+        />
+        <span class="filters-range-dash">—</span>
+        <el-input
+          :model-value="endOf(filter, 1)"
+          size="small"
+          placeholder="до"
+          @update:model-value="changeEnd(index, filter, 1, $event)"
+        />
+      </div>
+
+      <!--
+        Список значений: element-plus умеет принимать введённое как новый вариант, и это здесь всё,
+        что нужно — заранее известных вариантов у колонки нет, их печатает человек.
+      -->
+      <el-select
+        v-else-if="WITH_LIST.has(filter.condition)"
+        :model-value="listOf(filter)"
+        multiple
+        filterable
+        allow-create
+        default-first-option
+        :reserve-keyword="false"
+        :teleported="false"
+        no-data-text="Введите значение и нажмите Enter"
+        size="small"
+        class="filters-value filters-list"
+        placeholder="значения"
+        @update:model-value="change(index, { value: $event as unknown[] })"
+      />
+
       <el-input
-        v-if="!WITHOUT_VALUE.has(filter.condition)"
+        v-else
         :model-value="String(filter.value ?? '')"
         size="small"
         class="filters-value"
         placeholder="значение"
         @update:model-value="change(index, { value: $event })"
       />
-      <span v-else class="filters-value filters-value_absent">—</span>
 
       <el-button size="small" text @click="remove(index)">убрать</el-button>
     </div>
@@ -139,5 +220,21 @@ function change(index: number, patch: Partial<Filter>): void {
 .filters-value_absent {
   color: var(--el-text-color-placeholder);
   text-align: center;
+}
+
+/* Два конца диапазона в ширине одного поля: строка фильтра и без того длинная. */
+.filters-range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filters-range-dash {
+  color: var(--el-text-color-placeholder);
+}
+
+/* Список значений растёт вниз, а не в ширину — иначе строка фильтра расползается. */
+.filters-list {
+  max-width: 12rem;
 }
 </style>

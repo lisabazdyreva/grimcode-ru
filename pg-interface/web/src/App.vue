@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+// Иконки библиотеки, а не свои: у нарисованных руками разная плотность, и рядом они выглядели
+// разного размера. У библиотечных одна метрика и один размер, заданный `el-icon`.
+import { Delete, Edit, Plus } from '@element-plus/icons-vue';
 // The library's own wording, so the pager and the dialogs speak the language the rest of this screen does.
 import russian from 'element-plus/es/locale/lang/ru.mjs';
 
@@ -22,7 +25,7 @@ import {
 } from './api';
 import FilterPanel from './components/FilterPanel.vue';
 import RowDialog from './components/RowDialog.vue';
-import ValueDialog from './components/ValueDialog.vue';
+import ValuePopover from './components/ValuePopover.vue';
 import { CELL_LIMIT, cellText, isFilterReady, rowCountLabel, shortType } from './labels';
 import { emptyView, PAGE_SIZES, readHash, writeHash, type View } from './view';
 
@@ -38,18 +41,131 @@ const editing = ref<Record<string, unknown> | null>(null);
 const filtersOpen = ref(false);
 
 /** The column being added, while its dialog is open. Null the rest of the time. */
-const adding = ref<{ column: string; type: string } | null>(null);
+const adding = ref<{ column: string; type: string; required: boolean; default: string } | null>(null);
 const reshaping = ref(false);
 
-/** The one cell a person clicked, shown in full. Null when nothing is open. */
-const peeking = ref<{ column: Column; value: unknown } | null>(null);
+/**
+ * What a required column of each type is filled with, as the server would fill it.
+ *
+ * Kept here as well so the field shows the value before it is sent — a person deciding whether a column
+ * should be required needs to see what the existing rows will get. `uuid` has none: an identifier has no
+ * neutral value, and the server refuses a required one.
+ */
+const TYPE_DEFAULTS: Record<string, string> = {
+  text: '',
+  integer: '0',
+  bigint: '0',
+  numeric: '0',
+  boolean: 'false',
+  timestamptz: 'now',
+  date: 'now',
+  jsonb: '{}',
+};
 
-/** A cell with nothing in it has nothing to show, so it does not pretend to be clickable. */
-function peek(column: Column, row: Record<string, unknown>): void {
-  const value = row[column.name];
-  if (value === null || value === undefined || value === '') return;
-  peeking.value = { column, value };
+/** A new column, ready for the dialog. */
+function newColumn(): { column: string; type: string; required: boolean; default: string } {
+  return { column: '', type: 'text', required: false, default: '' };
 }
+
+/**
+ * The default follows the type, until somebody types their own.
+ *
+ * Only filled in for a required column, and only when the field still holds what this function last put
+ * there: a value a person typed is theirs, and changing the type must not quietly discard it.
+ */
+function retype(): void {
+  const request = adding.value;
+  if (!request) return;
+
+  const wasSuggested = Object.values(TYPE_DEFAULTS).includes(request.default) || request.default === '';
+  if (!wasSuggested) return;
+
+  request.default = request.required ? (TYPE_DEFAULTS[request.type] ?? '') : '';
+}
+
+/**
+ * The cell the pointer is on, shown in full beside it. Null when nothing is shown.
+ *
+ * The element is kept along with the value: the popover points at the cell, so it has to know which
+ * cell — one popover serves the whole table rather than one per cell.
+ */
+const peeking = ref<{ column: Column; value: unknown; anchor: HTMLElement } | null>(null);
+
+/**
+ * How long the pointer has to rest on a cell. Without a wait the popover flashes over every cell a
+ * pointer crosses on its way somewhere else, which is noise rather than information.
+ */
+const PEEK_DELAY_MS = 250;
+let peekTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** A cell with nothing in it has nothing to show. */
+function peek(column: Column, row: Record<string, unknown>, event: MouseEvent | FocusEvent): void {
+  const value = row[column.name];
+  const anchor = event.currentTarget;
+  if (value === null || value === undefined || value === '') return;
+  if (!(anchor instanceof HTMLElement)) return;
+
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => (peeking.value = { column, value, anchor }), PEEK_DELAY_MS);
+}
+
+/** The pointer left, or the cell lost focus: nothing to show, and nothing pending either. */
+function unpeek(): void {
+  clearTimeout(peekTimer);
+  peeking.value = null;
+}
+
+/**
+ * Clicking a cell copies its whole value.
+ *
+ * The value as the database holds it, not as the popover shows it: a json document is copied on one line,
+ * the way it is stored, because what is copied is usually going somewhere that wants the value rather
+ * than its formatting.
+ *
+ * Two ways of copying, because this screen runs inside a frame: the clipboard API is not always allowed
+ * there, and when it is refused the old `execCommand` on a hidden textarea still works. Without the
+ * second one, clicking a cell in the panel did nothing at all.
+ */
+async function copyCell(column: Column, row: Record<string, unknown>): Promise<void> {
+  const value = row[column.name];
+  if (value === null || value === undefined) return;
+
+  const text = cellText(value);
+
+  try {
+    await navigator.clipboard.writeText(text);
+    ElMessage({ type: 'success', message: `${column.name} скопировано`, duration: 1500 });
+    return;
+  } catch {
+    if (copyTheOldWay(text)) {
+      ElMessage({ type: 'success', message: `${column.name} скопировано`, duration: 1500 });
+      return;
+    }
+  }
+
+  ElMessage({ type: 'info', message: 'Скопировать не удалось — выделите значение в подсказке' });
+}
+
+/** `execCommand('copy')`, which needs a real selection in a real element. Removed straight after. */
+function copyTheOldWay(text: string): boolean {
+  const carrier = document.createElement('textarea');
+  carrier.value = text;
+  carrier.setAttribute('readonly', '');
+  carrier.style.position = 'fixed';
+  carrier.style.opacity = '0';
+  document.body.appendChild(carrier);
+
+  try {
+    carrier.select();
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    carrier.remove();
+  }
+}
+
+onBeforeUnmount(() => clearTimeout(peekTimer));
 
 const table = computed(() =>
   tables.value.find((entry) => entry.schema === view.value.schema && entry.name === view.value.table),
@@ -94,6 +210,9 @@ function openTable(entry: TableInfo): void {
     schema: entry.schema,
     table: entry.name,
     size: view.value.size,
+    // A table opens in the order its rows arrived, when it has a column that records that. Set as a
+    // real sort rather than left to the server, so the arrow in the header says what is going on.
+    order: entry.naturalOrder ? [{ column: entry.naturalOrder, direction: 'asc' }] : [],
   };
   void load();
 }
@@ -240,6 +359,9 @@ async function submitColumn(): Promise<void> {
       table: view.value.table,
       column: request.column,
       type: request.type,
+      required: request.required,
+      // An empty field means "no default"; for a required column the server fills in the type's own.
+      ...(request.default === '' ? {} : { default: request.default }),
     });
 
     adding.value = null;
@@ -419,15 +541,6 @@ onMounted(async () => {
             />
           </el-popover>
 
-          <el-button
-            v-if="table?.reshapable !== false"
-            size="small"
-            class="add-column-button"
-            @click="adding = { column: '', type: 'text' }"
-          >
-            Добавить колонку
-          </el-button>
-
           <el-button v-if="view.columns.length > 0" size="small" text @click="showAll">
             Показать все колонки
           </el-button>
@@ -485,12 +598,21 @@ onMounted(async () => {
 
             <template #default="{ row }">
               <span v-if="row[column.name] === null" class="value-cell value-cell_null">null</span>
+              <!--
+                Наведение показывает значение целиком, уход — убирает, нажатие копирует. Кнопка, а не
+                просто текст, чтобы то же самое работало с клавиатуры: фокус показывает значение,
+                Enter копирует. Своего `title` нет намеренно — его место занял поповер.
+              -->
               <button
                 v-else
                 type="button"
                 class="value-cell"
-                title="Показать значение целиком"
-                @click="peek(column, row)"
+                title="Нажмите, чтобы скопировать"
+                @mouseenter="peek(column, row, $event)"
+                @mouseleave="unpeek"
+                @focus="peek(column, row, $event)"
+                @blur="unpeek"
+                @click="copyCell(column, row)"
               >
                 {{ cellText(row[column.name]).slice(0, CELL_LIMIT) }}
               </button>
@@ -498,41 +620,52 @@ onMounted(async () => {
           </el-table-column>
 
           <!--
-            The row's own actions: an icon to open it, and everything that cannot be undone behind a
-            menu. Two buttons side by side put "delete" under the cursor of somebody aiming at "edit",
-            and in a narrow column they wrapped onto two lines.
+            Новая колонка — плюсиком в самой шапке, там, где колонки и кончаются: кнопка над таблицей
+            была дальше от того, к чему относится. Колонка встанет последней и в базе — PostgreSQL
+            добавляет только в конец, вставить в середину он не умеет.
+          -->
+          <el-table-column
+            v-if="table?.reshapable !== false"
+            label=""
+            width="80"
+            align="center"
+            header-align="center"
+            label-class-name="add-column-head"
+          >
+            <template #header>
+              <el-button
+                size="small"
+                text
+                class="add-column-button"
+                title="Добавить колонку"
+                @click="adding = newColumn()"
+              >
+                <el-icon class="icon"><Plus /></el-icon>
+              </el-button>
+            </template>
+          </el-table-column>
+
+          <!--
+            Действия строки: открыть и удалить, обе кнопкой. Удаление раньше лежало под троеточием —
+            но пряталось там в одиночестве, то есть меню было лишним шагом к единственному пункту.
+            От промаха защищает не меню, а подтверждение: удаление спрашивает, прежде чем удалить.
           -->
           <el-table-column v-if="changeable" label="" width="84" fixed="right" align="center">
             <template #default="{ row }">
               <div class="actions">
                 <el-button size="small" text title="Открыть строку" @click="editing = row">
-                  <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
-                    <path
-                      d="M10.5 1.5l4 4-8 8H2.5v-4l8-8z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.3"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
+                  <el-icon class="icon"><Edit /></el-icon>
                 </el-button>
 
-                <el-dropdown trigger="click">
-                  <el-button size="small" text title="Ещё">
-                    <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
-                      <circle cx="3" cy="8" r="1.3" fill="currentColor" />
-                      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
-                      <circle cx="13" cy="8" r="1.3" fill="currentColor" />
-                    </svg>
-                  </el-button>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item class="actions-delete" @click="remove(row)">
-                        Удалить строку
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
+                <el-button
+                  size="small"
+                  text
+                  class="actions-delete"
+                  title="Удалить строку"
+                  @click="remove(row)"
+                >
+                  <el-icon class="icon"><Delete /></el-icon>
+                </el-button>
               </div>
             </template>
           </el-table-column>
@@ -556,10 +689,10 @@ onMounted(async () => {
     </el-container>
   </el-config-provider>
 
-  <ValueDialog
+  <ValuePopover
     :column="peeking?.column ?? null"
     :value="peeking?.value"
-    @close="peeking = null"
+    :anchor="peeking?.anchor ?? null"
   />
 
   <RowDialog
@@ -587,18 +720,52 @@ onMounted(async () => {
           <el-input v-model="adding.column" class="add-column-name" placeholder="например notes" />
         </el-form-item>
         <el-form-item label="Тип">
-          <el-select v-model="adding.type" class="add-column-type">
+          <el-select v-model="adding.type" class="add-column-type" @change="retype">
             <el-option v-for="type in COLUMN_TYPES" :key="type" :value="type" :label="type" />
           </el-select>
         </el-form-item>
+
+        <!--
+          Подпись и переключатель в одну строку: у остальных полей подпись стоит над полем, потому
+          что поле широкое, а переключатель узкий — над ним подпись оставляет пустую половину строки.
+        -->
+        <el-form-item>
+          <label class="add-column-switch">
+            <span>Обязательная</span>
+            <el-switch v-model="adding.required" class="add-column-required" @change="retype" />
+          </label>
+        </el-form-item>
+
+        <!--
+          Значение по умолчанию: обязательной колонке оно нужно, необязательной — по желанию. Поле
+          заполняется значением этого типа, и его можно поменять: сервер разбирает введённое по типу,
+          иначе отказывает.
+        -->
+        <el-form-item :label="adding.required ? 'Значение по умолчанию' : 'Значение по умолчанию, если нужно'">
+          <!--
+            У обязательного текста значение по умолчанию — пустая строка, поэтому пустое поле здесь
+            и есть значение. Подсказка говорит это словами: иначе пустое поле рядом со словом
+            «обязательно» читается как «заполни, иначе не дам».
+          -->
+          <el-input
+            v-model="adding.default"
+            class="add-column-default"
+            :placeholder="adding.required ? 'пустая строка' : 'нет'"
+          />
+        </el-form-item>
       </el-form>
 
-      <!--
-        Колонка всегда необязательная, и это не упрощение: код модуля перечисляет колонки в INSERT,
-        поэтому NOT NULL сломал бы следующую вставку. Заполнить существующие строки можно правкой строк.
-      -->
       <p class="add-column-note">
-        Колонка будет необязательной (может быть пустой) — иначе код модуля не сможет вставлять строки.
+        <template v-if="adding.required">
+          Колонка будет обязательной, поэтому значение по умолчанию останется у неё навсегда: код модуля
+          не знает про новую колонку и вставляет строки без неё.
+          <template v-if="(table?.rows.count ?? 0) > 0">
+            Существующие строки ({{ rowCountLabel(table!.rows) }}) получат это значение.
+          </template>
+        </template>
+        <template v-else>
+          Колонка будет необязательной — может быть пустой.
+        </template>
       </p>
     </template>
 
@@ -705,6 +872,38 @@ onMounted(async () => {
   min-height: 0;
 }
 
+/*
+ * The plus fills its header cell, so the whole cell is the button.
+ *
+ * A 15-pixel icon is a 15-pixel target in an 80-pixel column, and aiming at it is work. The icon stays
+ * centred; what grows is the area that answers a click.
+ */
+.add-column-button {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * Подпись слева, переключатель у правого края — по краю полей выше, чтобы диалог читался одной сеткой.
+ * Вся строка кликабельна: это `label`, поэтому щелчок по надписи переключает.
+ */
+.add-column-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  cursor: pointer;
+  line-height: normal;
+}
+
 .column-head {
   display: inline-flex;
   align-items: baseline;
@@ -767,9 +966,14 @@ onMounted(async () => {
   gap: 2px;
 }
 
+/*
+ * Размер иконки задаётся здесь, а не в каждом месте: `el-icon` — это рамка, которая масштабирует
+ * вложенный svg по своему размеру, поэтому одно правило держит все иконки экрана одинаковыми.
+ */
 .icon {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
+  font-size: 15px;
 }
 
 .actions-delete {

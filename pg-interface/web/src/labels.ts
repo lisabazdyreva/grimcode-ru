@@ -5,17 +5,32 @@ export const CONDITION_LABELS: Record<string, string> = {
   contains: 'содержит',
   'not-contains': 'не содержит',
   'starts-with': 'начинается с',
+  'not-starts-with': 'не начинается с',
   'ends-with': 'заканчивается на',
+  'not-ends-with': 'не заканчивается на',
   equals: 'равно',
   'not-equals': 'не равно',
   'greater-than': 'больше',
+  'at-least': 'не меньше',
   'less-than': 'меньше',
+  'at-most': 'не больше',
+  between: 'между',
+  'one-of': 'одно из',
+  'not-one-of': 'ни одно из',
+  'is-true': 'да',
+  'is-false': 'нет',
   'is-empty': 'пусто',
   'is-not-empty': 'не пусто',
 };
 
-/** Conditions that ask about presence, so the value field is hidden for them. */
-export const WITHOUT_VALUE = new Set(['is-empty', 'is-not-empty']);
+/** Conditions that ask about presence or truth, so the value field is hidden for them. */
+export const WITHOUT_VALUE = new Set(['is-empty', 'is-not-empty', 'is-true', 'is-false']);
+
+/** Conditions whose value is a list: the field is a list of values a person can add to. */
+export const WITH_LIST = new Set(['one-of', 'not-one-of']);
+
+/** Conditions whose value is the two ends of a range, so the field is two fields. */
+export const WITH_RANGE = new Set(['between']);
 
 /**
  * Whether a filter can be asked yet.
@@ -28,6 +43,17 @@ export const WITHOUT_VALUE = new Set(['is-empty', 'is-not-empty']);
 export function isFilterReady(filter: { column: string; condition: string; value?: unknown }): boolean {
   if (filter.column === '') return false;
   if (WITHOUT_VALUE.has(filter.condition)) return true;
+
+  // A range is not asked until both ends are there, and a list not until it holds something.
+  if (WITH_RANGE.has(filter.condition)) {
+    const range = Array.isArray(filter.value) ? filter.value : [];
+    return range.length === 2 && range.every((end) => end !== null && String(end ?? '') !== '');
+  }
+
+  if (WITH_LIST.has(filter.condition)) {
+    return Array.isArray(filter.value) && filter.value.length > 0;
+  }
+
   return filter.value !== undefined && filter.value !== null && String(filter.value) !== '';
 }
 
