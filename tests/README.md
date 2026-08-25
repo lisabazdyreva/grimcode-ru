@@ -94,7 +94,7 @@ one fixture template rather than a hundred.
 pnpm test:browser
 ```
 
-Thirty checks in Chromium, for the questions an HTTP request cannot answer. Ten of them also
+Thirty-eight checks in Chromium, for the questions an HTTP request cannot answer. Fifteen of them also
 fail on any console error or uncaught exception, so a bundle that renders but throws does not pass. It
 is asked for per check, with `collectPageErrors`, and which ones ask is a choice rather than a rule.
 
@@ -105,10 +105,20 @@ own. Navigation started inside an iframe is followed by the shell's URL and is *
 the shell sending its old path back — the failure this protocol exists to avoid. A deep link opens
 straight into the embedded admin, and the same protected URL works on its own.
 
-**The database section** — [`database.spec.ts`](browser/database.spec.ts). The screen reads the
-catalogue of a live database, sorts through a column's own menu and keeps the view in its URL, opens a
-cut cell in full when it is clicked, shows a two-column key as that table's key, and follows the theme
-the panel sends it — the one contract between a React shell and a frame that is not React.
+**The database section** — [`database.spec.ts`](browser/database.spec.ts). Thirteen checks, the most
+of any file here, because this screen is the one nothing else covers: its own package's tests never
+load it in a browser. It reads the catalogue of a live database, sorts through a column's own menu and
+keeps the view in its URL, shows a cut value in full on hover and copies the whole of it on a click,
+indents a json value, adds a filter without asking anything until a condition is chosen, offers only
+the conditions that fit the column — and keeps its own panel open while one is picked, which is the
+failure that panel had. It asks before deleting a row, shows a two-column key as that table's key, and
+follows the theme the panel sends it — the one contract between a React shell and a frame that is not
+React.
+
+Three checks are about the shape of a table rather than its rows: a column is added, offered what a
+migration's column is never offered and dropped again; a new column made required offers a default,
+because without one the module's next insert would fail; and the tables that record what has been
+applied — `schema_migrations` and `pg_interface_changes` — offer no new column at all.
 
 **The email admin** — [`email-admin.spec.ts`](browser/email-admin.spec.ts). Templates list, the
 editor opens on its own route and runs, a delivery shows its stored message as a preview and as
