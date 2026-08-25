@@ -338,9 +338,19 @@ export function orderClause(table: Table, order: unknown): OrderBy | null {
 
     columns.push(column.name);
 
-    // Nulls last in both directions: they are the least interesting rows either way, and PostgreSQL's
-    // default puts them first on `DESC`, which reads as an error in a table.
-    return `${quote(column.name)} ${direction.toUpperCase()} NULLS LAST`;
+    /*
+     * Nulls last, but only where nulls can occur.
+     *
+     * Nulls last in both directions is a decision about reading: they are the least interesting rows
+     * either way, and PostgreSQL's default puts them first on `DESC`, which reads as a fault in a
+     * table. On a `NOT NULL` column it says nothing — and costs a great deal, because `DESC NULLS
+     * LAST` does not match the order of a btree index, so the whole table is sorted where a backward
+     * walk of the index would have done. Measured on 200 000 rows: 15.3 ms against 0.024 ms, and the
+     * plan changes from `Index Only Scan Backward` to a full sort. PostgreSQL does not work this out
+     * from the column being `NOT NULL`, so the catalogue is asked here instead.
+     */
+    const nulls = column.nullable ? ' NULLS LAST' : '';
+    return `${quote(column.name)} ${direction.toUpperCase()}${nulls}`;
   });
 
   return { sql: fragments.join(', '), columns };
