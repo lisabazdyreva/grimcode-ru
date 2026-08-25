@@ -230,7 +230,8 @@ Notifications and Email have no public surface at all.
 
 ## Data
 
-One PostgreSQL server, one database per module with state, named `<PROJECT_SLUG>_<module>`. Nothing
+One database per module with state, named `<PROJECT_SLUG>_<module>`, and normally one server for all
+of them. Nothing
 migrates another module's schema, and nothing but a module touches its own — with one door, opened
 deliberately: the panel's database section can add a column, and rename or drop a column it added
 itself. It keeps a journal of that in the database it changed, and it will not touch a column a
@@ -242,9 +243,15 @@ front of it. The cost is explicit — a broken migration answers 500 instead of 
 the reason is that a module owning its data owns bringing it into existence too.
 
 Credentials are handed to a module and never read by it: the composer reads the environment and gives
-each module the connection string of its own database and the name it must land on. What is in the
-environment is `DATABASE_URL` — one account, which owns the server and opens every database on it — and
-it stays there. Deleting it after handing it out was tried and dropped: the string lives on `c.env` for
+each module the connection string of its own database, the name it must land on, and the server
+connection it needs for the one `CREATE DATABASE`. What is in the environment is `DATABASE_URL` — one
+account, which owns the server and opens every database on it — and it stays there.
+
+One module can be sent elsewhere entirely: `DATABASE_URL_<MODULE>` overrides its string, another
+server and another account included, and the module creates its database on **that** server rather
+than on the default one. Two conditions come with it, both enforced rather than documented: the
+database has to keep the name `<PROJECT_SLUG>_<module>`, because the module refuses a pool that opened
+anything else, and the account has to be allowed to create it. Deleting it after handing it out was tried and dropped: the string lives on `c.env` for
 the life of the process anyway, so the deletion bought a reader that remembered every name it read and
 little else.
 

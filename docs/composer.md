@@ -77,8 +77,13 @@ of applications is one expression.
 ## The environment is read here and left in place
 
 Everything a module gets out of the environment is read in `compose()` and handed over as a value: the
-mail settings, the session lifetime, one connection string per module. A module reads nothing itself,
-which the lint rules and `check-boundaries` enforce.
+mail settings, the session lifetime, and for a module with a database three strings — the database it
+works in, the name it must land on, and the server connection for the one `CREATE DATABASE`. A module
+reads nothing itself, which the lint rules and `check-boundaries` enforce.
+
+The third of those is derived from the module's own string rather than from `DATABASE_URL`, which is
+what lets `DATABASE_URL_<MODULE>` point a module at another server: taken from `DATABASE_URL` it
+created the database on the default server and then failed to connect to the one it was given.
 
 What used to be here as well was deletion: every credential removed from `process.env` once handed
 out, so that one process did not leave a neighbour's password readable. That went, deliberately. It

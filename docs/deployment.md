@@ -63,9 +63,12 @@ Node is the machine's now, not the image's. `engines` in the manifest says what 
 The application listens on one port, and only that port. What terminates TLS and routes the domain to
 it is outside this repository — a reverse proxy on the same machine, or the platform's own router.
 
-The panel's database section has nothing behind it in any environment: the third-party console that
-used to answer there has been removed, and this template's own interface is not written yet. Gateway
-still checks the section — the owner gets a 503, anybody else the usual 403.
+The panel's database section answers in every environment, and what answers is
+[`pg-interface`](../pg-interface/README.md), a package of this repository running inside the same
+process — nothing is dialled, and no console of anyone else's is deployed. It reaches every module's
+database at once, which is why Gateway lets the owner alone through and answers 403 to any other
+administrator. A deployment that does not want it there at all removes the section from the
+composer — the interface has no listener of its own, so nothing else has to be closed.
 
 ## What happens on start
 

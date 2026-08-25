@@ -18,7 +18,7 @@ has always gone by path, and a module in this process reads the path off the ver
 | Incoming path | Target | Gateway check |
 | --- | --- | --- |
 | `/admin/embed/service/:name/**` | admin surface of that module | session, admin role, grant on `:name` |
-| `/admin/embed/database/**` | nothing yet — Gateway answers 503 itself | session and the `owner` role |
+| `/admin/embed/database/**` | the panel's database interface, handed in as its own target | session and the `owner` role |
 | `/admin/**` | `admin` | session and an admin role |
 | `/service/:name/**` | module from the public allowlist | none — the module secures itself |
 | `/app/**` | `app` | none — App verifies the user session itself |
