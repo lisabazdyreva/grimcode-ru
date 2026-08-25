@@ -893,6 +893,24 @@ describe('the order rows come back in', () => {
     expect(statement.text).toContain('ORDER BY "email" DESC NULLS LAST, "id"');
   });
 
+  it('does not name the key twice when the sort is already by the key', () => {
+    const { rows: statement } = selectRows(rows, {
+      order: [{ column: 'id', direction: 'asc' }],
+    });
+
+    // `ORDER BY "id" ASC NULLS LAST, "id"` behaves correctly and reads like a mistake.
+    expect(statement.text).toContain('ORDER BY "id" ASC NULLS LAST LIMIT');
+  });
+
+  it('appends only the missing half of a key of two columns', () => {
+    const { rows: statement } = selectRows(grants, {
+      order: [{ column: 'service', direction: 'desc' }],
+    });
+
+    // Dropping both would leave rows with the same service in no order at all.
+    expect(statement.text).toContain('ORDER BY "service" DESC NULLS LAST, "administrator_id"');
+  });
+
   it('pages a keyless table by the physical address of the row', () => {
     const keyless: Table = { ...rows, primaryKey: [] };
     const { rows: statement } = selectRows(keyless, {});

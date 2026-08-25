@@ -50,9 +50,17 @@ function whole(value: unknown, fallback: number, name: string): number {
  * costs nothing. A table without a key cannot be edited through this interface at all, and for reading
  * it `ctid` — the physical address of the row — is unique and stable enough to page by.
  */
-function byKey(table: Table): string {
-  if (table.primaryKey.length === 0) return 'ctid';
-  return table.primaryKey.map((column) => quote(column)).join(', ');
+function byKey(table: Table, alreadySorted: string[]): string[] {
+  if (table.primaryKey.length === 0) return ['ctid'];
+
+  /*
+   * A key column a person already sorted by is not added again: `ORDER BY "id" ASC NULLS LAST, "id"`
+   * works and reads like a mistake. With a key of two columns only the missing ones are appended —
+   * dropping both would leave the order incomplete when only one of them was chosen.
+   */
+  return table.primaryKey
+    .filter((column) => !alreadySorted.includes(column))
+    .map((column) => quote(column));
 }
 
 /** The rows of one page, and the statement that counts every row the same filters match. */
@@ -73,7 +81,8 @@ export function selectRows(
    * those rows in no particular order between themselves, so they swap places between pages and after
    * an edit. With the key appended the order is total, and the sort a person chose still decides.
    */
-  const sorted = ` ORDER BY ${[order, byKey(table)].filter((part) => part !== null).join(', ')}`;
+  const levels = [...(order === null ? [] : [order.sql]), ...byKey(table, order?.columns ?? [])];
+  const sorted = ` ORDER BY ${levels.join(', ')}`;
 
   const rows = {
     text:

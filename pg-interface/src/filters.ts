@@ -311,10 +311,19 @@ export interface Order {
 }
 
 /** `ORDER BY` from what a request asked for, or null. Directions are a pair, never a string. */
-export function orderClause(table: Table, order: unknown): string | null {
+export interface OrderBy {
+  /** The `ORDER BY` levels a person asked for, ready to go into the statement. */
+  sql: string;
+  /** Which columns they name — what keeps the key from being appended a second time. */
+  columns: string[];
+}
+
+export function orderClause(table: Table, order: unknown): OrderBy | null {
   if (order === undefined || order === null) return null;
   if (!Array.isArray(order)) throw new RequestError(400, 'Sorting is a list.');
   if (order.length === 0) return null;
+
+  const columns: string[] = [];
 
   const fragments = order.map((entry) => {
     if (typeof entry !== 'object' || entry === null) {
@@ -327,10 +336,12 @@ export function orderClause(table: Table, order: unknown): string | null {
       throw new RequestError(400, 'A direction is "asc" or "desc".');
     }
 
+    columns.push(column.name);
+
     // Nulls last in both directions: they are the least interesting rows either way, and PostgreSQL's
     // default puts them first on `DESC`, which reads as an error in a table.
     return `${quote(column.name)} ${direction.toUpperCase()} NULLS LAST`;
   });
 
-  return fragments.join(', ');
+  return { sql: fragments.join(', '), columns };
 }
