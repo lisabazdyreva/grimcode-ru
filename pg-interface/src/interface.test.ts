@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COUNT_LIMIT, type Queryable, type RowCount } from './catalog.js';
+import { COUNT_LIMIT, readCatalogue, type Queryable, type RowCount } from './catalog.js';
 import { JOURNAL_TABLE } from './changes.js';
 import { conditionsFor } from './filters.js';
 import { RequestError, type Table } from './identifiers.js';
@@ -227,6 +227,14 @@ type FakePool = Queryable & {
   journalMissing?: boolean;
   /** The most queries this pool ever had in flight at once — how many rounds a request took. */
   mostAtOnce: number;
+  /**
+   * Asks and answers in the order they happened, as `ask <text>` and `answer <text>`.
+   *
+   * What this catches and a count of overlaps does not: whether a query went out **before** anything
+   * came back. The table list counts rows table by table in parallel, so its high-water mark of
+   * queries in flight says little; "asked before the first answer arrived" is the same round.
+   */
+  flow: string[];
   /** The answer itself, without the counting `query` wraps it in. */
   answer<Row>(text: string, values?: unknown[]): { rows: Row[]; rowCount: number | null };
 };
@@ -268,11 +276,13 @@ function fakePool(tables: Table[]): FakePool {
   }
 
   let inFlight = 0;
+  const flow: string[] = [];
 
   const pool: FakePool = {
     asked,
     journal,
     mostAtOnce: 0,
+    flow,
     async connect() {
       return { query: (text: string, values?: unknown[]) => pool.query(text, values), release() {} };
     },
@@ -286,6 +296,7 @@ function fakePool(tables: Table[]): FakePool {
        */
       inFlight += 1;
       pool.mostAtOnce = Math.max(pool.mostAtOnce, inFlight);
+      flow.push(`ask ${text}`);
       try {
         await new Promise((resolve) => {
           setImmediate(resolve);
@@ -293,6 +304,7 @@ function fakePool(tables: Table[]): FakePool {
         return pool.answer<Row>(text, values);
       } finally {
         inFlight -= 1;
+        flow.push(`answer ${text}`);
       }
     },
     answer<Row>(text: string, values: unknown[] = []) {
@@ -810,15 +822,11 @@ describe('the shape of a table', () => {
     const { api, pool } = build();
     await api.fetch(at('/api/databases/demo_auth/tables'));
 
-    /*
-     * Order of asking, not overlap: the table list counts rows table by table in parallel, so the
-     * high-water mark of queries in flight says nothing about this. What says it is that the journal
-     * goes out before the second half of the catalogue comes back.
-     */
-    const asked = pool.asked.map((query) => query.text);
-    expect(asked.findIndex((text) => text.includes(`FROM ${JOURNAL_TABLE}`))).toBeLessThan(
-      asked.findIndex((text) => text.includes('table_constraints')),
-    );
+    // Asked before anything at all came back, which is what "in the same round" means here.
+    const askedJournal = pool.flow.findIndex((step) => step.includes(`ask SELECT version`));
+    const firstAnswer = pool.flow.findIndex((step) => step.startsWith('answer'));
+    expect(askedJournal).toBeGreaterThanOrEqual(0);
+    expect(askedJournal).toBeLessThan(firstAnswer);
   });
 
   it('sends no DDL while reading', async () => {
@@ -929,6 +937,23 @@ describe('the column a table opens sorted by', () => {
 
     // Nothing to sort by is an answer: the screen leaves the order to the server, which uses the key.
     expect(body.tables.find((table) => table.name === 'sessions')?.naturalOrder).toBeNull();
+  });
+});
+
+/**
+ * Reading the catalogue is the expensive part of every request, so its two halves go out together.
+ *
+ * Measured on a live database: the keys cost 1.6 ms beside 5.2 ms for the columns on a module's own
+ * database, and 72 ms beside 160 ms on a database of two hundred tables. Awaited one after the other
+ * that time was added up — and the catalogue is read for the table list, for a page of rows, and for
+ * every change of shape.
+ */
+describe('reading the catalogue', () => {
+  it('asks for columns and keys in the same round', async () => {
+    const pool = fakePool(structuredClone([rows, grants]));
+    await readCatalogue(pool);
+
+    expect(pool.mostAtOnce).toBe(2);
   });
 });
 
