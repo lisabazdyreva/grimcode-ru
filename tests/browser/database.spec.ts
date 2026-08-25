@@ -480,6 +480,43 @@ test.describe('the database section', () => {
   });
 
   /** The two tables that record what has been applied are not reshapable, and the screen knows it. */
+  /**
+   * A date is picked, not typed — in both dialogs.
+   *
+   * Writing `2026-09-15T12:00:00+03:00` by hand is what this replaces. The switch beside the calendar
+   * is for the one value a calendar cannot express: `now`, which reaches the database as `now()` rather
+   * than as the moment somebody opened the dialog.
+   */
+  test('offers a calendar for a date instead of a field to type in', async ({ page }) => {
+    const problems = collectPageErrors(page);
+    const frame = await openDatabaseSection(page);
+
+    await chooseDatabase(page, frame, /_auth$/);
+    await frame.locator('.shell-table-name').filter({ hasText: /^auth_audit$/ }).click();
+    await expect(frame.locator('.el-table__row').first()).toBeVisible({ timeout: 20_000 });
+
+    // A new row: the timestamp column gets a calendar.
+    await frame.locator('.new-row-button').click();
+    await expect(frame.locator('.row-dialog')).toBeVisible();
+    await expect(
+      frame.locator('.row-dialog .field').filter({ hasText: /^created_at/ }).locator('.field-date'),
+    ).toBeVisible();
+    await frame.locator('.row-dialog button').filter({ hasText: 'Отмена' }).click();
+
+    // A new column of type date: a calendar as well, and the switch that means "now" instead.
+    await frame.locator('.add-column-button').click();
+    await frame.locator('.add-column-type').click();
+    await frame.locator('.el-select-dropdown__item:visible').filter({ hasText: /^date$/ }).click();
+
+    await expect(frame.locator('.add-column-date')).toBeVisible();
+    await expect(frame.locator('.add-column-now')).toContainText('Текущая дата');
+
+    await frame.locator('.add-column-now-switch').click();
+    await expect(frame.locator('.add-column-date')).toHaveCount(0);
+
+    expectNoPageErrors(problems);
+  });
+
   test('offers no new column on the tables that record migrations', async ({ page }) => {
     const frame = await openDatabaseSection(page);
 

@@ -80,6 +80,23 @@ function isLong(column: Column): boolean {
 }
 
 /**
+ * A date is picked rather than typed.
+ *
+ * `date` has no time and no zone, so a plain `YYYY-MM-DD` says all of it. A timestamp keeps the
+ * offset of the browser that wrote it (`…+03:00`), because a moment without one is read in the
+ * server's zone and would mean something else there.
+ */
+function dateKind(column: Column): 'date' | 'datetime' | null {
+  if (/^date$/i.test(column.type)) return 'date';
+  if (/timestamp/i.test(column.type)) return 'datetime';
+  return null;
+}
+
+function dateFormat(column: Column): string {
+  return dateKind(column) === 'date' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ssZ';
+}
+
+/**
  * What is sent, and it differs by mode.
  *
  * Editing sends the columns that changed and nothing else, so two people editing one row do not
@@ -93,7 +110,7 @@ function save(): void {
     for (const column of writable.value) {
       const typed = draft.value[column.name] ?? '';
 
-      if (typed === '') {
+      if (typed === '' || typed === null) {
         if (column.hasDefault === true) continue;
         values[column.name] = column.nullable ? null : '';
         continue;
@@ -158,7 +175,18 @@ const changed = computed(() =>
           <span v-if="inserting" class="field-hint">{{ emptyMeans(column) }}</span>
           <span v-else-if="column.nullable" class="field-hint">пусто = null</span>
         </div>
+        <el-date-picker
+          v-if="dateKind(column)"
+          v-model="draft[column.name]"
+          class="field-date"
+          size="small"
+          :type="dateKind(column) ?? 'date'"
+          :value-format="dateFormat(column)"
+          placeholder="выберите дату"
+        />
+
         <el-input
+          v-else
           v-model="draft[column.name]"
           size="small"
           :type="isLong(column) ? 'textarea' : 'text'"
@@ -182,6 +210,12 @@ const changed = computed(() =>
   screen and takes its own buttons with it.
 -->
 <style>
+/* Календарь занимает строку, как остальные поля: правило не scoped, потому что обёртку рисует сама библиотека. */
+.row-dialog .el-date-editor,
+.row-dialog .el-date-editor .el-input__wrapper {
+  width: 100%;
+}
+
 .row-dialog .el-dialog__body {
   max-height: 62vh;
   overflow: auto;

@@ -77,6 +77,12 @@ function newColumn(): { column: string; type: string; required: boolean; default
  * Only filled in for a required column, and only when the field still holds what this function last put
  * there: a value a person typed is theirs, and changing the type must not quietly discard it.
  */
+/** «Сейчас» вместо выбранной даты, и обратно: пустое поле ждёт выбора в календаре. */
+function useNow(on: boolean | string | number): void {
+  if (!adding.value) return;
+  adding.value.default = on === true ? 'now' : '';
+}
+
 function retype(): void {
   const request = adding.value;
   if (!request) return;
@@ -753,7 +759,6 @@ onMounted(async () => {
       <p v-else class="shell-empty">Выберите таблицу слева</p>
     </el-main>
     </el-container>
-  </el-config-provider>
 
   <ValuePopover
     :column="peeking?.column ?? null"
@@ -826,7 +831,33 @@ onMounted(async () => {
             и есть значение. Подсказка говорит это словами: иначе пустое поле рядом со словом
             «обязательно» читается как «заполни, иначе не дам».
           -->
+          <!--
+            Дату проще выбрать, чем написать: у date и timestamptz вместо поля календарь. Отдельным
+            переключателем — «сейчас»: это самое частое значение по умолчанию у времени создания, и
+            календарём его не выразить, потому что в базу уходит now(), а не выбранный момент.
+          -->
+          <template v-if="adding.type === 'date' || adding.type === 'timestamptz'">
+            <label class="add-column-now">
+              <el-switch
+                :model-value="adding.default === 'now'"
+                class="add-column-now-switch"
+                @update:model-value="useNow"
+              />
+              <span>{{ adding.type === 'date' ? 'Текущая дата' : 'Текущее время' }}</span>
+            </label>
+
+            <el-date-picker
+              v-if="adding.default !== 'now'"
+              v-model="adding.default"
+              class="add-column-default add-column-date"
+              :type="adding.type === 'date' ? 'date' : 'datetime'"
+              :value-format="adding.type === 'date' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ssZ'"
+              :placeholder="adding.required ? 'выберите дату' : 'нет'"
+            />
+          </template>
+
           <el-input
+            v-else
             v-model="adding.default"
             class="add-column-default"
             :placeholder="adding.required ? 'пустая строка' : 'нет'"
@@ -861,7 +892,20 @@ onMounted(async () => {
       </el-button>
     </template>
   </el-dialog>
+  <!--
+    Провайдер закрывается здесь, а не после таблицы: локаль приходит диалогам через дерево
+    компонентов, и календарь в диалоге строки говорил по-английски, пока стоял вне провайдера.
+  -->
+  </el-config-provider>
 </template>
+
+<style>
+/* Календарь в диалоге колонки — на всю ширину поля; правило не scoped по той же причине. */
+.add-column-dialog .el-date-editor,
+.add-column-dialog .el-date-editor .el-input__wrapper {
+  width: 100%;
+}
+</style>
 
 <style scoped>
 .shell {
@@ -945,6 +989,18 @@ onMounted(async () => {
   color: var(--el-text-color-secondary);
   font-size: 0.85rem;
 }
+
+/* Переключатель «сейчас» и подпись в одну строку, как у «обязательной». */
+.add-column-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--el-text-color-regular);
+  font-size: 0.85rem;
+}
+
+
 
 /* Pushed to the right edge of the header, whatever stands to its left. */
 .new-row-button {
