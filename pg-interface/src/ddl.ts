@@ -3,9 +3,13 @@
  *
  * DDL cannot be parameterised — PostgreSQL takes no `$1` in `ALTER TABLE` — so everything here ends up
  * in the text of a statement. That is why this file accepts so little: a name that matches a strict
- * pattern, and a type from a closed list. There is no value to place anywhere, because a column added
- * from the interface is always nullable and has no default; filling the existing rows is a row edit,
- * which goes through the parameterised path like every other value in this package.
+ * pattern, and a type from a closed list.
+ *
+ * One value does reach SQL as text, and only one: the default of a required column, which is what makes
+ * `NOT NULL` safe — the module's `INSERT` has never heard of the column, so nothing but a default can
+ * satisfy it. It is written by type rather than passed through, and `defaultFor` below is the whole of
+ * that. Filling the existing rows of an optional column is a row edit instead, which goes through the
+ * parameterised path like every other value in this package.
  */
 
 import { quote, qualify, RequestError, type Table } from './identifiers.js';

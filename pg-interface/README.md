@@ -105,11 +105,13 @@ static-file helper either. Two details are load-bearing:
   one side renamed it.
 
 What the screen shows: the databases it was handed, the tables of one of them with the key and how many
-rows each holds, and a page of rows. A cell shows one line of its value and **opens the whole of it when
-clicked** — a hash, a uuid or a json document does not fit a line, and a tooltip cannot be selected or
-copied. json opens indented, with the stored form one button away. Per column: sort, filter, hide. Filters offer the conditions the server
-said that column takes, joined with "and" or "or". A row opens in a dialog, where the key is read-only
-and everything else is editable; only what actually changed is sent.
+rows each holds, and a page of rows. A cell shows one line of its value; **hovering it shows the whole
+value, clicking it copies the whole value** — a hash, a uuid or a json document does not fit a line,
+and json is shown indented. The two gestures are split because one popover cannot do both: text inside
+it cannot be selected with the mouse, because a popover that captured the pointer would cover the cells
+under it. Per column: sort, filter, hide. Filters offer the conditions the server said that column
+takes, joined with "and" or "or". A row opens in a dialog, where the key is read-only and everything
+else is editable; only what actually changed is sent.
 
 **A filter is asked only once it can be answered.** A condition appears with nothing typed in it, and
 an empty value means "not finished", not "match the empty string" — sending it anyway made PostgreSQL
@@ -131,11 +133,16 @@ lives in the URL hash instead, which is what made named views worth having: a li
 Columns can be added, renamed and dropped from the screen. Tables cannot: a table is created by a
 module's migration, and a table created here would belong to nobody.
 
-**Adding is open, renaming and dropping are not.** A new column is always nullable — the module's own
+**Adding is open, renaming and dropping are not.** A new column is optional by default: the module's own
 `INSERT` names the columns it knows, so a column it has never heard of has to be satisfied by being left
-out, and `NOT NULL` would break the next insert. That is also why a new column has no default: DDL takes
-no parameters, so a default would be the one value in this package pasted into SQL as text. Filling the
-existing rows is a row edit, which goes through the parameterised path.
+out. Filling its existing rows is a row edit, which goes through the parameterised path.
+
+**A required column is allowed, and only with a default.** `NOT NULL` is safe exactly when something
+else answers for the rows the module inserts, and a default is that something. It cannot be taken away
+afterwards — the next insert would fail — so the screen says as much where it is chosen. The default is
+the one value in this package that reaches SQL as text, written by type rather than passed through;
+`uuid` is refused for it, because the only sensible default generates a value, and a generating default
+makes PostgreSQL rewrite the whole table and its indexes.
 
 Renaming and dropping are allowed **only on a column this interface added**. The rest come from a
 module's migrations and its code reads them by name — renaming `email` would take Auth down with the next
@@ -168,6 +175,12 @@ pnpm --filter @grimcode/pg-interface build
 pnpm --filter @grimcode/pg-interface test
 ```
 
-The tests run without a database: `connect` is an option so a test can hand in a pool of its own.
-What needs a real server — that the catalogue queries are valid SQL, that a filter with a quote in it
-is data — is covered by the acceptance suite against a running application.
+The tests run without a database: `connect` is an option so a test can hand in a pool of its own. That
+is also their limit — a fake pool answers what it was taught, so it cannot tell a valid query from one
+PostgreSQL would refuse.
+
+What a real server checks instead: thirteen browser checks drive this screen against a live database
+(`tests/browser/database.spec.ts`), and two acceptance checks confirm that only the owner reaches the
+section and that a changing request without the header is refused. Neither covers the SQL of a filter
+condition against every type — that was measured by hand, condition by condition, against the same
+question written in plain SQL.
