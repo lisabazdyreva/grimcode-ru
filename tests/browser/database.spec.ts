@@ -297,6 +297,17 @@ test.describe('the database section', () => {
     const id = crypto.randomUUID();
     const action = `probe.inserted.${Date.now()}`;
 
+    /*
+     * The count beside the table name, which the screen keeps in step itself. Asking the server again
+     * would mean counting the rows of every table in the database — the most expensive read here.
+     */
+    const sidebarCount = frame
+      .locator('.shell-table')
+      .filter({ hasText: /^auth_audit/ })
+      .locator('.shell-table-rows');
+    const before = Number(((await sidebarCount.textContent()) ?? '').trim());
+    expect(Number.isNaN(before)).toBe(false);
+
     await frame.locator('.new-row-button').click();
     await expect(frame.locator('.row-dialog')).toBeVisible();
 
@@ -331,6 +342,9 @@ test.describe('the database section', () => {
     const first = frame.locator('.el-table__row').first();
     await expect(first).toContainText(action, { timeout: 20_000 });
 
+    // One row more, without another trip to the server.
+    await expect(sidebarCount).toHaveText(String(before + 1));
+
     /*
      * What the database filled in, and the reason this table was chosen: `details` shows its default
      * `{}` rather than an empty value, and `created_at` a timestamp rather than nothing. The `null`s in
@@ -343,6 +357,9 @@ test.describe('the database section', () => {
     await first.locator('.actions-delete').click();
     await frame.locator('.el-message-box__btns button').filter({ hasText: 'Удалить' }).click();
     await expect(frame.locator('.el-table__row').first()).not.toContainText(action, { timeout: 20_000 });
+
+    // And back to the number it started at, which is what a person watching the sidebar expects.
+    await expect(sidebarCount).toHaveText(String(before));
 
     expectNoPageErrors(problems);
   });
