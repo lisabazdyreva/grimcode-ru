@@ -7,7 +7,6 @@ import {
   dropColumn,
   PROTECTED_TABLES,
   renameColumn,
-  typeOf,
 } from './ddl.js';
 import { conditionsFor } from './filters.js';
 import { findColumn, findTable, RequestError, type Table } from './identifiers.js';
@@ -158,6 +157,8 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         primaryKey: table.primaryKey,
         rows: await countRows(pool, table),
         reshapable: !PROTECTED_TABLES.has(table.name),
+        // What the table should open sorted by, decided here because the catalogue is what knows.
+        naturalOrder: table.naturalOrder ?? null,
         columns: table.columns.map((column) => ({
           ...column,
           conditions: conditionsFor(column.type),
@@ -193,8 +194,14 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const owned = ownColumns(await readJournal(pool));
 
     return json({
+      /*
+       * The conditions belong here as much as in the table list, and for a plain reason: the filter
+       * panel is built from this answer. Without them its menu of conditions was empty, and a filter
+       * added from it fell back to "is" whatever the column was.
+       */
       columns: table.columns.map((column) => ({
         ...column,
+        conditions: conditionsFor(column.type),
         own: owned.has(`${table.schema}.${table.name}.${column.name}`),
       })),
       primaryKey: table.primaryKey,
@@ -250,15 +257,25 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
 
     if (action === 'add') {
       const column = checkName(body.column);
-      const type = typeOf(body.type);
-      const sql = addColumn(table, column, type);
+      const sql = addColumn(table, column, {
+        type: body.type,
+        required: body.required,
+        default: body.default,
+      });
 
       const version = await applyChange(pool, {
         kind: 'add',
         schema: table.schema,
         table: table.name,
         column,
-        details: { type: body.type },
+        // The journal keeps what was asked for; `sql` beside it keeps what was done.
+        details: {
+          type: body.type,
+          ...(body.required === true ? { required: true } : {}),
+          ...(body.default === undefined || body.default === null || body.default === ''
+            ? {}
+            : { default: body.default }),
+        },
         sql,
       });
 

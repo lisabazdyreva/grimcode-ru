@@ -14,33 +14,120 @@ export const TEXT_CONDITIONS = [
   'contains',
   'not-contains',
   'starts-with',
+  'not-starts-with',
   'ends-with',
+  'not-ends-with',
+  'one-of',
+  'not-one-of',
   'is-empty',
   'is-not-empty',
 ] as const;
 
+/**
+ * Numbers and dates: the same set, because "between two of them" is the same question either way and
+ * it is the one people actually come for.
+ */
 export const VALUE_CONDITIONS = [
   'equals',
   'not-equals',
   'greater-than',
+  'at-least',
   'less-than',
+  'at-most',
+  'between',
+  'one-of',
+  'not-one-of',
   'is-empty',
   'is-not-empty',
 ] as const;
 
-export type Condition = (typeof TEXT_CONDITIONS)[number] | (typeof VALUE_CONDITIONS)[number];
+/** A boolean is true, false or nothing. Comparing one with `>` is nonsense, so it is not offered. */
+export const BOOLEAN_CONDITIONS = ['is-true', 'is-false', 'is-empty', 'is-not-empty'] as const;
 
-/** Which conditions apply to a column, by what `information_schema` calls its type. */
+/**
+ * An identifier is matched, not ordered: `>` on a uuid means nothing a person could use. Matching a
+ * fragment stays, because a uuid is usually recognised by its first few characters.
+ */
+export const UUID_CONDITIONS = [
+  'is',
+  'is-not',
+  'contains',
+  'starts-with',
+  'one-of',
+  'not-one-of',
+  'is-empty',
+  'is-not-empty',
+] as const;
+
+/**
+ * A json document is searched, not compared. Equality would be equality of the whole document as text,
+ * which is true only of a document somebody already has in front of them.
+ */
+export const JSON_CONDITIONS = ['contains', 'not-contains', 'is-empty', 'is-not-empty'] as const;
+
+export type Condition =
+  | (typeof TEXT_CONDITIONS)[number]
+  | (typeof VALUE_CONDITIONS)[number]
+  | (typeof BOOLEAN_CONDITIONS)[number]
+  | (typeof UUID_CONDITIONS)[number]
+  | (typeof JSON_CONDITIONS)[number];
+
+/**
+ * Which conditions apply to a column, by what `information_schema` calls its type.
+ *
+ * Five sets rather than two: offering "greater than" for a boolean or "contains" for a number is how an
+ * interface teaches a person not to trust its menus. The sets are the only place types are read, and
+ * every condition in them is an ordinary comparison — nothing here belongs to PostgreSQL.
+ */
 export function conditionsFor(type: string): readonly Condition[] {
+  if (isJson(type)) return JSON_CONDITIONS;
+  if (isUuid(type)) return UUID_CONDITIONS;
+  if (isBoolean(type)) return BOOLEAN_CONDITIONS;
   return isTextual(type) ? TEXT_CONDITIONS : VALUE_CONDITIONS;
 }
 
+/**
+ * Types that take text conditions: matching a fragment of them makes sense.
+ *
+ * Wider than the types that are actually text, on purpose — a uuid or a timestamp is recognised by its
+ * first characters, and `contains` on one is a question people ask. That works because the column is
+ * cast to text first. What does **not** follow is that such a column can hold an empty string — see
+ * `holdsEmptyString`.
+ */
 function isTextual(type: string): boolean {
   return /char|text|uuid|json|enum|name/i.test(type);
 }
 
-/** Conditions that ask about presence rather than content, so they carry no value. */
-const WITHOUT_VALUE = new Set<Condition>(['is-empty', 'is-not-empty']);
+/**
+ * Types where the empty string is a value the column can hold.
+ *
+ * Only real text. Asking `uuid = ''` or `jsonb = ''` is not a filter that finds nothing — it is a value
+ * PostgreSQL refuses to read, and the request fails with `invalid input syntax`.
+ */
+function holdsEmptyString(type: string): boolean {
+  return /char|text|name|enum/i.test(type) && !/json/i.test(type);
+}
+
+function isJson(type: string): boolean {
+  return /json/i.test(type);
+}
+
+function isUuid(type: string): boolean {
+  return /uuid/i.test(type);
+}
+
+function isBoolean(type: string): boolean {
+  return /bool/i.test(type);
+}
+
+/** Conditions that ask about presence or truth rather than content, so they carry no value. */
+const WITHOUT_VALUE = new Set<Condition>(['is-empty', 'is-not-empty', 'is-true', 'is-false']);
+
+/** Conditions whose value is a list of values rather than one. */
+const WITH_LIST = new Set<Condition>(['one-of', 'not-one-of']);
+
+/** Conditions whose value is a pair: the two ends of a range. */
+const WITH_RANGE = new Set<Condition>(['between']);
 
 export interface Filter {
   column: string;
@@ -100,14 +187,40 @@ function fragmentOf(table: Table, filter: unknown, parameters: Parameters): stri
   const target = quote(column.name);
 
   if (WITHOUT_VALUE.has(condition)) {
-    // Empty means "nothing there": null, and for text the empty string as well, because a person
-    // filtering an empty cell does not care which of the two the column happens to hold.
-    const empty = isTextual(column.type) ? `(${target} IS NULL OR ${target} = '')` : `${target} IS NULL`;
+    if (condition === 'is-true') return `${target} IS TRUE`;
+    if (condition === 'is-false') return `${target} IS FALSE`;
+
+    /*
+     * Empty means "nothing there": null, and for text the empty string as well, because a person
+     * filtering an empty cell does not care which of the two the column happens to hold.
+     *
+     * Only for text, though — and that is the fix for a real refusal. `uuid` and `jsonb` were counted as
+     * textual here (`isTextual` reads their names), so "is empty" on an id column asked
+     * `id = ''` and PostgreSQL answered `invalid input syntax for type uuid: ""`. A type that cannot
+     * hold an empty string can only be null.
+     */
+    const empty = holdsEmptyString(column.type)
+      ? `(${target} IS NULL OR ${target} = '')`
+      : `${target} IS NULL`;
     return condition === 'is-empty' ? empty : `NOT ${empty}`;
   }
 
   if (value === undefined || value === null) {
     throw new RequestError(400, `Condition "${condition}" needs a value.`);
+  }
+
+  if (WITH_LIST.has(condition)) {
+    const values = listOf(value, condition);
+    // `IN (…)` with one placeholder per value rather than an array: this is the same SQL everywhere,
+    // where PostgreSQL's own `= ANY($1)` would have to be rewritten for another database.
+    const placeholders = values.map((entry) => parameters.add(entry)).join(', ');
+    return condition === 'one-of' ? `${target} IN (${placeholders})` : `${target} NOT IN (${placeholders})`;
+  }
+
+  if (WITH_RANGE.has(condition)) {
+    const [from, to] = rangeOf(value);
+    // Both ends included: a person asking for 1 to 10 means ten numbers, not eight.
+    return `${target} BETWEEN ${parameters.add(from)} AND ${parameters.add(to)}`;
   }
 
   switch (condition) {
@@ -119,8 +232,12 @@ function fragmentOf(table: Table, filter: unknown, parameters: Parameters): stri
       return `${target} <> ${parameters.add(value)}`;
     case 'greater-than':
       return `${target} > ${parameters.add(value)}`;
+    case 'at-least':
+      return `${target} >= ${parameters.add(value)}`;
     case 'less-than':
       return `${target} < ${parameters.add(value)}`;
+    case 'at-most':
+      return `${target} <= ${parameters.add(value)}`;
     /*
      * `ILIKE` on the text of the column rather than on the column itself: a uuid or a timestamp has
      * no `ILIKE`, and casting is what lets "contains" mean the same thing everywhere in the
@@ -133,11 +250,51 @@ function fragmentOf(table: Table, filter: unknown, parameters: Parameters): stri
       return `${target}::text NOT ILIKE ${parameters.add(`%${escapeLike(value)}%`)}`;
     case 'starts-with':
       return `${target}::text ILIKE ${parameters.add(`${escapeLike(value)}%`)}`;
+    case 'not-starts-with':
+      return `${target}::text NOT ILIKE ${parameters.add(`${escapeLike(value)}%`)}`;
     case 'ends-with':
       return `${target}::text ILIKE ${parameters.add(`%${escapeLike(value)}`)}`;
+    case 'not-ends-with':
+      return `${target}::text NOT ILIKE ${parameters.add(`%${escapeLike(value)}`)}`;
     default:
       throw new RequestError(400, `Unknown condition "${String(condition)}".`);
   }
+}
+
+/**
+ * The values of a list condition.
+ *
+ * A list arrives as a list; a single value is accepted as a list of one, because a filter typed into
+ * one box and then switched to "one of" would otherwise be refused for no reason a person can see.
+ */
+function listOf(value: unknown, condition: Condition): unknown[] {
+  const values = (Array.isArray(value) ? value : [value]).filter(
+    (entry) => entry !== undefined && entry !== null && entry !== '',
+  );
+
+  if (values.length === 0) throw new RequestError(400, `Condition "${condition}" needs at least one value.`);
+  if (values.length > LIST_LIMIT) {
+    throw new RequestError(400, `Condition "${condition}" takes at most ${LIST_LIMIT} values.`);
+  }
+
+  return values;
+}
+
+/** How many values one list condition may carry. A bound, not a judgement of what is reasonable. */
+const LIST_LIMIT = 200;
+
+/** The two ends of a range, in the order they were given — a range needs both to mean anything. */
+function rangeOf(value: unknown): [unknown, unknown] {
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new RequestError(400, 'Condition "between" takes two values: the start and the end.');
+  }
+
+  const [from, to] = value;
+  if (from === undefined || from === null || from === '' || to === undefined || to === null || to === '') {
+    throw new RequestError(400, 'Condition "between" needs both ends of the range.');
+  }
+
+  return [from, to];
 }
 
 /**

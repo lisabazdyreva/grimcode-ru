@@ -38,6 +38,23 @@ function whole(value: unknown, fallback: number, name: string): number {
   return value;
 }
 
+/**
+ * The order a page is read in when nobody asked for one.
+ *
+ * There is always an order, and that is the point: without `ORDER BY` PostgreSQL returns rows however
+ * it read them, and an updated row is written to the end of the table — so editing the first row moved
+ * it to the bottom of the list, which is what this fixes. The same absence also makes paging unsound,
+ * since `LIMIT`/`OFFSET` over an undefined order can show one row twice and another not at all.
+ *
+ * The primary key is the natural choice: it is unique, so the order is total, and it is indexed, so it
+ * costs nothing. A table without a key cannot be edited through this interface at all, and for reading
+ * it `ctid` — the physical address of the row — is unique and stable enough to page by.
+ */
+function byKey(table: Table): string {
+  if (table.primaryKey.length === 0) return 'ctid';
+  return table.primaryKey.map((column) => quote(column)).join(', ');
+}
+
 /** The rows of one page, and the statement that counts every row the same filters match. */
 export function selectRows(
   table: Table,
@@ -51,7 +68,12 @@ export function selectRows(
 
   const columns = table.columns.map((column) => quote(column.name)).join(', ');
   const filtered = where === null ? '' : ` WHERE ${where}`;
-  const sorted = order === null ? '' : ` ORDER BY ${order}`;
+  /*
+   * The key goes last even when a sort was asked for: sorting by a column with repeated values leaves
+   * those rows in no particular order between themselves, so they swap places between pages and after
+   * an edit. With the key appended the order is total, and the sort a person chose still decides.
+   */
+  const sorted = ` ORDER BY ${[order, byKey(table)].filter((part) => part !== null).join(', ')}`;
 
   const rows = {
     text:

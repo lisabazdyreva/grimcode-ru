@@ -22,6 +22,10 @@ interface ColumnRow {
   column_name: string;
   data_type: string;
   is_nullable: 'YES' | 'NO';
+  /** `YES` for a generated identity column — one of the two marks of "the order rows arrived in". */
+  is_identity: 'YES' | 'NO';
+  /** The column's default, which is where `nextval(…)` and `now()` show up. */
+  column_default: string | null;
 }
 
 interface KeyRow {
@@ -44,7 +48,8 @@ interface KeyRow {
  */
 export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
   const { rows: columnRows } = await pool.query<ColumnRow>(
-    `SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_nullable
+    `SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_nullable,
+            c.is_identity, c.column_default
        FROM information_schema.columns c
        JOIN information_schema.tables t
          ON t.table_schema = c.table_schema AND t.table_name = c.table_name
@@ -71,6 +76,8 @@ export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
   }
 
   const tables = new Map<string, Table>();
+  const natural = new Map<string, string>();
+
   for (const row of columnRows) {
     const at = `${row.table_schema}.${row.table_name}`;
     const column: Column = {
@@ -78,6 +85,8 @@ export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
       type: row.data_type,
       nullable: row.is_nullable === 'YES',
     };
+
+    if (!natural.has(at) && arrivalOrder(row)) natural.set(at, row.column_name);
 
     const table = tables.get(at);
     if (table) table.columns.push(column);
@@ -91,7 +100,30 @@ export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
     }
   }
 
+  for (const [at, column] of natural) {
+    const table = tables.get(at);
+    if (table) table.naturalOrder = column;
+  }
+
   return { tables: [...tables.values()] };
+}
+
+/**
+ * Whether a column records the order rows arrived in.
+ *
+ * Which is what a person expects a table to open in — not the order the key happens to sort in, and a
+ * uuid key sorts in no order a person can see. Two marks say "this counts upwards as rows are added":
+ * an identity or `serial` column, and a timestamp that defaults to the current time. Both are schema
+ * facts rather than guesses about a name; a column called `created_at` with no default is somebody's
+ * data and could hold anything.
+ */
+function arrivalOrder(row: ColumnRow): boolean {
+  if (row.is_identity === 'YES') return true;
+  if (row.column_default?.startsWith('nextval(')) return true;
+
+  const timestamp = row.data_type.startsWith('timestamp') || row.data_type === 'date';
+  const defaulted = /now\(\)|CURRENT_TIMESTAMP|CURRENT_DATE/i.test(row.column_default ?? '');
+  return timestamp && defaulted;
 }
 
 /** Above this many rows the list stops counting and says "more than". */

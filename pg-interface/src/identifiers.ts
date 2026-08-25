@@ -25,6 +25,11 @@ export interface Table {
   columns: Column[];
   /** The primary key columns in order, or an empty list when the table has none. */
   primaryKey: string[];
+  /**
+   * The column that records the order rows arrived in — a counter or a creation time — when the table
+   * has one. What a table opens sorted by, because a uuid key sorts in no order a person can see.
+   */
+  naturalOrder?: string;
 }
 
 /**

@@ -66,6 +66,18 @@ const ESTIMATES: Record<string, string> = {
   auth_audit: '-1',
 };
 
+/**
+ * Column defaults, as `information_schema` would report them: `identity` stands for a generated
+ * identity column, anything else is the default expression itself. Keyed by `table.column`.
+ *
+ * `identities.created_at` defaults to `now()`, which is how a table with a uuid key still opens in the
+ * order its rows arrived; `sessions` has neither, so it falls back to its key.
+ */
+const DEFAULTS: Record<string, string> = {
+  'identities.created_at': 'now()',
+  'auth_audit.id': 'identity',
+};
+
 /** A value no uuid column can hold, which the fake pool refuses the way PostgreSQL would. */
 const UNHOLDABLE = 'нет';
 
@@ -305,6 +317,10 @@ function fakePool(tables: Table[]): FakePool {
             column_name: column.name,
             data_type: column.type,
             is_nullable: column.nullable ? 'YES' : 'NO',
+            // The two schema facts that say "this column counts upwards as rows are added". The test
+            // tables carry them in the same shape `information_schema` reports them.
+            is_identity: DEFAULTS[`${table.name}.${column.name}`] === 'identity' ? 'YES' : 'NO',
+            column_default: DEFAULTS[`${table.name}.${column.name}`] ?? null,
           })),
         );
         return { rows: rows as Row[], rowCount: rows.length };
@@ -733,5 +749,331 @@ describe('the shape of a table', () => {
     expect(response.status).toBe(500);
     expect(pool.asked.map((query) => query.text)).toContain('ROLLBACK');
     expect(pool.journal.every((entry) => entry.applied_at === null)).toBe(true);
+  });
+});
+
+/**
+ * There is always an order, because there has to be.
+ *
+ * Without `ORDER BY` PostgreSQL hands back rows in whatever order it read them, and an updated row is
+ * rewritten at the end of the table: editing the first row moved it to the bottom of the list. The same
+ * gap makes paging unsound — `LIMIT`/`OFFSET` over an undefined order can repeat one row and skip
+ * another. The primary key is what closes it: unique, so the order is total, and indexed, so it is free.
+ */
+describe('the order rows come back in', () => {
+  it('sorts by the primary key when nothing was asked for', () => {
+    const { rows: statement } = selectRows(rows, {});
+    expect(statement.text).toContain('ORDER BY "id"');
+  });
+
+  it('sorts by the whole key when the key is two columns', () => {
+    const { rows: statement } = selectRows(grants, {});
+    expect(statement.text).toContain('ORDER BY "administrator_id", "service"');
+  });
+
+  it('keeps the key as the last level of a sort a person chose', () => {
+    const { rows: statement } = selectRows(rows, {
+      order: [{ column: 'email', direction: 'desc' }],
+    });
+
+    // The chosen column decides; the key only breaks ties, which is what stops rows swapping places.
+    expect(statement.text).toContain('ORDER BY "email" DESC NULLS LAST, "id"');
+  });
+
+  it('pages a keyless table by the physical address of the row', () => {
+    const keyless: Table = { ...rows, primaryKey: [] };
+    const { rows: statement } = selectRows(keyless, {});
+
+    // Such a table cannot be edited here, so `ctid` is stable enough to page by.
+    expect(statement.text).toContain('ORDER BY ctid');
+  });
+});
+
+/**
+ * What a table opens sorted by.
+ *
+ * Sorting by the key is stable, and with a uuid key it reads as no order at all — which is how it looked
+ * to the person using it. So the catalogue is asked instead: a counter or a timestamp that defaults to
+ * the current time records the order rows arrived in, and that is what a table opens by. Both marks are
+ * schema facts; a column named `created_at` with no default is somebody's data and means nothing here.
+ */
+describe('the column a table opens sorted by', () => {
+  it('takes a timestamp that defaults to now()', async () => {
+    const { api } = build();
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; naturalOrder: string | null }[];
+    };
+
+    expect(body.tables.find((table) => table.name === 'identities')?.naturalOrder).toBe('created_at');
+  });
+
+  it('takes an identity column', async () => {
+    const { api } = build();
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; naturalOrder: string | null }[];
+    };
+
+    expect(body.tables.find((table) => table.name === 'auth_audit')?.naturalOrder).toBe('id');
+  });
+
+  it('says nothing when the table records no arrival order', async () => {
+    const { api } = build();
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; naturalOrder: string | null }[];
+    };
+
+    // Nothing to sort by is an answer: the screen leaves the order to the server, which uses the key.
+    expect(body.tables.find((table) => table.name === 'sessions')?.naturalOrder).toBeNull();
+  });
+});
+
+/**
+ * Which conditions a column is offered, and what each one becomes.
+ *
+ * Five sets by type, because a menu that offers "greater than" for a boolean or "contains" for a number
+ * teaches a person not to trust it. And every condition is an ordinary comparison — `IN (…)` rather than
+ * PostgreSQL's `= ANY($1)`, `BETWEEN` rather than a pair of clauses — so the set survives a move to
+ * another database with the two casts in this file as the only work.
+ */
+describe('conditions by type', () => {
+  const withColumn = (name: string, type: string): Table => ({
+    schema: 'public',
+    name: 'sample',
+    columns: [{ name, type, nullable: true }],
+    primaryKey: [name],
+  });
+
+  it('offers a boolean truth and nothing to compare', () => {
+    const conditions = conditionsFor('boolean');
+
+    expect(conditions).toEqual(['is-true', 'is-false', 'is-empty', 'is-not-empty']);
+    expect(conditions).not.toContain('greater-than');
+    expect(conditions).not.toContain('contains');
+  });
+
+  it('offers a uuid matching but not ordering', () => {
+    const conditions = conditionsFor('uuid');
+
+    expect(conditions).toContain('starts-with');
+    expect(conditions).toContain('one-of');
+    expect(conditions).not.toContain('greater-than');
+  });
+
+  it('offers a json document searching only', () => {
+    expect(conditionsFor('jsonb')).toEqual(['contains', 'not-contains', 'is-empty', 'is-not-empty']);
+  });
+
+  it('offers numbers and dates the same range conditions', () => {
+    for (const type of ['integer', 'numeric', 'timestamp with time zone', 'date']) {
+      const conditions = conditionsFor(type);
+      expect(conditions).toContain('between');
+      expect(conditions).toContain('at-least');
+      expect(conditions).toContain('at-most');
+    }
+  });
+
+  it('writes the loose comparisons as >= and <=', () => {
+    const table = withColumn('amount', 'numeric');
+
+    expect(selectRows(table, { filters: [{ column: 'amount', condition: 'at-least', value: 10 }] })
+      .rows.text).toContain('"amount" >= $1');
+    expect(selectRows(table, { filters: [{ column: 'amount', condition: 'at-most', value: 10 }] })
+      .rows.text).toContain('"amount" <= $1');
+  });
+
+  it('writes a range as BETWEEN, with both ends included', () => {
+    const table = withColumn('amount', 'integer');
+    const { rows: statement } = selectRows(table, {
+      filters: [{ column: 'amount', condition: 'between', value: [10, 20] }],
+    });
+
+    expect(statement.text).toContain('"amount" BETWEEN $1 AND $2');
+    expect(statement.values).toEqual([10, 20, 50, 0]);
+  });
+
+  it('refuses a range that has only one end', () => {
+    const table = withColumn('amount', 'integer');
+
+    expect(() =>
+      selectRows(table, { filters: [{ column: 'amount', condition: 'between', value: [10] }] }),
+    ).toThrow(/two values/);
+    expect(() =>
+      selectRows(table, { filters: [{ column: 'amount', condition: 'between', value: [10, ''] }] }),
+    ).toThrow(/both ends/);
+  });
+
+  it('writes a list as IN, one placeholder per value', () => {
+    const table = withColumn('tag', 'text');
+    const { rows: statement } = selectRows(table, {
+      filters: [{ column: 'tag', condition: 'one-of', value: ['a', 'b', 'c'] }],
+    });
+
+    expect(statement.text).toContain('"tag" IN ($1, $2, $3)');
+    expect(statement.values.slice(0, 3)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('takes a single value as a list of one, and refuses an empty list', () => {
+    const table = withColumn('tag', 'text');
+
+    expect(
+      selectRows(table, { filters: [{ column: 'tag', condition: 'not-one-of', value: 'a' }] }).rows.text,
+    ).toContain('"tag" NOT IN ($1)');
+
+    expect(() =>
+      selectRows(table, { filters: [{ column: 'tag', condition: 'one-of', value: [] }] }),
+    ).toThrow(/at least one/);
+  });
+
+  it('asks a boolean about truth without a value', () => {
+    const table = withColumn('active', 'boolean');
+
+    expect(selectRows(table, { filters: [{ column: 'active', condition: 'is-true' }] }).rows.text)
+      .toContain('"active" IS TRUE');
+    expect(selectRows(table, { filters: [{ column: 'active', condition: 'is-false' }] }).rows.text)
+      .toContain('"active" IS FALSE');
+  });
+
+  it('writes the negative text conditions as NOT ILIKE', () => {
+    const table = withColumn('title', 'text');
+
+    expect(
+      selectRows(table, { filters: [{ column: 'title', condition: 'not-starts-with', value: 'a' }] })
+        .rows.text,
+    ).toContain('NOT ILIKE');
+    expect(
+      selectRows(table, { filters: [{ column: 'title', condition: 'not-ends-with', value: 'a' }] })
+        .rows.text,
+    ).toContain('NOT ILIKE');
+  });
+});
+
+/**
+ * A required column, and the default that makes it safe.
+ *
+ * `NOT NULL` on its own would break the module: its `INSERT` names the columns it knows, and a column it
+ * has never heard of would have nothing to be filled with. With a default the insert leaves the column
+ * out and PostgreSQL fills it in — so a required column always carries one, and keeps it.
+ *
+ * The default is the one value in this package that reaches SQL as text, which is why it is parsed by
+ * type: a number has to be a number, a date a date, a json document has to parse.
+ */
+describe('a required column', () => {
+  const add = (body: Record<string, unknown>) =>
+    post('/api/databases/demo_auth/columns', { schema: 'public', table: 'identities', ...body }, marked);
+
+  const statementOf = (pool: FakePool) =>
+    pool.asked.filter((query) => query.text.startsWith('ALTER TABLE')).at(-1)?.text ?? '';
+
+  it('gets the neutral default of its type', async () => {
+    const cases: [string, string][] = [
+      ['text', `DEFAULT '' NOT NULL`],
+      ['integer', 'DEFAULT 0 NOT NULL'],
+      ['numeric', 'DEFAULT 0 NOT NULL'],
+      ['boolean', 'DEFAULT false NOT NULL'],
+      ['timestamptz', 'DEFAULT now() NOT NULL'],
+      ['jsonb', `DEFAULT '{}'::jsonb NOT NULL`],
+    ];
+
+    for (const [type, expected] of cases) {
+      const { api, pool } = build();
+      const response = await api.fetch(add({ column: `probe_${type}`, type, required: true }));
+
+      expect(response.status).toBe(200);
+      expect(statementOf(pool)).toContain(expected);
+    }
+  });
+
+  it('stays nullable and undefaulted when nothing is asked for', async () => {
+    const { api, pool } = build();
+    await api.fetch(add({ column: 'plain', type: 'text' }));
+
+    expect(statementOf(pool)).toBe('ALTER TABLE "public"."identities" ADD COLUMN "plain" text');
+  });
+
+  /** A generating default is volatile, and PostgreSQL rewrites the whole table to apply one. */
+  it('refuses a required uuid, because filling one would rewrite the table', async () => {
+    const { api } = build();
+    const response = await api.fetch(add({ column: 'ref', type: 'uuid', required: true }));
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('rewrite the table');
+  });
+
+  it('takes a default of its own, quoted by type', async () => {
+    const { api, pool } = build();
+
+    await api.fetch(add({ column: 'label', type: 'text', required: true, default: "o'brien" }));
+    // The quote is doubled, the way it is in an identifier — this is the one literal in the package.
+    expect(statementOf(pool)).toContain(`DEFAULT 'o''brien' NOT NULL`);
+
+    await api.fetch(add({ column: 'amount', type: 'numeric', default: '10.5' }));
+    expect(statementOf(pool)).toContain('DEFAULT 10.5');
+
+    await api.fetch(add({ column: 'seen_at', type: 'timestamptz', default: '2026-08-24T10:00:00Z' }));
+    expect(statementOf(pool)).toContain(`DEFAULT '2026-08-24T10:00:00Z'::timestamptz`);
+
+    await api.fetch(add({ column: 'ref', type: 'uuid', default: '018f0000-0000-4000-8000-000000000000' }));
+    expect(statementOf(pool)).toContain(`::uuid`);
+  });
+
+  it('refuses a default the type cannot hold', async () => {
+    const { api } = build();
+
+    expect((await api.fetch(add({ column: 'a', type: 'integer', default: 'много' }))).status).toBe(400);
+    expect((await api.fetch(add({ column: 'b', type: 'timestamptz', default: 'вчера' }))).status).toBe(400);
+    expect((await api.fetch(add({ column: 'c', type: 'jsonb', default: '{сломано' }))).status).toBe(400);
+    expect((await api.fetch(add({ column: 'd', type: 'boolean', default: 'может быть' }))).status).toBe(400);
+    expect((await api.fetch(add({ column: 'e', type: 'uuid', default: 'не uuid' }))).status).toBe(400);
+  });
+
+  it('writes what was asked for into the journal, beside what was done', async () => {
+    const { api, pool } = build();
+    await api.fetch(add({ column: 'note', type: 'text', required: true, default: 'нет' }));
+
+    expect(pool.journal.at(-1)?.details).toEqual({ type: 'text', required: true, default: 'нет' });
+    expect(pool.journal.at(-1)?.sql).toContain(`DEFAULT 'нет' NOT NULL`);
+  });
+});
+
+/**
+ * "Is empty" asks the question the column can answer.
+ *
+ * For text, empty covers both null and the empty string: a person looking at a blank cell does not know
+ * or care which one is there. For everything else there is only null — and this was a real refusal, not
+ * a nicety. `uuid` and `jsonb` were counted as textual, so "is empty" on an id column asked `id = ''`
+ * and PostgreSQL answered `invalid input syntax for type uuid: ""`.
+ */
+describe('asking whether a cell is empty', () => {
+  const withColumn = (name: string, type: string): Table => ({
+    schema: 'public',
+    name: 'sample',
+    columns: [{ name, type, nullable: true }],
+    primaryKey: [name],
+  });
+
+  const clauseFor = (type: string, condition: string): string => {
+    const { rows: statement } = selectRows(withColumn('value', type), {
+      filters: [{ column: 'value', condition }],
+    });
+    return statement.text;
+  };
+
+  it('counts the empty string as empty for text', () => {
+    expect(clauseFor('text', 'is-empty')).toContain(`("value" IS NULL OR "value" = '')`);
+    expect(clauseFor('character varying', 'is-empty')).toContain(`OR "value" = ''`);
+  });
+
+  it('asks only about null for a type that cannot hold an empty string', () => {
+    for (const type of ['uuid', 'jsonb', 'integer', 'timestamp with time zone', 'boolean']) {
+      const clause = clauseFor(type, 'is-empty');
+
+      expect(clause).toContain('"value" IS NULL');
+      expect(clause).not.toContain(`= ''`);
+    }
+  });
+
+  it('negates the same question for "is not empty"', () => {
+    expect(clauseFor('uuid', 'is-not-empty')).toContain('NOT "value" IS NULL');
+    expect(clauseFor('text', 'is-not-empty')).toContain(`NOT ("value" IS NULL OR "value" = '')`);
   });
 });
