@@ -9,7 +9,6 @@
   },
   "scripts": {
     "bootstrap:worktree": "node scripts/bootstrap-worktree.mjs",
-    "postgres": "node scripts/local-postgres.mjs",
     "build": "turbo run build && tsc -b tsconfig.entry.json",
     "typecheck": "turbo run typecheck && tsc -b tsconfig.entry.json",
     "test": "turbo run test && vitest run",

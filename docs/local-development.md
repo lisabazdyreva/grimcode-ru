@@ -12,31 +12,8 @@ sudo apt install postgresql
 sudo -u postgres createuser --createdb --pwprompt template
 ```
 
-**Without root there is a second way**, for a machine where `sudo` is not yours to use:
-
-```bash
-pnpm postgres setup
-```
-
-It downloads the official PostgreSQL packages, unpacks them into `~/.local/share/template-postgres`
-and builds a cluster there — a `.deb` is an archive, so no package manager and no root are involved.
-Nothing is installed into the system and nothing is registered with it; deleting that directory
-deletes every trace. The port and the account come from `DATABASE_URL`, so the server is created
-exactly where the application looks for it.
-
-What it costs, compared to the system package: **nothing starts it for you.** A system PostgreSQL comes
-back after a reboot; this one is started by hand.
-
-```bash
-pnpm postgres start     # after a reboot, or after `stop`
-pnpm postgres status    # where it is, and whether it is running
-pnpm postgres stop
-pnpm postgres psql -l   # a shell on it; arguments are passed through
-```
-
-`psql` is worth going through the script rather than calling directly: these binaries are not on the
-`PATH` and do not find their own libraries, so `psql` by hand fails with `libpq.so.5: cannot open
-shared object file`, which says nothing about what is wrong.
+The account needs `CREATEDB` and nothing more: each module creates its own database on first use.
+`DATABASE_URL` in `.env` is where the project reads its port and that account.
 
 Then the project itself:
 
@@ -77,7 +54,6 @@ panel. The first account you register becomes the owner of the panel.
 | --- | --- |
 | `pnpm dev` | Build what changed and run the application |
 | — | The databases and their migrations need no command: each module creates and migrates its own on its first request |
-| `pnpm postgres start` | Start the local PostgreSQL, if it is the one this project installed without root (`setup`, `stop`, `status`, `psql` too) |
 | `pnpm check` | Lint, types, unit tests, production build, then the five scripts below: dependencies, boundaries, procedures, service ids, script names |
 | `pnpm test:acceptance` | The HTTP checks, against a running application |
 | `pnpm test:browser` | The Chromium checks, against a running application |
@@ -157,13 +133,6 @@ it does not create at all.
 
 ```bash
 psql "postgres://template:template@127.0.0.1:5432/${PROJECT_SLUG}_auth"
-```
-
-With the rootless server above, the same thing through the script — the port comes from `DATABASE_URL`,
-so it needs only the database:
-
-```bash
-pnpm postgres psql -d "${PROJECT_SLUG}_auth"
 ```
 
 Each module works in a database of its own — `<PROJECT_SLUG>_<module>` — created on first use through
