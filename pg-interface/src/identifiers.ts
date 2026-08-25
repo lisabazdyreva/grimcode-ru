@@ -16,6 +16,19 @@ export interface Column {
   /** `data_type` from `information_schema`, for the interface to render by. */
   type: string;
   nullable: boolean;
+  /**
+   * Whether the database fills this column in when a new row says nothing about it.
+   *
+   * Only insertion needs it: a `not null` column with a default may be left out of a form, and one
+   * without a default may not — the row would be refused. Editing an existing row never asks.
+   */
+  hasDefault: boolean;
+  /**
+   * Whether the database, and only the database, decides this value: an identity column or one
+   * computed from others. A new row must not carry one — PostgreSQL refuses `GENERATED ALWAYS`
+   * outright, and a value written into a `BY DEFAULT` identity quietly desynchronises its sequence.
+   */
+  generated: boolean;
 }
 
 /** A table as the catalogue describes it, with the key rows are addressed by. */

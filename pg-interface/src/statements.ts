@@ -110,6 +110,68 @@ export function selectRows(
 }
 
 /**
+ * A new row.
+ *
+ * What a person may leave out and what they may not, decided from the catalogue rather than from the
+ * form: a column the database fills in itself is left out of the statement entirely, so `DEFAULT`
+ * applies; a `not null` column with nothing to fall back on is refused here rather than by PostgreSQL,
+ * because the answer names the column and the reason.
+ *
+ * The row comes back with the statement — `RETURNING` the columns the catalogue knows — so the screen
+ * shows what the database actually stored, including every value it filled in.
+ */
+export function insertRow(table: Table, body: { values?: unknown }): Statement {
+  if (typeof body.values !== 'object' || body.values === null || Array.isArray(body.values)) {
+    throw new RequestError(400, 'Values are an object of column names and values.');
+  }
+
+  const values = body.values as Record<string, unknown>;
+  const given = Object.keys(values);
+
+  for (const name of given) {
+    const column = findColumn(table, name);
+    if (column.generated) {
+      throw new RequestError(
+        400,
+        `${column.name} is filled in by the database, so a new row cannot carry it.`,
+      );
+    }
+  }
+
+  const missing = table.columns.filter(
+    (column) => !column.nullable && !column.hasDefault && !column.generated && !given.includes(column.name),
+  );
+
+  if (missing.length > 0) {
+    throw new RequestError(
+      400,
+      `${missing.map((column) => column.name).join(', ')} ` +
+        `${missing.length === 1 ? 'has' : 'have'} no default in ${describeTable(table)}, ` +
+        'so a new row has to carry a value.',
+    );
+  }
+
+  const parameters = new Parameters();
+  const named = table.columns.filter((column) => given.includes(column.name));
+
+  const columns = named.map((column) => quote(column.name)).join(', ');
+  const placeholders = named.map((column) => parameters.add(values[column.name])).join(', ');
+  const returned = table.columns.map((column) => quote(column.name)).join(', ');
+
+  // A table where every column fills itself in: `DEFAULT VALUES` is how PostgreSQL spells that.
+  const body_ = named.length === 0 ? 'DEFAULT VALUES' : `(${columns}) VALUES (${placeholders})`;
+
+  return {
+    text: `INSERT INTO ${qualify(table)} ${body_} RETURNING ${returned}`,
+    values: parameters.values,
+  };
+}
+
+function describeTable(table: Table): string {
+  return `${table.schema}.${table.name}`;
+}
+
+/**
  * The `WHERE` that addresses exactly one row.
  *
  * Every primary key column must be present and nothing else may be: a key with one column missing

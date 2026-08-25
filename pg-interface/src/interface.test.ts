@@ -9,7 +9,7 @@ import {
   REQUEST_HEADER,
   REQUEST_HEADER_VALUE,
 } from './index.js';
-import { deleteRow, pageOf, selectRows, updateRow } from './statements.js';
+import { deleteRow, insertRow, pageOf, selectRows, updateRow } from './statements.js';
 import { serveScreen } from './static.js';
 
 /** A table with a single-column key, and one with a key of two — both shapes exist in this project. */
@@ -17,10 +17,11 @@ const rows: Table = {
   schema: 'public',
   name: 'identities',
   columns: [
-    { name: 'id', type: 'uuid', nullable: false },
-    { name: 'email', type: 'character varying', nullable: false },
-    { name: 'created_at', type: 'timestamp with time zone', nullable: false },
-    { name: 'attempts', type: 'integer', nullable: true },
+    { name: 'id', type: 'uuid', nullable: false, hasDefault: false, generated: false },
+    { name: 'email', type: 'character varying', nullable: false, hasDefault: false, generated: false },
+    // Defaults to `now()`, which is what makes it the column this table opens sorted by.
+    { name: 'created_at', type: 'timestamp with time zone', nullable: false, hasDefault: true, generated: false },
+    { name: 'attempts', type: 'integer', nullable: true, hasDefault: false, generated: false },
   ],
   primaryKey: ['id'],
 };
@@ -29,9 +30,9 @@ const grants: Table = {
   schema: 'public',
   name: 'administrator_grants',
   columns: [
-    { name: 'administrator_id', type: 'uuid', nullable: false },
-    { name: 'service', type: 'character varying', nullable: false },
-    { name: 'note', type: 'text', nullable: true },
+    { name: 'administrator_id', type: 'uuid', nullable: false, hasDefault: false, generated: false },
+    { name: 'service', type: 'character varying', nullable: false, hasDefault: false, generated: false },
+    { name: 'note', type: 'text', nullable: true, hasDefault: false, generated: false },
   ],
   primaryKey: ['administrator_id', 'service'],
 };
@@ -41,8 +42,8 @@ const sessions: Table = {
   schema: 'public',
   name: 'sessions',
   columns: [
-    { name: 'id', type: 'uuid', nullable: false },
-    { name: 'expires_at', type: 'timestamp with time zone', nullable: false },
+    { name: 'id', type: 'uuid', nullable: false, hasDefault: false, generated: false },
+    { name: 'expires_at', type: 'timestamp with time zone', nullable: false, hasDefault: false, generated: false },
   ],
   primaryKey: ['id'],
 };
@@ -51,7 +52,8 @@ const sessions: Table = {
 const audit: Table = {
   schema: 'public',
   name: 'auth_audit',
-  columns: [{ name: 'id', type: 'uuid', nullable: false }],
+  // An identity column: the database fills it in, so a new row must not carry it.
+  columns: [{ name: 'id', type: 'uuid', nullable: false, hasDefault: true, generated: true }],
   primaryKey: ['id'],
 };
 
@@ -165,6 +167,76 @@ describe('values never become SQL', () => {
   });
 });
 
+/**
+ * A new row, and what the catalogue decides on the person's behalf.
+ *
+ * Insertion is the one operation where "left out" and "empty" are different things: a column the
+ * database fills in itself has to be left out of the statement for `DEFAULT` to apply, and a `not
+ * null` column with nothing to fall back on cannot be left out at all. Both answers come from the
+ * catalogue rather than from the form, which is why they are refused here and not by PostgreSQL.
+ */
+describe('adding a row', () => {
+  it('names only the columns it was given, and returns the whole row', () => {
+    const statement = insertRow(rows, {
+      values: { id: 'u-1', email: 'new@example.test' },
+    });
+
+    expect(statement.text).toBe(
+      'INSERT INTO "public"."identities" ("id", "email") VALUES ($1, $2) ' +
+        'RETURNING "id", "email", "created_at", "attempts"',
+    );
+    expect(statement.values).toEqual(['u-1', 'new@example.test']);
+  });
+
+  it('leaves out a column with a default, so the database fills it in', () => {
+    const statement = insertRow(rows, { values: { id: 'u-1', email: 'a@b.c' } });
+
+    // `created_at` defaults to now(): naming it with an empty value would store an empty value.
+    expect(statement.text).not.toContain('"created_at")');
+    expect(statement.text).toContain('RETURNING "id", "email", "created_at"');
+  });
+
+  it('refuses a required column that has no default and no value', () => {
+    expect(() => insertRow(rows, { values: { id: 'u-1' } })).toThrow(/email/);
+    expect(() => insertRow(rows, { values: { id: 'u-1' } })).toThrow(/has no default/);
+  });
+
+  it('refuses a value for a column the database fills in itself', () => {
+    expect(() => insertRow(audit, { values: { id: 7 } })).toThrow(/filled in by the database/);
+  });
+
+  it('inserts defaults only when the table asks for nothing', () => {
+    const statement = insertRow(audit, { values: {} });
+
+    expect(statement.text).toBe('INSERT INTO "public"."auth_audit" DEFAULT VALUES RETURNING "id"');
+    expect(statement.values).toEqual([]);
+  });
+
+  it('carries a null as a null and a value as a parameter', () => {
+    const statement = insertRow(rows, {
+      values: { id: 'u-1', email: 'a@b.c', attempts: null },
+    });
+
+    expect(statement.text).toContain('"attempts"');
+    expect(statement.values).toEqual(['u-1', 'a@b.c', null]);
+  });
+
+  it('refuses a column the table does not have, and values that are not an object', () => {
+    expect(() => insertRow(rows, { values: { passwd: 'x' } })).toThrow(/No column passwd/);
+    expect(() => insertRow(rows, { values: 'email' })).toThrow(/object of column names/);
+    expect(() => insertRow(rows, {})).toThrow(/object of column names/);
+  });
+
+  it('puts a value in a parameter even when it carries SQL', () => {
+    const statement = insertRow(rows, {
+      values: { id: 'u-1', email: "'; DROP TABLE identities; --" },
+    });
+
+    expect(statement.text).not.toContain('DROP TABLE');
+    expect(statement.values).toContain("'; DROP TABLE identities; --");
+  });
+});
+
 describe('a row is addressed by its whole key', () => {
   it('changes one row of a single-column key', () => {
     const statement = updateRow(rows, { key: { id: 'u-1' }, values: { email: 'new@example.test' } });
@@ -257,6 +329,8 @@ function fakePool(tables: Table[]): FakePool {
         name: add[3] ?? '',
         type: add[4] ?? '',
         nullable: true,
+        hasDefault: false,
+        generated: false,
       });
       return;
     }
@@ -349,6 +423,20 @@ function fakePool(tables: Table[]): FakePool {
         return { rows: [] as Row[], rowCount: 1 };
       }
 
+      /*
+       * `INSERT … RETURNING`: the row as this fake stored it, built from the columns the statement
+       * names and the values that came with it. Without this the answer would be an empty row, and the
+       * test would pass while the server dropped `RETURNING` altogether.
+       */
+      if (text.startsWith('INSERT INTO') && text.includes('RETURNING')) {
+        const named = /\(([^)]*)\) VALUES/.exec(text);
+        const columns = named
+          ? named[1].split(',').map((part) => part.trim().replace(/^"|"$/g, ''))
+          : [];
+        const stored = Object.fromEntries(columns.map((column, index) => [column, values[index]]));
+        return { rows: [stored] as Row[], rowCount: 1 };
+      }
+
       if (text.startsWith('ALTER TABLE')) {
         if (pool.failOnAlter) throw Object.assign(new Error('permission denied'), { code: '42501' });
         reshape(text);
@@ -366,6 +454,7 @@ function fakePool(tables: Table[]): FakePool {
             // The two schema facts that say "this column counts upwards as rows are added". The test
             // tables carry them in the same shape `information_schema` reports them.
             is_identity: DEFAULTS[`${table.name}.${column.name}`] === 'identity' ? 'YES' : 'NO',
+            is_generated: 'NEVER',
             column_default: DEFAULTS[`${table.name}.${column.name}`] ?? null,
           })),
         );
@@ -827,6 +916,62 @@ describe('the shape of a table', () => {
     const firstAnswer = pool.flow.findIndex((step) => step.startsWith('answer'));
     expect(askedJournal).toBeGreaterThanOrEqual(0);
     expect(askedJournal).toBeLessThan(firstAnswer);
+  });
+
+  it('adds a row through the API and answers with what was stored', async () => {
+    const { api } = build();
+    const response = await api.fetch(
+      post(
+        '/api/databases/demo_auth/rows/insert',
+        { schema: 'public', table: 'identities', values: { id: 'u-9', email: 'new@example.test' } },
+        marked,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      inserted: { id: 'u-9', email: 'new@example.test' },
+    });
+  });
+
+  it('tells the screen which tables take a new row', async () => {
+    const { api } = build([rows, { ...rows, name: JOURNAL_TABLE }]);
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; insertable: boolean }[];
+    };
+
+    expect(body.tables.find((table) => table.name === 'identities')?.insertable).toBe(true);
+    expect(body.tables.find((table) => table.name === JOURNAL_TABLE)?.insertable).toBe(false);
+  });
+
+  it('refuses a new row in the tables that record what has been applied', async () => {
+    const { api } = build([{ ...rows, name: JOURNAL_TABLE }, { ...rows, name: 'schema_migrations' }]);
+
+    for (const table of [JOURNAL_TABLE, 'schema_migrations']) {
+      const response = await api.fetch(
+        post(
+          '/api/databases/demo_auth/rows/insert',
+          { schema: 'public', table, values: { id: 'u-9', email: 'a@b.c' } },
+          marked,
+        ),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain('already been applied');
+    }
+  });
+
+  it('needs the header to add a row, like any other change', async () => {
+    const { api } = build();
+    const response = await api.fetch(
+      post('/api/databases/demo_auth/rows/insert', {
+        schema: 'public',
+        table: 'identities',
+        values: { id: 'u-9', email: 'a@b.c' },
+      }),
+    );
+
+    expect(response.status).toBe(403);
   });
 
   it('sends no DDL while reading', async () => {

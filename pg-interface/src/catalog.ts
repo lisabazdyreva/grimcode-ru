@@ -26,6 +26,8 @@ interface ColumnRow {
   is_identity: 'YES' | 'NO';
   /** The column's default, which is where `nextval(…)` and `now()` show up. */
   column_default: string | null;
+  /** `ALWAYS` for a column computed from other columns; `NEVER` for an ordinary one. */
+  is_generated: 'ALWAYS' | 'NEVER';
 }
 
 interface KeyRow {
@@ -57,7 +59,7 @@ export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
   const [{ rows: columnRows }, { rows: keyRows }] = await Promise.all([
     pool.query<ColumnRow>(
       `SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_nullable,
-              c.is_identity, c.column_default
+              c.is_identity, c.is_generated, c.column_default
          FROM information_schema.columns c
          JOIN information_schema.tables t
            ON t.table_schema = c.table_schema AND t.table_name = c.table_name
@@ -92,6 +94,9 @@ export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
       name: row.column_name,
       type: row.data_type,
       nullable: row.is_nullable === 'YES',
+      // An identity column has no `column_default`, and it is the one thing that fills itself in.
+      hasDefault: row.column_default !== null || row.is_identity === 'YES',
+      generated: row.is_identity === 'YES' || row.is_generated === 'ALWAYS',
     };
 
     if (!natural.has(at) && arrivalOrder(row)) natural.set(at, row.column_name);

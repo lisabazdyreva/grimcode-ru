@@ -17,7 +17,7 @@ import {
   type DatabaseSource,
   type PoolLog,
 } from './pools.js';
-import { deleteRow, selectRows, updateRow } from './statements.js';
+import { deleteRow, insertRow, selectRows, updateRow } from './statements.js';
 import { serveScreen } from './static.js';
 
 export type { DatabaseSource } from './pools.js';
@@ -119,6 +119,7 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     if (segments[1] === 'databases' && segments.length === 5 && segments[3] === 'rows') {
       if (request.method !== 'POST') return methodNotAllowed();
       const action = segments[4];
+      if (action === 'insert') return await insert(request, decodeURIComponent(segments[2] ?? ''));
       if (action !== 'update' && action !== 'delete') {
         return json({ error: 'not-found', message: `Unknown action "${action}".` }, 404);
       }
@@ -158,6 +159,10 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         primaryKey: table.primaryKey,
         rows: await countRows(pool, table),
         reshapable: !PROTECTED_TABLES.has(table.name),
+        // The same two tables, and for the same reason: a row invented here would record something
+        // that never happened. Sent apart from `reshapable` because adding a row and changing the
+        // shape are different permissions, and one may outlive the other.
+        insertable: !PROTECTED_TABLES.has(table.name),
         // What the table should open sorted by, decided here because the catalogue is what knows.
         naturalOrder: table.naturalOrder ?? null,
         columns: table.columns.map((column) => ({
@@ -215,6 +220,34 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
       rows: page.rows,
       total: Number(counted.rows[0]?.total ?? 0),
     });
+  }
+
+  /**
+   * Adding one row.
+   *
+   * The tables that record what has been applied are refused, the same two the shape of which this
+   * interface will not touch: a hand-written row in `schema_migrations` would tell a module it has
+   * already run a migration it has not, and one in the journal would claim a change nobody made.
+   */
+  async function insert(request: Request, database: string): Promise<Response> {
+    const body = await readBody(request);
+    const pool = await pools.of(database);
+    const table = findTable((await readCatalogue(pool)).tables, body.schema, body.table);
+
+    if (PROTECTED_TABLES.has(table.name)) {
+      throw new RequestError(
+        400,
+        `${describe(table)} records what has already been applied, so this interface adds no row to it.`,
+      );
+    }
+
+    const statement = insertRow(table, body);
+    const result = await pool.query<Record<string, unknown>>(statement.text, statement.values);
+
+    // Counts and names, never a value: a new row is as much data as any other.
+    log({ level: 'info', message: `inserted 1 row into ${describe(table)}`, database });
+
+    return json({ inserted: result.rows[0] ?? null });
   }
 
   /** Changing or removing one row, addressed by its whole primary key. */

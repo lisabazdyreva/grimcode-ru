@@ -12,6 +12,7 @@ import {
   ApiError,
   COLUMN_TYPES,
   deleteRow,
+  insertRow,
   dropColumn,
   listDatabases,
   listTables,
@@ -39,6 +40,9 @@ const loadingRows = ref(false);
 const saving = ref(false);
 const editing = ref<Record<string, unknown> | null>(null);
 const filtersOpen = ref(false);
+
+/** True while the dialog for a new row is open. */
+const creating = ref(false);
 
 /** The column being added, while its dialog is open. Null the rest of the time. */
 const adding = ref<{ column: string; type: string; required: boolean; default: string } | null>(null);
@@ -293,6 +297,12 @@ function keyOf(row: Record<string, unknown>): Record<string, unknown> {
 
 const changeable = computed(() => (page.value?.primaryKey.length ?? 0) > 0);
 
+/**
+ * Whether this table takes a new row. Not the same question as `changeable`: a table without a key
+ * can be added to and then not edited, which is worth offering rather than hiding.
+ */
+const insertable = computed(() => view.value.table !== '' && table.value?.insertable !== false);
+
 async function save(values: Record<string, unknown>): Promise<void> {
   const row = editing.value;
   if (!row) return;
@@ -307,6 +317,31 @@ async function save(values: Record<string, unknown>): Promise<void> {
     });
     editing.value = null;
     ElMessage({ type: 'success', message: 'Строка сохранена' });
+    await load();
+  } catch (error) {
+    report(error);
+  } finally {
+    saving.value = false;
+  }
+}
+
+/**
+ * Adding a row.
+ *
+ * Offered on every table the server will insert into, key or no key: a table without one can be read
+ * and added to, just not edited afterwards. What the database fills in itself never appears in the
+ * form, and a field left empty on a column with a default is omitted so that default applies.
+ */
+async function create(values: Record<string, unknown>): Promise<void> {
+  saving.value = true;
+  try {
+    await insertRow(view.value.database, {
+      schema: view.value.schema,
+      table: view.value.table,
+      values,
+    });
+    creating.value = false;
+    ElMessage({ type: 'success', message: 'Строка добавлена' });
     await load();
   } catch (error) {
     report(error);
@@ -541,6 +576,15 @@ onMounted(async () => {
             />
           </el-popover>
 
+          <el-button
+            v-if="insertable"
+            size="small"
+            class="new-row-button"
+            @click="creating = true"
+          >
+            Добавить строку
+          </el-button>
+
           <el-button v-if="view.columns.length > 0" size="small" text @click="showAll">
             Показать все колонки
           </el-button>
@@ -693,6 +737,19 @@ onMounted(async () => {
     :column="peeking?.column ?? null"
     :value="peeking?.value"
     :anchor="peeking?.anchor ?? null"
+  />
+
+  <RowDialog
+    :open="creating"
+    mode="insert"
+    :schema="view.schema"
+    :table="view.table"
+    :columns="page?.columns ?? []"
+    :primary-key="page?.primaryKey ?? []"
+    :row="null"
+    :saving="saving"
+    @close="creating = false"
+    @save="create"
   />
 
   <RowDialog

@@ -12,6 +12,13 @@ const props = defineProps<{
   primaryKey: string[];
   row: Record<string, unknown> | null;
   saving: boolean;
+  /**
+   * `edit` shows the row it was given; `insert` shows an empty form for a new one.
+   *
+   * One dialog rather than two, because the difference is small and lives in three places: whether the
+   * key is written or read, what an empty field means, and which columns appear at all.
+   */
+  mode?: 'edit' | 'insert';
 }>();
 
 const emit = defineEmits<{
@@ -32,8 +39,32 @@ watch(
   { immediate: true },
 );
 
-const keyColumns = computed(() => props.columns.filter((column) => props.primaryKey.includes(column.name)));
-const editable = computed(() => props.columns.filter((column) => !props.primaryKey.includes(column.name)));
+const inserting = computed(() => props.mode === 'insert');
+
+/**
+ * Which columns a new row may carry: everything the database does not fill in by itself.
+ *
+ * A generated column — an identity, or one computed from others — is left out of the form entirely,
+ * because the server refuses a new row that carries one.
+ */
+const writable = computed(() => props.columns.filter((column) => column.generated !== true));
+
+const keyColumns = computed(() =>
+  inserting.value ? [] : props.columns.filter((column) => props.primaryKey.includes(column.name)),
+);
+
+const editable = computed(() =>
+  inserting.value
+    ? writable.value
+    : props.columns.filter((column) => !props.primaryKey.includes(column.name)),
+);
+
+/** What an empty field will do, said in the label rather than discovered after saving. */
+function emptyMeans(column: Column): string {
+  if (column.hasDefault === true) return 'пусто = по умолчанию';
+  if (column.nullable) return 'пусто = null';
+  return 'обязательно';
+}
 
 /**
  * Which columns get a box to write in and which get a line.
@@ -48,9 +79,32 @@ function isLong(column: Column): boolean {
   return LONG_TYPES.test(column.type) && (draft.value[column.name] ?? '').length > 80;
 }
 
-/** The columns that changed, and nothing else: two people editing one row do not overwrite each other. */
+/**
+ * What is sent, and it differs by mode.
+ *
+ * Editing sends the columns that changed and nothing else, so two people editing one row do not
+ * overwrite each other. Inserting sends what was filled in: a field left empty on a column with a
+ * default is **omitted**, which is the only way the database's own value applies.
+ */
 function save(): void {
   const values: Record<string, unknown> = {};
+
+  if (inserting.value) {
+    for (const column of writable.value) {
+      const typed = draft.value[column.name] ?? '';
+
+      if (typed === '') {
+        if (column.hasDefault === true) continue;
+        values[column.name] = column.nullable ? null : '';
+        continue;
+      }
+
+      values[column.name] = typed;
+    }
+
+    emit('save', values);
+    return;
+  }
 
   for (const column of editable.value) {
     const typed = draft.value[column.name] ?? '';
@@ -65,6 +119,7 @@ function save(): void {
 }
 
 const changed = computed(() =>
+  inserting.value ||
   editable.value.some((column) => (draft.value[column.name] ?? '') !== cellText(props.row?.[column.name])),
 );
 </script>
@@ -79,7 +134,7 @@ const changed = computed(() =>
   >
     <template #header>
       <div class="head">
-        <span class="head-title">Строка</span>
+        <span class="head-title">{{ inserting ? 'Новая строка' : 'Строка' }}</span>
         <span class="head-where">{{ schema }}.{{ table }}</span>
       </div>
     </template>
@@ -100,7 +155,8 @@ const changed = computed(() =>
         <div class="field-label">
           <span class="field-name">{{ column.name }}</span>
           <span class="field-type" :title="column.type">{{ shortType(column.type) }}</span>
-          <span v-if="column.nullable" class="field-hint">пусто = null</span>
+          <span v-if="inserting" class="field-hint">{{ emptyMeans(column) }}</span>
+          <span v-else-if="column.nullable" class="field-hint">пусто = null</span>
         </div>
         <el-input
           v-model="draft[column.name]"
@@ -114,7 +170,7 @@ const changed = computed(() =>
     <template #footer>
       <el-button size="small" @click="emit('close')">Отмена</el-button>
       <el-button size="small" type="primary" :disabled="!changed" :loading="saving" @click="save">
-        Сохранить
+        {{ inserting ? 'Добавить' : 'Сохранить' }}
       </el-button>
     </template>
   </el-dialog>

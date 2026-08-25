@@ -12,6 +12,10 @@ export interface Column {
   name: string;
   type: string;
   nullable: boolean;
+  /** True when the database fills this column in by itself: a new row may leave it out. */
+  hasDefault?: boolean;
+  /** True when only the database decides the value — an identity column, or a computed one. */
+  generated?: boolean;
   conditions?: readonly string[];
   /**
    * True when this interface added the column itself.
@@ -50,6 +54,8 @@ export interface TableInfo {
   columns: Column[];
   /** False for the tables whose shape belongs to the project: no column may be added to them. */
   reshapable?: boolean;
+  /** False for the tables that record what has been applied: no row may be added to them by hand. */
+  insertable?: boolean;
   /**
    * The column that records the order rows arrived in — a counter or a creation time — if the table has
    * one. The table opens sorted by it: sorting by a uuid key is stable but reads as no order at all.
@@ -138,6 +144,13 @@ export function updateRow(
   input: { schema: string; table: string; key: Record<string, unknown>; values: Record<string, unknown> },
 ): Promise<{ updated: number }> {
   return send(`databases/${encodeURIComponent(database)}/rows/update`, input);
+}
+
+export function insertRow(
+  database: string,
+  input: { schema: string; table: string; values: Record<string, unknown> },
+): Promise<{ inserted: Record<string, unknown> | null }> {
+  return send(`databases/${encodeURIComponent(database)}/rows/insert`, input);
 }
 
 export function deleteRow(

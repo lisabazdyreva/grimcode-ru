@@ -278,6 +278,75 @@ test.describe('the database section', () => {
    * A table whose key is two columns is the case a screen gets wrong: addressing a row by `id` would
    * either fail or, worse, match several rows. This one exists in the admin database.
    */
+  /**
+   * A new row, and what the form decides for the person.
+   *
+   * `auth_audit` is the table this is done in on purpose: its key has no default, so the form has to
+   * ask for it, while `details` and `created_at` have defaults and must not be sent empty — an empty
+   * value would be stored instead of the default. The row is removed again at the end, so the check is
+   * safe to run against a live stand.
+   */
+  test('adds a row, letting the database fill in what it fills in', async ({ page }) => {
+    const problems = collectPageErrors(page);
+    const frame = await openDatabaseSection(page);
+
+    await chooseDatabase(page, frame, /_auth$/);
+    await frame.locator('.shell-table-name').filter({ hasText: /^auth_audit$/ }).click();
+    await expect(frame.locator('.el-table__row').first()).toBeVisible({ timeout: 20_000 });
+
+    const id = crypto.randomUUID();
+    const action = `probe.inserted.${Date.now()}`;
+
+    await frame.locator('.new-row-button').click();
+    await expect(frame.locator('.row-dialog')).toBeVisible();
+
+    // The label says what an empty field will do, which is not the same answer for every column.
+    await expect(frame.locator('.row-dialog').getByText('пусто = по умолчанию').first()).toBeVisible();
+
+    await frame.locator('.row-dialog .field').filter({ hasText: 'id' }).first().locator('input').fill(id);
+    await frame
+      .locator('.row-dialog .field')
+      .filter({ hasText: /^action/ })
+      .first()
+      .locator('input')
+      .fill(action);
+    await frame.locator('.row-dialog button').filter({ hasText: 'Добавить' }).click();
+
+    /*
+     * Newest first, so the row just added is the one to look at. One click is enough, and that is
+     * itself a fact about this table: it opens sorted by `created_at` — the column that records the
+     * order rows arrived in — so the menu's entry already reads «Сортировать по убыванию».
+     */
+    const head = frame.locator('.column-head').filter({ hasText: /^created_at/ }).first();
+    await expect(head.locator('.column-sort')).toHaveText('↑');
+
+    await head.click();
+    await frame
+      .locator('.el-dropdown-menu__item:visible')
+      .filter({ hasText: 'Сортировать по убыванию' })
+      .first()
+      .click();
+    await expect(head.locator('.column-sort')).toHaveText('↓', { timeout: 20_000 });
+
+    const first = frame.locator('.el-table__row').first();
+    await expect(first).toContainText(action, { timeout: 20_000 });
+
+    /*
+     * What the database filled in, and the reason this table was chosen: `details` shows its default
+     * `{}` rather than an empty value, and `created_at` a timestamp rather than nothing. The `null`s in
+     * the row are the optional columns left empty, which is what empty means for them.
+     */
+    await expect(first).toContainText('{}');
+    await expect(first).toContainText(/\d{4}-\d{2}-\d{2}T/);
+
+    // Away again, confirming as a person would.
+    await first.locator('.actions-delete').click();
+    await frame.locator('.el-message-box__btns button').filter({ hasText: 'Удалить' }).click();
+    await expect(frame.locator('.el-table__row').first()).not.toContainText(action, { timeout: 20_000 });
+
+    expectNoPageErrors(problems);
+  });
+
   test('shows a two-column key as the key of that table', async ({ page }) => {
     const frame = await openDatabaseSection(page);
 
