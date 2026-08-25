@@ -225,6 +225,10 @@ type FakePool = Queryable & {
   failOnAlter?: boolean;
   /** A database this interface has never changed: the journal table is not there at all. */
   journalMissing?: boolean;
+  /** The most queries this pool ever had in flight at once — how many rounds a request took. */
+  mostAtOnce: number;
+  /** The answer itself, without the counting `query` wraps it in. */
+  answer<Row>(text: string, values?: unknown[]): { rows: Row[]; rowCount: number | null };
 };
 
 function fakePool(tables: Table[]): FakePool {
@@ -263,15 +267,35 @@ function fakePool(tables: Table[]): FakePool {
     }
   }
 
+  let inFlight = 0;
+
   const pool: FakePool = {
     asked,
     journal,
+    mostAtOnce: 0,
     async connect() {
       return { query: (text: string, values?: unknown[]) => pool.query(text, values), release() {} };
     },
     async query<Row>(text: string, values: unknown[] = []) {
       asked.push({ text, values });
 
+      /*
+       * Answering is deferred a tick, and while it is deferred the query counts as in flight. That is
+       * what makes the number of rounds a request takes visible: queries started together overlap,
+       * queries awaited one after another never do.
+       */
+      inFlight += 1;
+      pool.mostAtOnce = Math.max(pool.mostAtOnce, inFlight);
+      try {
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+        return pool.answer<Row>(text, values);
+      } finally {
+        inFlight -= 1;
+      }
+    },
+    answer<Row>(text: string, values: unknown[] = []) {
       if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
         return { rows: [] as Row[], rowCount: 0 };
       }
@@ -768,6 +792,35 @@ describe('the shape of a table', () => {
    * rows sent DDL — and asked the account for `CREATE` on the schema, which a reader is refused
    * (`42501`) even when the table is already there. The journal is started by the writing path only.
    */
+  /**
+   * The journal depends on nothing the other reads produce, so it goes out with them.
+   *
+   * Measured on a live database before the change: reading it after the page and the count cost the
+   * price of the query itself, a tenth of a millisecond over a socket — but a whole round trip once
+   * the database is on another machine, on every page a person opens.
+   */
+  it('reads the journal in the same round as the rows and the count', async () => {
+    const { api, pool } = build();
+    await api.fetch(post('/api/databases/demo_auth/rows', { schema: 'public', table: 'identities' }, marked));
+
+    expect(pool.mostAtOnce).toBe(3);
+  });
+
+  it('asks for the journal without waiting for the catalogue', async () => {
+    const { api, pool } = build();
+    await api.fetch(at('/api/databases/demo_auth/tables'));
+
+    /*
+     * Order of asking, not overlap: the table list counts rows table by table in parallel, so the
+     * high-water mark of queries in flight says nothing about this. What says it is that the journal
+     * goes out before the second half of the catalogue comes back.
+     */
+    const asked = pool.asked.map((query) => query.text);
+    expect(asked.findIndex((text) => text.includes(`FROM ${JOURNAL_TABLE}`))).toBeLessThan(
+      asked.findIndex((text) => text.includes('table_constraints')),
+    );
+  });
+
   it('sends no DDL while reading', async () => {
     const { api, pool } = build();
     await api.fetch(at('/api/databases/demo_auth/tables'));

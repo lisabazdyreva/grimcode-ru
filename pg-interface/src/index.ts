@@ -145,10 +145,11 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
   /** The tables of one database, with the key each row is addressed by and a rough size. */
   async function tables(database: string): Promise<Response> {
     const pool = await pools.of(database);
-    const { tables: found } = await readCatalogue(pool);
 
     // Who added each column: `own` is what lets the screen offer rename and drop on some columns only.
-    const owned = ownColumns(await readJournal(pool));
+    // The journal does not depend on the catalogue, so it is read in the same round.
+    const [{ tables: found }, changes] = await Promise.all([readCatalogue(pool), readJournal(pool)]);
+    const owned = ownColumns(changes);
 
     const described = await Promise.all(
       found.map(async (table) => ({
@@ -178,9 +179,15 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const table = findTable((await readCatalogue(pool)).tables, body.schema, body.table);
 
     const { rows: rowsStatement, total: totalStatement } = selectRows(table, body);
-    const [page, counted] = await Promise.all([
+
+    /*
+     * All three in one round: the journal does not depend on the page or the count, and reading it
+     * after them made every page of rows wait a round trip for nothing.
+     */
+    const [page, counted, changes] = await Promise.all([
       pool.query<Record<string, unknown>>(rowsStatement.text, rowsStatement.values),
       pool.query<{ total: string }>(totalStatement.text, totalStatement.values),
+      readJournal(pool),
     ]);
 
     // Counts and names, never a value: what is in these rows is what a log must not keep.
@@ -191,7 +198,7 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
      * column menu from this answer, so a flag stitched together on the client from two answers would
      * disagree with itself the moment a column were renamed.
      */
-    const owned = ownColumns(await readJournal(pool));
+    const owned = ownColumns(changes);
 
     return json({
       /*
