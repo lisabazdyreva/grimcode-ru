@@ -188,7 +188,7 @@ test.describe('the database section', () => {
     await frame.locator('.el-select-dropdown__item:visible').filter({ hasText: 'email' }).first().click();
     await frame.locator('.filters-value input').fill('probe');
 
-    await expect(frame.locator('.filters-button')).toHaveText('Фильтры · 1');
+    await expect(frame.locator('.filters-button')).toHaveText('Фильтры 1');
     await expect(frame.locator('.el-message--error')).toHaveCount(0);
 
     expectNoPageErrors(problems);
@@ -230,7 +230,7 @@ test.describe('the database section', () => {
     // Choosing it leaves the panel open — the whole point of the teleport setting.
     await offered.filter({ hasText: /^нет$/ }).first().click();
     await expect(frame.locator('.filters-row')).toHaveCount(1);
-    await expect(frame.locator('.filters-button')).toHaveText('Фильтры · 1');
+    await expect(frame.locator('.filters-button')).toHaveText('Фильтры 1');
 
     // A range asks for two ends, and asks nothing until it has both.
     await frame.locator('.filters-column .el-select__wrapper').click();

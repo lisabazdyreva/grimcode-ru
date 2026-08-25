@@ -565,7 +565,7 @@ onMounted(async () => {
           <el-popover v-model:visible="filtersOpen" trigger="click" placement="bottom-start" width="auto">
             <template #reference>
               <el-button size="small" class="filters-button">
-                Фильтры<span v-if="asked > 0"> · {{ asked }}</span>
+                Фильтры<span v-if="asked > 0">&nbsp;{{ asked }}</span>
               </el-button>
             </template>
             <FilterPanel
