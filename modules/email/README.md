@@ -127,9 +127,9 @@ module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are
 module itself on the first request that opens its pool, which is also when the seed templates appear.
 
 `email_audit` records who changed what — a template created or updated, a draft made, a version
-published, a test sent — with the administrator and their role. It is a record for the database
-console and not a log in the panel: nothing here reads it back, deliberately, because the delivery log
-is what answers questions about mail. Auth and Admin do surface their own audits, so expect the
+published, a test sent — with the administrator and their role. It is read through the panel's
+database section and nowhere else: this module never reads it back, deliberately, because the delivery
+log is what answers questions about mail. Auth and Admin do surface their own audits, so expect the
 difference.
 
 ## Environment
