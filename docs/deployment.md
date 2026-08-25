@@ -37,7 +37,7 @@ program throws on a missing one and names it, before the port is open.
 | `EMAIL_FROM_NAME`, `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | The transport's own settings. |
 | `AUTH_SESSION_TTL_SECONDS` | How long a session lasts. Thirty days by default. |
 | `LOG_LEVEL` | `debug`, `info`, `warn` or `error`. `info` by default; anything below the level is not written at all. |
-| `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. A full override, taken exactly as written. |
+| `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. A full override, taken exactly as written, and the module creates its database on **that** server. One condition: the database has to be named `<PROJECT_SLUG>_<module>`, because the module refuses a pool that opened anything else (`Pool opened database …, expected …`). |
 
 ## Deploying
 

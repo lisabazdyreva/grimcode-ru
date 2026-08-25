@@ -202,7 +202,7 @@ export function databaseEnv(module: DatabaseModule): ModuleDatabase {
   return {
     databaseUrl: serviceDatabaseUrl(module),
     databaseName: serviceDatabaseName(module),
-    maintenanceUrl: maintenanceDatabaseUrl(),
+    maintenanceUrl: maintenanceDatabaseUrl(module),
   };
 }
 
@@ -244,9 +244,24 @@ export function serviceDatabaseUrl(module: string): string {
   return url.toString();
 }
 
-/** The server itself: a database cannot be created from inside itself. */
-export function maintenanceDatabaseUrl(): string {
-  return new URL(requireEnv('DATABASE_URL')).toString();
+/**
+ * The server itself, for the one `CREATE DATABASE` a module runs: a database cannot be created from
+ * inside itself.
+ *
+ * Derived from the module's own string, not from `DATABASE_URL`, so a module handed
+ * `DATABASE_URL_<MODULE>` on another server creates its database **there**. Taken from `DATABASE_URL`
+ * it created the database on the default server and then failed to connect to the one it was given —
+ * measured on two live servers, and the log said `module database created` just before
+ * `database "…_auth" does not exist`.
+ *
+ * Which database to connect to meanwhile comes from `DATABASE_URL`, because that is where the person
+ * deploying wrote the name of the server's maintenance database — `postgres` on a stock installation,
+ * something else on a managed one.
+ */
+export function maintenanceDatabaseUrl(module: string): string {
+  const url = new URL(serviceDatabaseUrl(module));
+  url.pathname = new URL(requireEnv('DATABASE_URL')).pathname;
+  return url.toString();
 }
 
 /** PostgreSQL cuts every identifier to this many bytes, silently. */

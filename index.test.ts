@@ -112,14 +112,45 @@ describe('the database of one module', () => {
   /** The connection a module opens for one `CREATE DATABASE`, at the database the string names. */
   it('keeps the server connection pointed where it was', () => {
     process.env.DATABASE_URL = 'postgres://owner:secret@postgres:5432/postgres';
-    expect(maintenanceDatabaseUrl()).toBe('postgres://owner:secret@postgres:5432/postgres');
+    expect(maintenanceDatabaseUrl('auth')).toBe('postgres://owner:secret@postgres:5432/postgres');
+  });
+
+  /**
+   * A module handed its own server creates its database **there**.
+   *
+   * Taken from `DATABASE_URL`, the creation went to the default server while the module connected to
+   * the one it was given: measured on two live servers, the log said `module database created` and the
+   * next line said `database "…_auth" does not exist`. The maintenance database keeps its name from
+   * `DATABASE_URL`, because that is where the name of the server's own database is written — `postgres`
+   * on a stock installation, something else on a managed one.
+   */
+  it('creates the database on the server the module was given, not the default one', () => {
+    process.env.PROJECT_SLUG = 'demo';
+    process.env.DATABASE_URL = 'postgres://owner:secret@main:5432/postgres';
+    process.env.DATABASE_URL_AUTH = 'postgres://own:word@elsewhere:63004/demo_auth';
+
+    expect(maintenanceDatabaseUrl('auth')).toBe('postgres://own:word@elsewhere:63004/postgres');
+    // Every other module still goes to the default server.
+    expect(maintenanceDatabaseUrl('users')).toBe('postgres://owner:secret@main:5432/postgres');
+
+    delete process.env.DATABASE_URL_AUTH;
+  });
+
+  it('keeps the name of the maintenance database as it was written', () => {
+    process.env.PROJECT_SLUG = 'demo';
+    process.env.DATABASE_URL = 'postgres://owner:secret@managed:5432/defaultdb';
+    process.env.DATABASE_URL_AUTH = 'postgres://own:word@elsewhere:63004/demo_auth';
+
+    expect(maintenanceDatabaseUrl('auth')).toBe('postgres://own:word@elsewhere:63004/defaultdb');
+
+    delete process.env.DATABASE_URL_AUTH;
   });
 
   /** Fail closed: nothing is guessed when the one connection string is missing. */
   it('refuses to derive anything without DATABASE_URL', () => {
     delete process.env.DATABASE_URL;
     expect(() => serviceDatabaseUrl('auth')).toThrow(/DATABASE_URL/);
-    expect(() => maintenanceDatabaseUrl()).toThrow(/DATABASE_URL/);
+    expect(() => maintenanceDatabaseUrl('auth')).toThrow(/DATABASE_URL/);
   });
 
   /** A password with `@` or `/` in it tears a concatenated string apart; `URL` carries it as written. */
@@ -149,7 +180,7 @@ describe('the database of one module', () => {
     process.env.DATABASE_URL = 'postgres://owner:secret@127.0.0.1:63003/postgres';
 
     expect(serviceDatabaseUrl('auth')).toBe('postgres://owner:secret@127.0.0.1:63003/demo_auth');
-    expect(maintenanceDatabaseUrl()).toBe('postgres://owner:secret@127.0.0.1:63003/postgres');
+    expect(maintenanceDatabaseUrl('auth')).toBe('postgres://owner:secret@127.0.0.1:63003/postgres');
   });
 });
 
