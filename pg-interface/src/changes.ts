@@ -53,7 +53,8 @@ function transactional(pool: Queryable): pool is Transactional {
   return typeof (pool as { connect?: unknown }).connect === 'function';
 }
 
-export async function ensureJournal(pool: Queryable): Promise<void> {
+/** Called from the writing path only — see `readJournal` for why reading must not create it. */
+async function ensureJournal(pool: Queryable): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ${JOURNAL_TABLE} (
       version     integer PRIMARY KEY,
@@ -83,15 +84,33 @@ interface JournalRow {
   applied_at: string | null;
 }
 
-/** The journal of one database, oldest first. Empty when this interface has never changed anything. */
-export async function readJournal(pool: Queryable): Promise<Change[]> {
-  await ensureJournal(pool);
+/** PostgreSQL for "no such table" — here it means the journal has not been started yet. */
+const UNDEFINED_TABLE = '42P01';
 
-  const { rows } = await pool.query<JournalRow>(
-    `SELECT version, kind, "schema", "table", "column", details, sql, applied_at
-       FROM ${JOURNAL_TABLE}
-      ORDER BY version`,
-  );
+function undefinedTable(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === UNDEFINED_TABLE;
+}
+
+/**
+ * The journal of one database, oldest first. Empty when this interface has never changed anything.
+ *
+ * Reading does not create the table: a missing journal is an answer, not a failure. Creating it here
+ * would mean looking at a table changes the schema, and would demand `CREATE` on the schema from a
+ * reader — measured, a role without it is refused `42501` even when the table already exists.
+ */
+export async function readJournal(pool: Queryable): Promise<Change[]> {
+  let rows: JournalRow[];
+
+  try {
+    ({ rows } = await pool.query<JournalRow>(
+      `SELECT version, kind, "schema", "table", "column", details, sql, applied_at
+         FROM ${JOURNAL_TABLE}
+        ORDER BY version`,
+    ));
+  } catch (error) {
+    if (undefinedTable(error)) return [];
+    throw error;
+  }
 
   return rows.map((row) => ({
     version: row.version,

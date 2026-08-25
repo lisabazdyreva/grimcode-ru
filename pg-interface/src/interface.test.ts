@@ -223,6 +223,8 @@ type FakePool = Queryable & {
   journal: JournalEntry[];
   connect(): Promise<Queryable & { release(): void }>;
   failOnAlter?: boolean;
+  /** A database this interface has never changed: the journal table is not there at all. */
+  journalMissing?: boolean;
 };
 
 function fakePool(tables: Table[]): FakePool {
@@ -276,12 +278,20 @@ function fakePool(tables: Table[]): FakePool {
       if (text.includes('pg_advisory_xact_lock')) return { rows: [] as Row[], rowCount: 0 };
 
       if (text.includes(`CREATE TABLE IF NOT EXISTS ${JOURNAL_TABLE}`)) {
+        pool.journalMissing = false;
         return { rows: [] as Row[], rowCount: 0 };
       }
       if (text.includes('MAX(version)')) {
         return { rows: [{ next: journal.length + 1 }] as Row[], rowCount: 1 };
       }
       if (text.includes(`FROM ${JOURNAL_TABLE}`)) {
+        // What a database with no journal answers, whatever the query.
+        if (pool.journalMissing) {
+          throw Object.assign(
+            new Error(`relation "${JOURNAL_TABLE}" does not exist`),
+            { code: '42P01' },
+          );
+        }
         return { rows: journal as Row[], rowCount: journal.length };
       }
       if (text.includes(`INSERT INTO ${JOURNAL_TABLE}`)) {
@@ -749,6 +759,48 @@ describe('the shape of a table', () => {
     expect(response.status).toBe(500);
     expect(pool.asked.map((query) => query.text)).toContain('ROLLBACK');
     expect(pool.journal.every((entry) => entry.applied_at === null)).toBe(true);
+  });
+
+  /**
+   * Looking at a table does not change the schema.
+   *
+   * Reading used to start with `CREATE TABLE IF NOT EXISTS`, so every list of tables and every page of
+   * rows sent DDL — and asked the account for `CREATE` on the schema, which a reader is refused
+   * (`42501`) even when the table is already there. The journal is started by the writing path only.
+   */
+  it('sends no DDL while reading', async () => {
+    const { api, pool } = build();
+    await api.fetch(at('/api/databases/demo_auth/tables'));
+    await api.fetch(post('/api/databases/demo_auth/rows', { schema: 'public', table: 'identities' }, marked));
+
+    expect(pool.asked.filter((query) => query.text.includes('CREATE TABLE'))).toEqual([]);
+  });
+
+  it('reads a database whose journal was never started, and starts it only to write', async () => {
+    const { api, pool } = build();
+    pool.journalMissing = true;
+
+    // No journal is an answer — "nothing here was changed by this interface" — and not a failure.
+    const listed = await api.fetch(at('/api/databases/demo_auth/tables'));
+    const body = (await listed.json()) as {
+      tables: { name: string; columns: { name: string; own: boolean }[] }[];
+    };
+    expect(listed.status).toBe(200);
+    expect(body.tables.find((table) => table.name === 'identities')?.columns.every((column) => !column.own)).toBe(true);
+
+    // And with nothing recorded, nothing is ours to rename.
+    const renamed = await api.fetch(
+      post(
+        '/api/databases/demo_auth/columns/rename',
+        { schema: 'public', table: 'identities', column: 'email', to: 'mail' },
+        marked,
+      ),
+    );
+    expect(renamed.status).toBe(400);
+
+    // Writing is what creates it.
+    expect((await api.fetch(addColumnAt('nickname', 'text'))).status).toBe(200);
+    expect(pool.asked.some((query) => query.text.includes(`CREATE TABLE IF NOT EXISTS ${JOURNAL_TABLE}`))).toBe(true);
   });
 });
 
