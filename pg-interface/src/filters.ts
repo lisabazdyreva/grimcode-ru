@@ -95,7 +95,7 @@ export function conditionsFor(type: string): readonly Condition[] {
  * `holdsEmptyString`.
  */
 function isTextual(type: string): boolean {
-  return /char|text|uuid|json|enum|name/i.test(type);
+  return /char|text|uuid|json|name/i.test(type);
 }
 
 /**
@@ -103,9 +103,15 @@ function isTextual(type: string): boolean {
  *
  * Only real text. Asking `uuid = ''` or `jsonb = ''` is not a filter that finds nothing — it is a value
  * PostgreSQL refuses to read, and the request fails with `invalid input syntax`.
+ *
+ * These names are what `information_schema` calls the type, which is narrower than the names of the
+ * types themselves — checked by listing them. An enum column arrives as `USER-DEFINED` (the enum's own
+ * name is in `udt_name`, which this package does not read), so it takes the ordinary conditions and
+ * asks only about null: right, because PostgreSQL refuses `''` for an enum as well. A domain arrives as
+ * the type it is built on, so a domain over `jsonb` cannot slip in here either.
  */
 function holdsEmptyString(type: string): boolean {
-  return /char|text|name|enum/i.test(type) && !/json/i.test(type);
+  return /char|text|name/i.test(type);
 }
 
 function isJson(type: string): boolean {

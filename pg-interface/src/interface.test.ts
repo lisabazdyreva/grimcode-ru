@@ -1229,12 +1229,25 @@ describe('asking whether a cell is empty', () => {
   });
 
   it('asks only about null for a type that cannot hold an empty string', () => {
-    for (const type of ['uuid', 'jsonb', 'integer', 'timestamp with time zone', 'boolean']) {
+    for (const type of ['uuid', 'jsonb', 'json', 'integer', 'timestamp with time zone', 'boolean']) {
       const clause = clauseFor(type, 'is-empty');
 
       expect(clause).toContain('"value" IS NULL');
       expect(clause).not.toContain(`= ''`);
     }
+  });
+
+  /**
+   * An enum column, as `information_schema` describes it.
+   *
+   * It says `USER-DEFINED` and keeps the enum's own name in `udt_name`, which this package does not
+   * read — so an enum takes the ordinary conditions and asks only about null. That is the right answer
+   * rather than a lucky one: PostgreSQL refuses `''` for an enum too (`invalid input value`).
+   */
+  it('asks only about null for an enum, which arrives as USER-DEFINED', () => {
+    expect(clauseFor('USER-DEFINED', 'is-empty')).toContain('"value" IS NULL');
+    expect(clauseFor('USER-DEFINED', 'is-empty')).not.toContain(`= ''`);
+    expect(conditionsFor('USER-DEFINED')).not.toContain('contains');
   });
 
   it('negates the same question for "is not empty"', () => {
