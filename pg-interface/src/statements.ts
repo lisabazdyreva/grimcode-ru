@@ -5,6 +5,7 @@ import {
   qualify,
   quote,
   RequestError,
+  type Column,
   type Table,
 } from './identifiers.js';
 
@@ -110,6 +111,33 @@ export function selectRows(
 }
 
 /**
+ * The word `null`, typed into a field that cannot hold it.
+ *
+ * A person reads `null` in a cell — which is how this screen shows an empty value — and writes the same
+ * word back. PostgreSQL then answers `invalid input syntax for type uuid: "null"`, which explains the
+ * type system rather than the mistake. A uuid, a number, a date, a boolean or a json document has no
+ * value spelled `null`, so there is nothing else the word could mean: it is read as empty.
+ *
+ * Text is the exception and stays untouched: `null` is a perfectly ordinary string, and a column that
+ * holds words must be able to hold that one.
+ */
+const HOLDS_THE_WORD = /char|text|name/i;
+
+function valueOf(column: Column, value: unknown): unknown {
+  if (typeof value !== 'string' || !/^null$/i.test(value.trim())) return value;
+  if (HOLDS_THE_WORD.test(column.type)) return value;
+
+  if (!column.nullable) {
+    throw new RequestError(
+      400,
+      `${column.name} cannot be empty, and "null" is not a value of type ${column.type}.`,
+    );
+  }
+
+  return null;
+}
+
+/**
  * A new row.
  *
  * What a person may leave out and what they may not, decided from the catalogue rather than from the
@@ -155,7 +183,9 @@ export function insertRow(table: Table, body: { values?: unknown }): Statement {
   const named = table.columns.filter((column) => given.includes(column.name));
 
   const columns = named.map((column) => quote(column.name)).join(', ');
-  const placeholders = named.map((column) => parameters.add(values[column.name])).join(', ');
+  const placeholders = named
+    .map((column) => parameters.add(valueOf(column, values[column.name])))
+    .join(', ');
   const returned = table.columns.map((column) => quote(column.name)).join(', ');
 
   // A table where every column fills itself in: `DEFAULT VALUES` is how PostgreSQL spells that.
@@ -244,7 +274,10 @@ export function updateRow(
 
   const parameters = new Parameters();
   const assignments = names
-    .map((name) => `${quote(findColumn(table, name).name)} = ${parameters.add(values[name])}`)
+    .map((name) => {
+      const column = findColumn(table, name);
+      return `${quote(column.name)} = ${parameters.add(valueOf(column, values[name]))}`;
+    })
     .join(', ');
 
   const where = keyClause(table, body.key, parameters);

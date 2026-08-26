@@ -237,6 +237,47 @@ describe('adding a row', () => {
   });
 });
 
+/**
+ * The word `null`, typed into a field that cannot hold it.
+ *
+ * This is what a person does after reading `null` in a cell — the screen's own way of showing an empty
+ * value — and PostgreSQL answered `invalid input syntax for type uuid: "null"`, which explains its type
+ * system rather than the mistake. A uuid has no value spelled `null`, so the word can only mean empty.
+ */
+describe('the word null', () => {
+  it('means empty for a type that cannot hold the word', () => {
+    const statement = insertRow(rows, {
+      values: { id: 'u-1', email: 'a@b.c', attempts: 'null' },
+    });
+
+    expect(statement.values).toEqual(['u-1', 'a@b.c', null]);
+  });
+
+  it('stays a word for a text column, because there it is a value', () => {
+    const statement = insertRow(rows, { values: { id: 'u-1', email: 'null' } });
+    expect(statement.values).toEqual(['u-1', 'null']);
+  });
+
+  it('is refused where the column cannot be empty at all', () => {
+    const notNullable: Table = {
+      ...rows,
+      columns: [
+        { name: 'id', type: 'uuid', nullable: false, hasDefault: false, generated: false },
+        { name: 'count', type: 'integer', nullable: false, hasDefault: false, generated: false },
+      ],
+    };
+
+    expect(() => insertRow(notNullable, { values: { id: 'u-1', count: 'null' } })).toThrow(
+      /cannot be empty/,
+    );
+  });
+
+  it('means empty when editing a row as well', () => {
+    const statement = updateRow(rows, { key: { id: 'u-1' }, values: { attempts: 'NULL' } });
+    expect(statement.values).toEqual([null, 'u-1']);
+  });
+});
+
 describe('a row is addressed by its whole key', () => {
   it('changes one row of a single-column key', () => {
     const statement = updateRow(rows, { key: { id: 'u-1' }, values: { email: 'new@example.test' } });
