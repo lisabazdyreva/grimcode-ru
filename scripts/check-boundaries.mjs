@@ -77,6 +77,24 @@ const DATABASE_DRIVER = 'pg';
  */
 const DATABASE_ASSERTION = 'assertOpenedDatabase';
 
+/**
+ * The rest of what that file may contain, and why each line of it is here.
+ *
+ * The check above asks only whether the guard is called somewhere in the file, which is less than it
+ * reads like. Measured on 26 August, all three of these pass it: a second pool built from the server
+ * string with the path swapped for a neighbour's database; a pool whose string is
+ * `env.databaseUrl.replace('_catalog', '_admin')` beside a guard told to expect that neighbour; and a
+ * guard whose refusal is swallowed by `.catch(() => undefined)`. One credential opens every database
+ * on the server, so each of those is a working connection to a neighbour that nothing refuses.
+ *
+ * Hence: the string is what the module was handed, verbatim; there are two pools, its database and the
+ * server it lives on; and the guard is told to expect the name it was given, awaited on its own line
+ * so a rejection cannot be caught and dropped.
+ */
+const POOL_CONNECTIONS = ['env.databaseUrl', 'env.maintenanceUrl'];
+const POOLS_PER_DATABASE_FILE = 2;
+const DATABASE_ASSERTION_EXPECTED = 'env.databaseName';
+
 const packages = workspacePackages();
 const packageNames = new Set(packages.map((entry) => entry.name));
 const nameOfDir = new Map(packages.map((entry) => [entry.dir, entry.name]));
@@ -131,6 +149,7 @@ const unbuiltDoors = [];
 const browserProblems = [];
 const driverProblems = [];
 const unguardedDatabases = [];
+const poolProblems = [];
 const listenerProblems = [];
 
 function inspect(file) {
@@ -235,19 +254,67 @@ function inspect(file) {
   }
 
   if (DATABASE_FILE.test(relative)) {
-    let asserts = false;
-    const findAssertion = (node) => {
+    const pools = [];
+    const guards = [];
+
+    const inspectDatabaseFile = (node) => {
+      if (ts.isNewExpression(node) && node.expression.getText(source) === `${DATABASE_DRIVER}.Pool`) {
+        pools.push(node);
+      }
       if (
         ts.isCallExpression(node) &&
         ts.isIdentifier(node.expression) &&
         node.expression.text === DATABASE_ASSERTION
       ) {
-        asserts = true;
+        guards.push(node);
       }
-      ts.forEachChild(node, findAssertion);
+      ts.forEachChild(node, inspectDatabaseFile);
     };
-    findAssertion(source);
-    if (!asserts) unguardedDatabases.push(relative);
+    inspectDatabaseFile(source);
+
+    if (guards.length === 0) unguardedDatabases.push(relative);
+
+    if (pools.length > POOLS_PER_DATABASE_FILE) {
+      poolProblems.push(
+        `${relative} builds ${pools.length} pools; ${POOLS_PER_DATABASE_FILE} are its own database ` +
+          'and the server it lives on',
+      );
+    }
+
+    for (const pool of pools) {
+      const options = pool.arguments?.[0];
+      const property =
+        options && ts.isObjectLiteralExpression(options)
+          ? options.properties.find(
+              (entry) =>
+                ts.isPropertyAssignment(entry) && entry.name.getText(source) === 'connectionString',
+            )
+          : undefined;
+      const written = property ? property.initializer.getText(source) : null;
+
+      if (written === null) {
+        poolProblems.push(`${at(pool)} builds a pool without a connectionString this check can read`);
+      } else if (!POOL_CONNECTIONS.includes(written)) {
+        poolProblems.push(`${at(pool)} connects to \`${written}\`, which is not what it was handed`);
+      }
+    }
+
+    for (const guard of guards) {
+      const expected = guard.arguments[1] ? guard.arguments[1].getText(source) : null;
+      if (expected !== DATABASE_ASSERTION_EXPECTED) {
+        poolProblems.push(
+          `${at(guard)} checks against \`${expected ?? 'nothing'}\` instead of ` +
+            `\`${DATABASE_ASSERTION_EXPECTED}\``,
+        );
+      }
+
+      // Its own statement, so a rejection cannot be caught and dropped on the way.
+      const awaited =
+        ts.isAwaitExpression(guard.parent) && ts.isExpressionStatement(guard.parent.parent);
+      if (!awaited) {
+        poolProblems.push(`${at(guard)} is not awaited on its own line, so its refusal can be lost`);
+      }
+    }
   }
 
   if (BROWSER_SAFE_FILES.test(relative)) {
@@ -399,6 +466,18 @@ if (unguardedDatabases.length > 0) {
   );
 }
 
+if (poolProblems.length > 0) {
+  console.error(`\nPools built from something other than what the module was handed:`);
+  for (const problem of poolProblems) console.error(`- ${problem}`);
+  console.error(
+    `\nA module opens its own database and the server it lives on — ${POOL_CONNECTIONS.join(' or ')}, ` +
+      `as written — and tells the guard the name it was given: ` +
+      `\`await ${DATABASE_ASSERTION}(pool, ${DATABASE_ASSERTION_EXPECTED});\`. One credential opens ` +
+      'every database on the server, so a string assembled here, a third pool, or a guard told to ' +
+      "expect something else is a connection to a neighbour's database that nothing refuses.",
+  );
+}
+
 if (doorProblems.length > 0) {
   const earlier = importProblems.length > 0 || envProblems.length > 0;
   console.error(`${earlier ? '\n' : ''}Doors that would carry code:`);
@@ -416,7 +495,8 @@ const earlierProblem = () =>
   browserProblems.length > 0 ||
   driverProblems.length > 0 ||
   listenerProblems.length > 0 ||
-  unguardedDatabases.length > 0;
+  unguardedDatabases.length > 0 ||
+  poolProblems.length > 0;
 
 if (emitProblems.length > 0) {
   console.error(`${earlierProblem() ? '\n' : ''}Doors that carry code once built:`);
