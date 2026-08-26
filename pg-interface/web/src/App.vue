@@ -27,7 +27,7 @@ import {
 import FilterPanel from './components/FilterPanel.vue';
 import RowDialog from './components/RowDialog.vue';
 import ValuePopover from './components/ValuePopover.vue';
-import { CELL_LIMIT, cellText, isFilterReady, rowCountLabel, shortType } from './labels';
+import { CELL_LIMIT, cellText, isFilterReady, rowCountLabel, shortType, TYPE_HINTS } from './labels';
 import { emptyView, PAGE_SIZES, readHash, writeHash, type View } from './view';
 
 const databases = ref<string[]>([]);
@@ -805,7 +805,12 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="Тип">
           <el-select v-model="adding.type" class="add-column-type" @change="retype">
-            <el-option v-for="type in COLUMN_TYPES" :key="type" :value="type" :label="type" />
+            <el-option v-for="type in COLUMN_TYPES" :key="type" :value="type" :label="type">
+              <span class="type-option">
+                <span class="type-option-name">{{ type }}</span>
+                <span class="type-option-hint">{{ TYPE_HINTS[type] }}</span>
+              </span>
+            </el-option>
           </el-select>
         </el-form-item>
 
@@ -988,6 +993,22 @@ onMounted(async () => {
 .head-note {
   color: var(--el-text-color-secondary);
   font-size: 0.85rem;
+}
+
+/* Имя типа и его подпись в одной строке списка: имя монопространственным, подпись серым. */
+.type-option {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.type-option-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.type-option-hint {
+  color: var(--el-text-color-placeholder);
+  font-size: 0.78rem;
 }
 
 /* Переключатель «сейчас» и подпись в одну строку, как у «обязательной». */

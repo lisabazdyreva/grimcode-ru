@@ -107,3 +107,22 @@ export function shortType(type: string): string {
   for (const [pattern, short] of SHORT_TYPES) if (pattern.test(type)) return short;
   return type;
 }
+
+/**
+ * Что каждый тип хранит, обычными словами.
+ *
+ * Список типов — это выбор, который делается один раз и потом определяет, что в колонке может лежать:
+ * `date` не хранит часов, а `timestamptz` хранит их вместе с поясом. По именам типов PostgreSQL это
+ * видно только тому, кто их уже знает, поэтому рядом стоит подпись.
+ */
+export const TYPE_HINTS: Record<string, string> = {
+  text: 'текст',
+  integer: 'целое число',
+  bigint: 'целое число, большое',
+  numeric: 'число с дробной частью',
+  boolean: 'да или нет',
+  timestamptz: 'дата и время',
+  date: 'только дата, без времени',
+  uuid: 'идентификатор',
+  jsonb: 'json-документ',
+};

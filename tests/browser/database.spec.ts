@@ -454,7 +454,7 @@ test.describe('the database section', () => {
 
     // A number, made required: the field fills in with zero and the note says the rows will get it.
     await frame.locator('.add-column-type').click();
-    await frame.locator('.el-select-dropdown__item:visible').filter({ hasText: /^integer$/ }).click();
+    await frame.locator('.el-select-dropdown__item:visible').filter({ hasText: 'целое число' }).first().click();
     await frame.locator('.add-column-required').click();
 
     await expect(frame.locator('.add-column-default input')).toHaveValue('0');
@@ -506,7 +506,16 @@ test.describe('the database section', () => {
     // A new column of type date: a calendar as well, and the switch that means "now" instead.
     await frame.locator('.add-column-button').click();
     await frame.locator('.add-column-type').click();
-    await frame.locator('.el-select-dropdown__item:visible').filter({ hasText: /^date$/ }).click();
+
+    // Every type carries what it holds in plain words: the names alone read only to whoever knows them.
+    await expect(
+      frame.locator('.el-select-dropdown__item:visible').filter({ hasText: 'timestamptz' }),
+    ).toContainText('дата и время');
+
+    await frame
+      .locator('.el-select-dropdown__item:visible')
+      .filter({ hasText: 'только дата' })
+      .click();
 
     await expect(frame.locator('.add-column-date')).toBeVisible();
     await expect(frame.locator('.add-column-now')).toContainText('Текущая дата');
