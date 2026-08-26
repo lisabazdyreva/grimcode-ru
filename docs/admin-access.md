@@ -47,7 +47,8 @@ and the audit log. Nothing in the system calls it a service:
 - the sidebar shows it under «Админка», with the panel's own sections.
 
 Behind it is this template's own interface, [`pg-interface`](../pg-interface/README.md) — the tables of
-each module's database, a page of rows with filters and sorting, and changing or removing one row.
+each module's database, a page of rows with filters and sorting, and adding, changing or removing one
+row.
 
 It can also add a column, and rename or drop one **it added itself**. Columns that came from a module's
 migration are read and filled, never renamed or dropped: the module's code names them, and a rename

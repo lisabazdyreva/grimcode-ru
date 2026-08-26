@@ -94,7 +94,7 @@ one fixture template rather than a hundred.
 pnpm test:browser
 ```
 
-Thirty-eight checks in Chromium, for the questions an HTTP request cannot answer. Fifteen of them also
+Forty checks in Chromium, for the questions an HTTP request cannot answer. Fifteen of them also
 fail on any console error or uncaught exception, so a bundle that renders but throws does not pass. It
 is asked for per check, with `collectPageErrors`, and which ones ask is a choice rather than a rule.
 
@@ -105,7 +105,7 @@ own. Navigation started inside an iframe is followed by the shell's URL and is *
 the shell sending its old path back — the failure this protocol exists to avoid. A deep link opens
 straight into the embedded admin, and the same protected URL works on its own.
 
-**The database section** — [`database.spec.ts`](browser/database.spec.ts). Thirteen checks, the most
+**The database section** — [`database.spec.ts`](browser/database.spec.ts). Fifteen checks, the most
 of any file here, because this screen is the one nothing else covers: its own package's tests never
 load it in a browser. It reads the catalogue of a live database, sorts through a column's own menu and
 keeps the view in its URL, shows a cut value in full on hover and copies the whole of it on a click,
@@ -114,6 +114,12 @@ the conditions that fit the column — and keeps its own panel open while one is
 failure that panel had. It asks before deleting a row, shows a two-column key as that table's key, and
 follows the theme the panel sends it — the one contract between a React shell and a frame that is not
 React.
+
+One check adds a row and takes it away again: the form asks for the key, because that table's key has
+no default, while `details` and `created_at` have one and are left empty on purpose — an empty value
+would be stored instead of the default. It also watches the count beside the table name go up by one
+and back down, which the screen keeps in step itself. Another opens both dialogs to confirm a date is
+picked in a calendar rather than typed, and that every type in the list says what it holds.
 
 Three checks are about the shape of a table rather than its rows: a column is added, offered what a
 migration's column is never offered and dropped again; a new column made required offers a default,

@@ -127,7 +127,7 @@ a server that does not answer names the file its address came from.
 
 The panel's database section is at `/admin/database`, owner-only, through Gateway. Behind it is
 [`pg-interface`](../pg-interface/README.md), this template's own interface: the tables of every
-module's database, a page of rows, and changing or removing one row.
+module's database, a page of rows, and adding, changing or removing one row.
 
 It can also **add a column, and rename or drop a column it added itself** — each change recorded in
 `pg_interface_changes` in the same database. A column that came from a module's migration it will not

@@ -1,7 +1,7 @@
 # @grimcode/pg-interface
 
 A database interface for PostgreSQL: the tables of a database, a page of rows with filters and
-sorting, and changing or removing one row.
+sorting, and adding, changing or removing one row.
 
 It replaced the third-party console this project used to embed in its admin panel. What it does not
 do is decide who may use it — whoever mounts it decides that, which is what lets it live inside an
@@ -112,6 +112,35 @@ it cannot be selected with the mouse, because a popover that captured the pointe
 under it. Per column: sort, filter, hide. Filters offer the conditions the server said that column
 takes, joined with "and" or "or". A row opens in a dialog, where the key is read-only and everything
 else is editable; only what actually changed is sent.
+
+**A new row is asked for only what the database will not fill in.** A column it fills itself — an
+identity, or one computed from others — is absent from the form, because a new row carrying it is
+refused. A column with a default may be left empty, and then it is **left out of the statement**, so
+the default applies rather than an empty value. A `not null` column with nothing to fall back on is
+refused here, naming the column: `email has no default in public.identities, so a new row has to carry
+a value`. The two tables that record what has been applied — `schema_migrations` and the journal — take
+no new row at all.
+
+**A date is picked, not typed.** `date` gets a calendar, `timestamptz` a calendar with a clock, and the
+value carries the browser's own offset so a moment does not shift into the server's zone. Beside a
+default of either type there is a switch for `now`, which a calendar cannot express: it reaches the
+database as `now()` rather than as the moment the dialog was open.
+
+**The word `null` typed into a field means empty.** A person reads `null` in a cell — this screen's own
+way of showing an empty value — and writes it back; PostgreSQL then answered `invalid input syntax for
+type uuid: "null"`, which explains its type system rather than the mistake. A uuid, a number, a date, a
+boolean and a json document have no value spelled that way, so the word is read as empty. Text is the
+exception: there `null` is an ordinary string and stays one.
+
+**Dates are read as written.** The driver turns `date` and `timestamp` into a JavaScript `Date` — a
+point on the timeline — and neither type is one: on a machine at +03:00 the stored date `2026-08-27`
+arrived as `2026-08-26T21:00:00.000Z`, a day earlier than the table holds. This package reads both as
+the text PostgreSQL sent. `timestamptz` is left to the driver, because that one really is a moment.
+
+**The count beside a table name follows a row this screen added or removed.** Counted rather than asked
+for again: the table list counts the rows of every table in the database, the most expensive read here.
+An estimate or a stopped count is left alone — ±1 says nothing about a number that is already
+approximate.
 
 **A filter is asked only once it can be answered.** A condition appears with nothing typed in it, and
 an empty value means "not finished", not "match the empty string" — sending it anyway made PostgreSQL
