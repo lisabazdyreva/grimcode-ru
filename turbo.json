@@ -23,7 +23,9 @@
       "outputs": []
     },
     "test": {
-      "dependsOn": ["^build"],
+      // `build`, not `^build`: a package's tests read what its own build produced — the screen in
+      // `web/dist`, the entry's `dist`. With only the dependencies built, a clean checkout fails.
+      "dependsOn": ["build"],
       "outputs": []
     },
     "lint": {
