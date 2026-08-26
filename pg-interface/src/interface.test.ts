@@ -9,6 +9,7 @@ import {
   REQUEST_HEADER,
   REQUEST_HEADER_VALUE,
 } from './index.js';
+import { typeParsers } from './pools.js';
 import { deleteRow, insertRow, pageOf, selectRows, updateRow } from './statements.js';
 import { serveScreen } from './static.js';
 
@@ -244,6 +245,28 @@ describe('adding a row', () => {
  * value — and PostgreSQL answered `invalid input syntax for type uuid: "null"`, which explains its type
  * system rather than the mistake. A uuid has no value spelled `null`, so the word can only mean empty.
  */
+/**
+ * A date is a date, not a moment.
+ *
+ * The driver's own parser turns `date` and `timestamp` into a JavaScript `Date`, and both then travel
+ * as instants: on a machine at +03:00 the stored date `2026-08-27` reached the screen as
+ * `2026-08-26T21:00:00.000Z`, a day earlier than what is in the table. This package reads those two as
+ * the text PostgreSQL sent, and leaves `timestamptz` — which really is a moment — alone.
+ */
+describe('reading a date', () => {
+  const parserFor = (oid: number) => typeParsers().getTypeParser(oid) as (value: string) => unknown;
+
+  it('hands over a date and a zoneless timestamp exactly as stored', () => {
+    expect(parserFor(1082)('2026-08-27')).toBe('2026-08-27');
+    expect(parserFor(1114)('2026-08-27 10:00:00')).toBe('2026-08-27 10:00:00');
+  });
+
+  it('leaves a timestamptz to the driver, because that one is a moment', () => {
+    const parsed = parserFor(1184)('2026-08-27 00:00:00+00');
+    expect(parsed).toBeInstanceOf(Date);
+  });
+});
+
 describe('the word null', () => {
   it('means empty for a type that cannot hold the word', () => {
     const statement = insertRow(rows, {

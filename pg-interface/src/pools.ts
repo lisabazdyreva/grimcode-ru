@@ -89,9 +89,35 @@ function closeable(pool: Queryable): pool is Queryable & { end(): Promise<void> 
   return typeof (pool as { end?: unknown }).end === 'function';
 }
 
+/**
+ * PostgreSQL types this package reads as written rather than as moments in time.
+ *
+ * The driver turns `date` and `timestamp` into a JavaScript `Date`, which is a point on the timeline —
+ * and neither of those types is one. On a machine three hours east of UTC the date `2026-08-27` came
+ * back as `2026-08-26T21:00:00.000Z`: the screen showed the day before the one stored. A `timestamp`
+ * without a zone was read as local and shifted by the same offset, so 10:00 became 07:00Z.
+ *
+ * Both are handed over as the text PostgreSQL sent. `timestamptz` is left alone: that one really is a
+ * moment, and a `Date` is the right shape for it.
+ */
+const READ_AS_WRITTEN = new Set([
+  1082, // date
+  1114, // timestamp without time zone
+]);
+
+export function typeParsers(): { getTypeParser: (oid: number, format?: unknown) => unknown } {
+  return {
+    getTypeParser(oid, format) {
+      if (READ_AS_WRITTEN.has(oid)) return (value: string) => value;
+      return pg.types.getTypeParser(oid, format as never);
+    },
+  };
+}
+
 async function openPool(source: DatabaseSource, log: PoolLog): Promise<Queryable> {
   const pool = new pg.Pool({
     connectionString: source.connectionString,
+    types: typeParsers(),
     max: MAX_CONNECTIONS,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
