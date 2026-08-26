@@ -16,6 +16,9 @@ sudo -u postgres createuser --createdb --pwprompt template
 The account needs `CREATEDB` and nothing more: each module creates its own database on first use.
 `DATABASE_URL` in `.env` is where the project reads its port and that account.
 
+Every command below is pnpm's, and the version is the project's own — `packageManager` in the root
+manifest names it. Where the Node installation ships corepack, `corepack enable` is all it takes.
+
 Then the project itself:
 
 ```bash
