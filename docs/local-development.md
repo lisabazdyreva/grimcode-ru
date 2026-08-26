@@ -179,7 +179,9 @@ They exist because each protects a rule that is easy to break by accident and ha
    **and** the caller, if a neighbour has to reach its internal procedures. If it stores anything, it
    also carries its own `src/db/database.ts` — creating its database, applying its migrations, opening
    the pool — and its name goes into the composer's `DATABASE_MODULES`, which is what gets it a
-   connection string on `c.env`.
+   connection string on `c.env`. That file is a copy of a neighbour's, 126 lines of it, differing only
+   in the module's name — measured, not estimated. Its pool is `max: 5`, so a module with a database
+   also adds five connections to what this process takes from the server's hundred.
 3. Its id in `ADMIN_SERVICE_IDS` and, unless only the owner should reach it, in
    `ASSIGNABLE_SERVICE_IDS` — both in [`shared/src/vocabulary.ts`](../shared/src/vocabulary.ts).
 4. Its id in Gateway's `ADMIN_SERVICES` allowlist, and — only if it should be reachable without a
@@ -190,6 +192,15 @@ They exist because each protects a rule that is easy to break by accident and ha
    lets it declare the database driver. Nothing has to be added
    to the environment: `DATABASE_URL_<MODULE>` works without being declared anywhere, because the
    composer reads it by name when it is set.
+6. What the checks ask for next, and the reason this is a list rather than a sentence: `pnpm check`
+   stays red until all of it is done. The name in `InternalServiceName`
+   ([`shared/src/service-names.ts`](../shared/src/service-names.ts)) — `createServiceApp` is typed
+   against it. The package in the **root** manifest and in
+   [`tsconfig.entry.json`](../tsconfig.entry.json), because the entry imports it. An icon in the
+   shell's sidebar, where the map is `Record<AdminServiceId, …>`, so a missing one is a type error
+   rather than a blank space. And the two suites that spell the services out: `visibleServices` in
+   Admin's tests, and the services and databases in
+   [`tests/src/access.test.ts`](../tests/src/access.test.ts).
 
 `check-service-ids.mjs` will tell you if you missed one of the three places ids live —
 `ADMIN_SERVICE_IDS`, Gateway's `ADMIN_SERVICES`, the shell's `services.ts`. `ASSIGNABLE_SERVICE_IDS`
