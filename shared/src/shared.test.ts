@@ -46,6 +46,13 @@ describe('cookies', () => {
 describe('session cookie', () => {
   const originalPublicUrl = process.env.PUBLIC_SITE_URL;
 
+  // Neither has a fallback any more, so a test that reads them has to say what they are: the cookie
+  // is named from the slug, and `Secure` is decided by the origin's scheme.
+  beforeEach(() => {
+    process.env.PROJECT_SLUG = 'template';
+    process.env.PUBLIC_SITE_URL = 'http://127.0.0.1:63000';
+  });
+
   afterEach(() => {
     if (originalPublicUrl === undefined) delete process.env.PUBLIC_SITE_URL;
     else process.env.PUBLIC_SITE_URL = originalPublicUrl;

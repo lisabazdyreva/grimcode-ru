@@ -79,7 +79,10 @@ const OWNER = {
 const DENIED = { state: 'denied', reason: 'not-an-administrator' } satisfies AuthorizationResult;
 
 beforeEach(() => {
+  // Both are required now, without a fallback: a refusal names the missing one instead of the
+  // program guessing a slug or an origin. The refusal page links to sign-in, hence the origin here.
   process.env.PROJECT_SLUG = 'template';
+  process.env.PUBLIC_SITE_URL = 'http://127.0.0.1:63000';
   forwarded.length = 0;
   stub.calls.length = 0;
   stub.authorize = async () => DENIED;

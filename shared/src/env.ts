@@ -28,12 +28,21 @@ export function intEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+/**
+ * Required, without a fallback, and both of these used to have one: `template` for the slug and
+ * `http://127.0.0.1:8080` for the origin. A missing value is not a case worth guessing at — measured
+ * on 27 August, a run without `PROJECT_SLUG` answered 200 and created `template_auth`,
+ * `template_email` and `template_notifications`, so the data went where nobody asked for it. A missing
+ * origin is quieter still: the links in verification and recovery mail are built from it, and the
+ * session cookie is marked `Secure` by its scheme, so a forgotten value sends working mail nobody can
+ * follow and drops `Secure` on an https deployment.
+ */
 export function projectSlug(): string {
-  return optionalEnv('PROJECT_SLUG', 'template');
+  return requireEnv('PROJECT_SLUG');
 }
 
 export function publicSiteUrl(): string {
-  return optionalEnv('PUBLIC_SITE_URL', 'http://127.0.0.1:8080').replace(/\/+$/, '');
+  return requireEnv('PUBLIC_SITE_URL').replace(/\/+$/, '');
 }
 
 /** Name of the session cookie. Scoped by project slug so parallel worktrees do not collide. */
