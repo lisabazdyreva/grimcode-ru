@@ -259,19 +259,24 @@ export function serviceDatabaseName(module: string): string {
     .toString();
 }
 
-/** Where the program listens when nothing says otherwise. */
-const DEFAULT_PORT = 8080;
-
 /**
  * Port to listen on. `PORT` first, because that is what a hosting platform sets; then
  * `GATEWAY_PORT` from `.env`, which is what lets two worktrees run at once on one machine.
+ *
+ * No default on purpose. There used to be one, 8080, and it only ever applied when `.env` was
+ * missing or empty — the case where the process would come up on a port nobody is routing to, look
+ * healthy, and answer nothing anyone asked. A refusal names the problem instead.
  */
 function ownPort(): number {
   for (const name of ['PORT', 'GATEWAY_PORT']) {
     const port = intEnv(name, 0);
     if (port !== 0) return port;
   }
-  return DEFAULT_PORT;
+
+  throw new Error(
+    'Neither PORT nor GATEWAY_PORT is set, so there is no port to listen on. Locally that means ' +
+      '.env is missing or has no GATEWAY_PORT; on a platform it means PORT was not supplied.',
+  );
 }
 
 /**

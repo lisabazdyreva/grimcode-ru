@@ -13,7 +13,7 @@ deployment usually expects to configure are not among them either:
 
 | | Where it comes from |
 | --- | --- |
-| The port | `PORT` if the platform sets one, `GATEWAY_PORT` from the environment file otherwise, 8080 if neither. |
+| The port | `PORT` if the platform sets one, `GATEWAY_PORT` from the environment file otherwise. Neither set is a refusal to start, not a default: a process listening on a port nobody routes to looks healthy and answers nothing. |
 | PostgreSQL | A managed resource, or a server on the same machine. Either way, reached through `DATABASE_URL`. |
 | Per-module databases | `<PROJECT_SLUG>_<module>`, created by each module itself on its first request. |
 | Restarts and environment | One systemd unit — [`deploy/app.service`](../deploy/app.service). |
