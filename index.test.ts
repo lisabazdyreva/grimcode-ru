@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { Logger } from '@template/shared';
-
 import {
   authSettings,
   compose,
@@ -11,15 +9,6 @@ import {
   serviceDatabaseName,
   serviceDatabaseUrl,
 } from './index.js';
-
-/** Counts nothing and says nothing: these tests are about the environment, not about logging. */
-const silent: Logger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  child: () => silent,
-};
 
 /**
  * The settings the composer reads on behalf of a module. They used to be read inside the modules, where
