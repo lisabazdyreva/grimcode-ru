@@ -1,8 +1,11 @@
 # The deployed application, as one systemd unit.
 #
 # What this replaces: the container did four things — it restarted the process, it handed it the
-# environment, it collected the logs and it fixed the Node version. The first three are below; the
-# fourth is now the machine's business, so whoever installs Node decides which one runs.
+# environment, it collected whatever it printed and it fixed the Node version. The first three are
+# below; the fourth is now the machine's business, so whoever installs Node decides which one runs.
+#
+# The entry is `dist/index.js` — the root `index.ts` built. It was `composition/dist/index.js` until
+# 22 August, when that package was dissolved into the root file.
 #
 # Copy to /etc/systemd/system/<name>.service, edit the four paths and the user, then:
 #
@@ -25,14 +28,15 @@ Type=simple
 User=grimcode
 WorkingDirectory=/srv/grimcode
 EnvironmentFile=/srv/grimcode/.env
-ExecStart=/usr/bin/node composition/dist/index.js
+ExecStart=/usr/bin/node dist/index.js
 
 # The process is stateless: every module opens its own database on the first request that needs one,
 # so a restart costs one slow request and nothing else.
 Restart=always
 RestartSec=2
 
-# Logs go to journald, which is what the container's json-file driver used to do.
+# Whatever the process prints goes to journald, which is what the container's json-file driver used
+# to do. It prints little: there is no logging in this project, only a line when a procedure throws.
 StandardOutput=journal
 StandardError=journal
 
