@@ -9,10 +9,6 @@ export interface DatabaseSource {
   connectionString: string;
 }
 
-export interface PoolLog {
-  (event: { level: 'info' | 'error'; message: string; database?: string; error?: string }): void;
-}
-
 /**
  * Connections of this interface's own, never the application's.
  *
@@ -38,13 +34,9 @@ export interface Pools {
  * How a database is opened. The real one is below; a test hands in its own, which is the only reason
  * this is an argument — every other way of testing this package would need a live server.
  */
-export type Connect = (source: DatabaseSource, log: PoolLog) => Promise<Queryable>;
+export type Connect = (source: DatabaseSource) => Promise<Queryable>;
 
-export function createPools(
-  databases: DatabaseSource[],
-  log: PoolLog,
-  connect: Connect = openPool,
-): Pools {
+export function createPools(databases: DatabaseSource[], connect: Connect = openPool): Pools {
   const sources = new Map(databases.map((database) => [database.name, database]));
 
   /*
@@ -62,7 +54,7 @@ export function createPools(
       const existing = opened.get(name);
       if (existing) return existing;
 
-      const pool = connect(source, log);
+      const pool = connect(source);
       opened.set(name, pool);
       return pool;
     },
@@ -114,7 +106,7 @@ export function typeParsers(): { getTypeParser: (oid: number, format?: unknown) 
   };
 }
 
-async function openPool(source: DatabaseSource, log: PoolLog): Promise<Queryable> {
+async function openPool(source: DatabaseSource): Promise<Queryable> {
   const pool = new pg.Pool({
     connectionString: source.connectionString,
     types: typeParsers(),
@@ -125,18 +117,13 @@ async function openPool(source: DatabaseSource, log: PoolLog): Promise<Queryable
     application_name: 'pg-interface',
   });
 
-  // Without this listener a connection that breaks while idle takes the whole process down, and this
-  // package runs inside the application's process.
-  pool.on('error', (error) => {
-    log({
-      level: 'error',
-      message: 'idle connection failed',
-      database: source.name,
-      error: error.message,
-    });
-  });
+  /*
+   * Registered and empty: without a listener a connection that breaks while idle takes the whole
+   * process down, and this package runs inside the application's. Nothing is reported — the request
+   * that needed the connection fails on its own, and that is what a person sees.
+   */
+  pool.on('error', () => undefined);
 
-  log({ level: 'info', message: 'database opened', database: source.name });
   return pool;
 }
 

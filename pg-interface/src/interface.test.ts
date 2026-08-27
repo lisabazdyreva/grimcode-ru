@@ -569,16 +569,14 @@ function build(tables: Table[] = [rows, grants, sessions, audit]) {
   // Cloned: the fake applies `ALTER TABLE` to these objects, and a column added by one test would
   // otherwise still be there in the next one.
   const pool = fakePool(structuredClone(tables));
-  const logged: string[] = [];
 
   const api = createDatabaseInterface({
     databases: [{ name: 'demo_auth', connectionString: 'postgres://unused/demo_auth' }],
     basePath: '/admin/embed/database',
-    log: (event) => logged.push(event.message),
     connect: async () => pool,
   });
 
-  return { api, pool, logged };
+  return { api, pool };
 }
 
 const at = (path: string, init?: RequestInit) =>
@@ -696,7 +694,7 @@ describe('the API', () => {
    * and the filter panel produced one the moment it opened on a uuid column.
    */
   it('answers a value the column cannot hold as a refusal, not a failure', async () => {
-    const { api, logged } = build();
+    const { api } = build();
     const response = await api.fetch(
       post(
         '/api/databases/demo_auth/rows',
@@ -710,11 +708,8 @@ describe('the API', () => {
     );
 
     expect(response.status).toBe(400);
+    // The class of the refusal reaches the person; the value that caused it stays out of the answer.
     expect(await response.json()).toMatchObject({ error: 'refused' });
-
-    // The code says what happened; the value that caused it is not written down.
-    expect(logged.join(' ')).toContain('22P02');
-    expect(logged.join(' ')).not.toContain(UNHOLDABLE);
   });
 
   /** The other side of the same fork: a database that is not answering is still this side's failure. */
@@ -789,23 +784,6 @@ describe('the API', () => {
     expect((await api.fetch(at('/', { method: 'POST' }))).status).toBe(405);
   });
 
-  it('keeps row values out of the log', async () => {
-    const { api, logged } = build();
-    await api.fetch(
-      post(
-        '/api/databases/demo_auth/rows',
-        {
-          schema: 'public',
-          table: 'identities',
-          filters: [{ column: 'email', condition: 'is', value: 'secret@example.test' }],
-        },
-        marked,
-      ),
-    );
-
-    expect(logged.join(' ')).not.toContain('secret@example.test');
-    expect(logged.join(' ')).toContain('public.identities');
-  });
 });
 
 /**

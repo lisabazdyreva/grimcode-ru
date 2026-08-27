@@ -15,7 +15,6 @@ import {
   UnknownDatabase,
   type Connect,
   type DatabaseSource,
-  type PoolLog,
 } from './pools.js';
 import { deleteRow, insertRow, selectRows, updateRow } from './statements.js';
 import { serveScreen } from './static.js';
@@ -30,17 +29,17 @@ export { MAX_PAGE } from './statements.js';
  * template that is Gateway, which lets only the owner of the admin panel through — the same check
  * the third-party console behind this section used to sit behind.
  *
- * Two rules the package keeps for itself, because nothing outside it can:
+ * One rule the package keeps for itself, because nothing outside it can: **identifiers are looked up,
+ * values are parameters.** See `identifiers.ts`.
  *
- * - **identifiers are looked up, values are parameters.** See `identifiers.ts`;
- * - **row values never reach the log.** These databases hold password hashes and session
- *   identifiers, and a log is a place things are kept and forwarded.
+ * It reports nothing anywhere, and that is the second rule, now kept by there being nothing to report
+ * with: these databases hold password hashes and session identifiers, and anything written down is
+ * something kept and forwarded.
  */
 export interface DatabaseInterfaceOptions {
   databases: DatabaseSource[];
   /** Where this interface is mounted, so it can tell its own paths from the rest of the URL. */
   basePath: string;
-  log?: PoolLog;
   /** How a database is opened. Real pools unless a test says otherwise. */
   connect?: Connect;
 }
@@ -87,8 +86,7 @@ function pgCode(error: unknown): string {
 }
 
 export function createDatabaseInterface(options: DatabaseInterfaceOptions): DatabaseInterface {
-  const log: PoolLog = options.log ?? (() => undefined);
-  const pools = createPools(options.databases, log, options.connect);
+  const pools = createPools(options.databases, options.connect);
   const base = options.basePath.replace(/\/$/, '');
 
   async function handle(request: Request): Promise<Response> {
@@ -173,7 +171,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
       })),
     );
 
-    log({ level: 'info', message: 'tables listed', database });
     return json({ tables: described });
   }
 
@@ -195,8 +192,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
       readJournal(pool),
     ]);
 
-    // Counts and names, never a value: what is in these rows is what a log must not keep.
-    log({ level: 'info', message: `read ${page.rows.length} rows from ${describe(table)}`, database });
 
     /*
      * `own` belongs here as well as in the table list, and from the same place. The screen builds its
@@ -244,8 +239,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const statement = insertRow(table, body);
     const result = await pool.query<Record<string, unknown>>(statement.text, statement.values);
 
-    // Counts and names, never a value: a new row is as much data as any other.
-    log({ level: 'info', message: `inserted 1 row into ${describe(table)}`, database });
 
     return json({ inserted: result.rows[0] ?? null });
   }
@@ -264,7 +257,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const result = await pool.query(statement.text, statement.values);
     const affected = result.rowCount ?? 0;
 
-    log({ level: 'info', message: `${action}d ${affected} row in ${describe(table)}`, database });
 
     if (affected === 0) {
       return json(
@@ -319,7 +311,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         sql,
       });
 
-      log({ level: 'info', message: `added column ${column} to ${describe(table)}`, database });
       return json({ added: column, version });
     }
 
@@ -347,7 +338,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         sql,
       });
 
-      log({ level: 'info', message: `renamed ${column} to ${to} in ${describe(table)}`, database });
       return json({ renamed: to, version });
     }
 
@@ -361,7 +351,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
       sql,
     });
 
-    log({ level: 'info', message: `dropped column ${column} from ${describe(table)}`, database });
     return json({ dropped: column, version });
   }
 
@@ -416,13 +405,11 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
          * take, and a value the table's own constraints reject.
          */
         if (INPUT_CLASSES.has(code.slice(0, 2))) {
-          log({ level: 'info', message: `database refused the request: ${code}` });
           return json({ error: 'refused', message }, 400);
         }
 
         // Everything left is this side failing: unreachable, out of connections, a broken pool.
 
-        log({ level: 'error', message: `request failed: ${message}` });
         return json({ error: 'database-failed', message }, 500);
       }
     },
