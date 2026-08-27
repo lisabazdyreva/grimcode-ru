@@ -44,8 +44,8 @@ export function clearCookie(name: string, options: CookieOptions = {}): string {
 
 /**
  * Whether the session cookie may only travel over HTTPS. Follows the public origin rather than
- * NODE_ENV: the local stack runs the very same production images over plain http, and a `Secure`
- * cookie would then never come back.
+ * NODE_ENV: the same build runs locally over plain http, and a `Secure` cookie would then never come
+ * back. Nothing in this project reads NODE_ENV at all.
  */
 function secureCookies(): boolean {
   return publicSiteUrl().startsWith('https://');

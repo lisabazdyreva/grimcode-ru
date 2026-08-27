@@ -52,6 +52,33 @@ else has to be started, and there is nothing to keep in step.
 The application is then at `PUBLIC_SITE_URL`. `/` is the site, `/app/` the application, `/admin` the
 panel. The first account you register becomes the owner of the panel.
 
+## What the program reads from the environment
+
+`.env` is the whole of it, and three of these have no default: the program refuses to start without
+them and names the one it is missing. That is deliberate — each of the three fails quietly if guessed.
+A slug guessed as `template` sends the data into `template_*` databases nobody asked for; an origin
+guessed as `http://127.0.0.1:8080` puts a local address into verification and recovery mail and drops
+`Secure` from the session cookie on an https deployment; a port guessed at all makes the process look
+healthy while answering on a port nothing routes to.
+
+| Required | |
+| --- | --- |
+| `PROJECT_SLUG` | Names the databases and the cookies. **At most 49 characters of `[a-z0-9_]`**, see above |
+| `PUBLIC_SITE_URL` | The origin as a visitor sees it. Links in mail are built from it, and its scheme decides whether the session cookie is marked `Secure` |
+| `PORT` or `GATEWAY_PORT` | Where to listen. `PORT` first, because that is what a hosting platform sets; `GATEWAY_PORT` is what lets two worktrees run at once |
+| `DATABASE_URL` | The server and the one account. Each module swaps in its own database name and creates that database when it is missing, so the account needs `CREATEDB` — and nothing else |
+
+| Optional | |
+| --- | --- |
+| `AUTH_SESSION_TTL_SECONDS` | How long a session lasts. Thirty days by default |
+| `EMAIL_PROVIDER` | `log` records messages in the delivery journal without sending them, which is the default. `unisender` sends through UniSender Go |
+| `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`, `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | The transport's own settings. The address is required by the UniSender transport, and it says so when it refuses |
+| `PORT_RANGE_START`, `PORT_RANGE_END` | Read by `bootstrap:worktree` alone, to pick a free port for a new branch. The application never looks at them |
+| `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. Taken exactly as written, and the module creates its database on **that** server. One condition: the database has to be named `<PROJECT_SLUG>_<module>`, because the module refuses a pool that opened anything else (`Pool opened database …, expected …`) |
+
+Nothing else is read: a module is handed what it needs and reaches for the environment through nothing
+at all, which a lint rule and a boundary check both refuse.
+
 ## Everyday commands
 
 | | |
