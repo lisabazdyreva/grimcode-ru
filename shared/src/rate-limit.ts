@@ -4,7 +4,7 @@
  * Deliberately in memory and deliberately small. It exists so that guessing one account's password
  * is not free, which is a per-service concern and belongs next to the check it protects. Volumetric
  * limits — requests per address, per network — belong at the edge proxy in front of Gateway, which
- * is the only thing that knows the real client address; see `docs/deployment.md`.
+ * is the only thing that knows the real client address; see `modules/auth/README.md`.
  *
  * Counting in memory means each instance counts on its own, so running two copies doubles the
  * allowance. That is exact for the topology this template ships — one process, and every module

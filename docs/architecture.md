@@ -242,6 +242,11 @@ missing, apply the migrations, check what was opened, keep the pool. There is no
 front of it. The cost is explicit — a broken migration answers 500 instead of failing a deploy — and
 the reason is that a module owning its data owns bringing it into existence too.
 
+Migrations are versioned and forward-only, and each module applies its own. Two consequences worth
+naming: a schema change that fails does not stop anything, it answers 500 until it is fixed; and going
+back to an older commit does not undo a migration that dropped something. A rollback is a matter for
+the change itself.
+
 Credentials are handed to a module and never read by it: the composer reads the environment and gives
 each module the connection string of its own database, the name it must land on, and the server
 connection it needs for the one `CREATE DATABASE`. What is in the environment is `DATABASE_URL` — one
@@ -290,4 +295,3 @@ arriving twice sends one message. What it has no answer for is a hand-off that f
 - [The admin panel](admin-panel.md) — what it contains and how it is composed.
 - [Administrator access](admin-access.md) — roles, grants and the first owner.
 - [Local development](local-development.md) — running it, worktrees, checks.
-- [Deployment](deployment.md) — what a deployment supplies and what it must not.

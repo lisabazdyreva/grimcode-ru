@@ -77,9 +77,19 @@ Security properties worth keeping when the template is extended:
   to register" message instead of answering the form.
 - **Login is not an existence oracle.** When no identity matches, a fixed dummy hash is still
   verified so both branches take comparable time.
-- **Guessing one password is not free.** Failed sign-ins are counted per address and refused past the
-  limit, with the same message everyone else gets. Per address rather than per client on purpose:
-  the real client address is known only to the proxy in front of Gateway.
+- **Guessing one password is not free.** Failed sign-ins are counted per address — ten in fifteen
+  minutes, constants in this module rather than settings, because a defence that can be configured can
+  be weakened — and a successful sign-in clears the count. Refusal carries the same message everyone
+  else gets. Per address rather than per client on purpose: the real client address is known only to
+  the proxy in front of Gateway, so volumetric limits belong there and this counter is the last line
+  for one account under attack.
+
+  The counter lives in the process's own memory. Exact for one process, and one full allowance per
+  extra copy of the application — so it stops being exact the moment a deployment runs more than one.
+  Recovery mail does not have that property: its bucketed key goes to Notifications, which stores it
+  under a unique index, so a second copy and a restart both change nothing. Buckets are wall-clock,
+  not a window since the last request, so two requests either side of a boundary are two messages —
+  the price of not keeping state for it.
 - **Links work exactly once.** Tokens are consumed in a single atomic statement, so a double click
   cannot use one twice, and issuing a new token of the same purpose invalidates the previous one.
 - **Changing a password ends every session**, including one an attacker may be holding.

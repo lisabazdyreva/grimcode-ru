@@ -11,7 +11,6 @@ made that way.
 | [The admin panel](admin-panel.md) | What is inside it, how it is composed, how to extend it |
 | [Administrator access](admin-access.md) | Roles, grants, the first owner |
 | [Local development](local-development.md) | Running it, worktrees, the checks |
-| [Deployment](deployment.md) | What a deployment supplies, and what it must not |
 
 Each module has a README beside its code, describing what only that module knows:
 [gateway](../modules/gateway/README.md), [site](../modules/site/README.md),
