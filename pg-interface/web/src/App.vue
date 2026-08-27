@@ -37,6 +37,13 @@ const view = ref<View>(emptyView());
 
 const loadingTables = ref(false);
 const loadingRows = ref(false);
+
+/**
+ * The chosen database has not been created yet. A state of its own rather than an error: the list of
+ * names comes from what the program was built with, and a module creates its own database on the first
+ * request that reaches it — so a name with nothing behind it means "nobody has been here", not a fault.
+ */
+const absentDatabase = ref(false);
 const saving = ref(false);
 const editing = ref<Record<string, unknown> | null>(null);
 const filtersOpen = ref(false);
@@ -202,12 +209,25 @@ async function openDatabase(name: string): Promise<void> {
   view.value = { ...emptyView(), database: name };
   page.value = null;
   tables.value = [];
+  await loadTables(name);
+}
+
+/**
+ * The table list of one database, and the one refusal this screen answers with a sentence instead of a
+ * red message: a database nobody has created yet is not something the person did wrong.
+ */
+async function loadTables(name: string): Promise<void> {
+  absentDatabase.value = false;
   loadingTables.value = true;
 
   try {
     tables.value = (await listTables(name)).tables;
   } catch (error) {
-    report(error);
+    if (error instanceof ApiError && error.code === 'database-absent') {
+      absentDatabase.value = true;
+    } else {
+      report(error);
+    }
   } finally {
     loadingTables.value = false;
   }
@@ -539,15 +559,8 @@ onMounted(async () => {
 
   if (fromHash && databases.value.includes(fromHash.database)) {
     view.value = fromHash;
-    loadingTables.value = true;
-    try {
-      tables.value = (await listTables(fromHash.database)).tables;
-    } catch (error) {
-      report(error);
-    } finally {
-      loadingTables.value = false;
-    }
-    if (fromHash.table) await load();
+    await loadTables(fromHash.database);
+    if (fromHash.table && !absentDatabase.value) await load();
   } else if (first) {
     await openDatabase(first);
   }
@@ -580,7 +593,11 @@ onMounted(async () => {
           <span class="shell-table-rows">{{ rowCountLabel(entry.rows) }}</span>
         </button>
 
-        <p v-if="!loadingTables && tables.length === 0" class="shell-empty">Таблиц нет</p>
+        <p v-if="!loadingTables && absentDatabase" class="shell-empty">
+          Базы ещё нет. Модуль создаёт свою базу при первом обращении к нему — до этого показывать
+          нечего.
+        </p>
+        <p v-else-if="!loadingTables && tables.length === 0" class="shell-empty">Таблиц нет</p>
       </div>
     </el-aside>
 

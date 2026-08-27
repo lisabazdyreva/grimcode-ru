@@ -731,6 +731,28 @@ describe('the API', () => {
     expect(await response.json()).toMatchObject({ error: 'database-failed' });
   });
 
+  /**
+   * And the third branch of that fork: a module creates its own database on the first request that
+   * needs it, so a database this interface was handed may simply not be there yet. That is the ordinary
+   * state of a module nobody has reached — not a failure, and not a database it was never given.
+   */
+  it('tells a database that does not exist yet from a failure', async () => {
+    const api = createDatabaseInterface({
+      databases: [{ name: 'demo_sandbox', connectionString: 'postgres://unused/demo_sandbox' }],
+      basePath: '/admin/embed/database',
+      connect: async () => ({
+        query: () => {
+          throw Object.assign(new Error('database "demo_sandbox" does not exist'), { code: '3D000' });
+        },
+      }),
+    });
+
+    const response = await api.fetch(at('/api/databases/demo_sandbox/tables'));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: 'database-absent' });
+  });
+
   it('refuses a table the database does not have', async () => {
     const { api } = build();
     const response = await api.fetch(

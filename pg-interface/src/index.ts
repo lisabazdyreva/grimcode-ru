@@ -79,6 +79,16 @@ const JSON_HEADERS = {
  */
 const INPUT_CLASSES = new Set(['22', '23']);
 
+/**
+ * `invalid_catalog_name`: there is no database of that name on the server.
+ *
+ * It means that and nothing else, which is why it can be told apart from this side failing. A server
+ * that is down answers without a PostgreSQL code at all (`ECONNREFUSED`), and exhausted connections
+ * are `53300`. Worth its own answer because a module creates its own database on the first request
+ * that needs it, so a database this interface was handed may legitimately not exist yet.
+ */
+const ABSENT_DATABASE = '3D000';
+
 /** The `code` PostgreSQL puts on its errors, or an empty string when the error is not one of its. */
 function pgCode(error: unknown): string {
   const code = (error as { code?: unknown } | null)?.code;
@@ -406,6 +416,16 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
          */
         if (INPUT_CLASSES.has(code.slice(0, 2))) {
           return json({ error: 'refused', message }, 400);
+        }
+
+        /*
+         * A database that is not there yet, which is not the same as one this interface was never
+         * given: that one is `not-found` above. Modules create their own database on the first request
+         * that needs it, so this is the ordinary state of a module nobody has reached, and answering
+         * 500 read as "the interface is broken".
+         */
+        if (code === ABSENT_DATABASE) {
+          return json({ error: 'database-absent', message }, 404);
         }
 
         // Everything left is this side failing: unreachable, out of connections, a broken pool.

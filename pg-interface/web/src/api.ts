@@ -96,6 +96,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The server's own name for the refusal, for the few the screen answers with more than a message. */
+    readonly code = '',
   ) {
     super(message);
     this.name = 'ApiError';
@@ -121,7 +123,11 @@ async function send<Result>(path: string, body?: unknown): Promise<Result> {
   const parsed = text === '' ? {} : (JSON.parse(text) as Record<string, unknown>);
 
   if (!response.ok) {
-    throw new ApiError(response.status, String(parsed.message ?? `Request failed (${response.status})`));
+    throw new ApiError(
+      response.status,
+      String(parsed.message ?? `Request failed (${response.status})`),
+      typeof parsed.error === 'string' ? parsed.error : '',
+    );
   }
 
   return parsed as Result;
