@@ -1,13 +1,11 @@
 import { Hono } from 'hono';
 
 import { newId } from '../crypto.js';
-import type { Logger } from '../logger.js';
 import type { InternalServiceName } from '../service-names.js';
 import { REQUEST_ID_HEADER } from './admin-context.js';
 
 export interface ServiceAppVariables {
   requestId: string;
-  logger: Logger;
 }
 
 /**
@@ -32,30 +30,24 @@ export type ServiceApp<TEnv extends ServiceEnv = object> = Hono<{
 }>;
 
 /**
- * Hono application shared by every Node service: request id propagation, access logging and a
- * health endpoint. It contains no product logic and no routing policy — Gateway owns routing.
+ * Hono application shared by every Node service: request id propagation and a health endpoint. It
+ * contains no product logic and no routing policy — Gateway owns routing.
  */
 export function createServiceApp<TEnv extends ServiceEnv = object>(
   service: InternalServiceName,
-  logger: Logger,
 ): ServiceApp<TEnv> {
   const app = new Hono<{ Bindings: TEnv; Variables: ServiceAppVariables }>();
 
+  /*
+   * The request id travels: taken from the header when a caller already has one, made here when not,
+   * put on the context for whoever needs it and returned in the response. It outlived the logging it
+   * was introduced with — it is what ties one request together across modules.
+   */
   app.use('*', async (c, next) => {
     const requestId = c.req.header(REQUEST_ID_HEADER) ?? newId();
-    const requestLogger = logger.child({ requestId });
     c.set('requestId', requestId);
-    c.set('logger', requestLogger);
     c.header(REQUEST_ID_HEADER, requestId);
-
-    const startedAt = Date.now();
     await next();
-    requestLogger.info('request', {
-      method: c.req.method,
-      path: new URL(c.req.url).pathname,
-      status: c.res.status,
-      durationMs: Date.now() - startedAt,
-    });
   });
 
   app.get('/healthz', (c) => c.json({ ok: true, service }));

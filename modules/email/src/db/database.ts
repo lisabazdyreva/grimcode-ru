@@ -1,6 +1,6 @@
 import pg from 'pg';
 
-import { runMigrations, waitForDatabase, type Logger } from '@template/shared';
+import { runMigrations, waitForDatabase } from '@template/shared';
 
 import type { EmailEnv } from '../env.js';
 import { migrations } from './migrations.js';
@@ -16,9 +16,9 @@ const MAX_CONNECTIONS = 5;
  * checked, kept. There is no deployment step behind it — the cost is that a broken migration answers
  * 500 to the first person through the door instead of failing a deploy.
  */
-export function createDatabase(logger: Logger): (env: EmailEnv) => Promise<Pool> {
+export function createDatabase(): (env: EmailEnv) => Promise<Pool> {
   const open = async (env: EmailEnv): Promise<Pool> => {
-    await ensureDatabase(env, logger);
+    await ensureDatabase(env);
 
     const pool = new pg.Pool({
       connectionString: env.databaseUrl,
@@ -28,27 +28,23 @@ export function createDatabase(logger: Logger): (env: EmailEnv) => Promise<Pool>
       application_name: 'email-service',
     });
 
-    // Without this listener a broken idle connection takes the process down — all seven modules.
-    pool.on('error', (error) => {
-      logger.error('idle pool client failed', { error: error.message });
-    });
+    /*
+     * Registered and empty on purpose: without a listener a broken idle connection takes the process
+     * down, with every module in it. Nothing is reported here — the request that needs the pool fails
+     * on its own, and that is what is visible.
+     */
+    pool.on('error', () => undefined);
 
     try {
       await assertOpenedDatabase(pool, env.databaseName);
-      await runMigrations(pool, migrations, logger);
-      await seedTemplates({ pool, logger });
+      await runMigrations(pool, migrations);
+      await seedTemplates({ pool });
     } catch (error) {
       // The attempt is retried, so its connections must not be left behind.
       await pool.end().catch(() => undefined);
-      // Logged here because a procedure that throws answers 500 and writes nothing of its own.
-      logger.error('module database unavailable', {
-        database: env.databaseName,
-        error: error instanceof Error ? error.message : String(error),
-      });
       throw error;
     }
 
-    logger.info('module database ready', { database: env.databaseName });
     return pool;
   };
 
@@ -80,7 +76,7 @@ export function openOnce<TArg, TValue>(
  * itself, hence the second connection, closed again straight away; `waitForDatabase` is what makes a
  * cold start work.
  */
-async function ensureDatabase(env: EmailEnv, logger: Logger): Promise<void> {
+async function ensureDatabase(env: EmailEnv): Promise<void> {
   const server = new pg.Pool({
     connectionString: env.maintenanceUrl,
     max: 1,
@@ -89,9 +85,7 @@ async function ensureDatabase(env: EmailEnv, logger: Logger): Promise<void> {
     application_name: 'email-create',
   });
 
-  server.on('error', (error) => {
-    logger.error('idle pool client failed', { error: error.message });
-  });
+  server.on('error', () => undefined);
 
   try {
     await waitForDatabase(server);
@@ -104,7 +98,6 @@ async function ensureDatabase(env: EmailEnv, logger: Logger): Promise<void> {
     try {
       // An identifier cannot be a bound parameter, so it is quoted instead.
       await server.query(`CREATE DATABASE "${env.databaseName.replace(/"/g, '""')}"`);
-      logger.info('module database created', { database: env.databaseName });
     } catch (error) {
       // Two instances starting together both find it missing; the loser gets this and wanted it.
       if ((error as { code?: string }).code !== '42P04') throw error;

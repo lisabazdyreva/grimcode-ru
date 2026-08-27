@@ -16,14 +16,12 @@ import {
   type NotificationsEnv,
 } from '@template/notifications';
 import {
-  createLogger,
   intEnv,
   optionalEnv,
   projectSlug,
   publicSiteUrl,
   requireEnv,
   type FetchLike,
-  type Logger,
   type ServiceApp,
 } from '@template/shared';
 import { createApp as createSiteApp } from '@template/site/server';
@@ -47,7 +45,6 @@ export type ModuleName = DatabaseModule | 'app' | 'gateway';
 export type MountedApp = Pick<ServiceApp, 'fetch'>;
 
 export interface Composition {
-  logger: Logger;
   apps: Record<ModuleName, MountedApp>;
 }
 
@@ -56,9 +53,6 @@ export interface Composition {
  * The only place allowed to know every module, and the only thing it knows is the order of calls.
  */
 export async function compose(): Promise<Composition> {
-  // Each module builds its own logger; this one is the program's.
-  const logger = createLogger('server');
-
   const mail = mailSettings();
   const auth = authSettings();
 
@@ -112,14 +106,6 @@ export async function compose(): Promise<Composition> {
       name: serviceDatabaseName(module),
       connectionString: serviceDatabaseUrl(module),
     })),
-    log: (event) => {
-      const write = event.level === 'error' ? logger.error : logger.info;
-      write.call(logger, event.message, {
-        module: 'pg-interface',
-        ...(event.database === undefined ? {} : { database: event.database }),
-        ...(event.error === undefined ? {} : { error: event.error }),
-      });
-    },
   });
 
   const targets: GatewayTargets = {
@@ -162,7 +148,7 @@ export async function compose(): Promise<Composition> {
     }),
   };
 
-  return { logger, apps };
+  return { apps };
 }
 
 /**
@@ -297,12 +283,7 @@ function ownPort(): number {
  * the process belongs to the program, and a module that could import it could open one of its own.
  */
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { apps, logger } = await compose();
-  const port = ownPort();
+  const { apps } = await compose();
 
-  serve({ fetch: apps.gateway.fetch, port, hostname: '0.0.0.0' }, (info) => {
-    // `listener`, not `service`: the payload would overwrite the logger's own field, which says which
-    // process wrote the line.
-    logger.info('service listening', { listener: 'gateway', port: info.port });
-  });
+  serve({ fetch: apps.gateway.fetch, port: ownPort(), hostname: '0.0.0.0' });
 }

@@ -1,4 +1,3 @@
-import type { Logger } from '@template/shared';
 
 import type { EmailRepository } from './repository.js';
 import {
@@ -39,7 +38,7 @@ export interface SendResult {
  */
 export async function sendTemplate(
   input: SendInput,
-  deps: { repo: EmailRepository; transport: Transport; logger: Logger },
+  deps: { repo: EmailRepository; transport: Transport },
 ): Promise<SendResult> {
   const existing = await deps.repo.findDeliveryByDedupeKey(input.dedupeKey);
   if (existing) {
@@ -89,7 +88,6 @@ export async function sendTemplate(
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     await deps.repo.markFailed(row.id, reason);
-    deps.logger.error('email could not be delivered', { deliveryId: row.id, error: reason });
     return { deliveryId: row.id, deduplicated: false, status: 'failed' };
   }
 }

@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 
-import type { Logger } from '../logger.js';
 import { withTransaction, type Pool } from './pool.js';
 
 export interface Migration {
@@ -22,7 +21,6 @@ const MIGRATIONS_TABLE = 'schema_migrations';
 export async function runMigrations(
   pool: Pool,
   migrations: readonly Migration[],
-  logger: Logger,
 ): Promise<{ applied: number[]; alreadyApplied: number[] }> {
   assertOrdered(migrations);
 
@@ -76,14 +74,7 @@ export async function runMigrations(
     });
 
     applied.push(migration.version);
-    logger.info('migration applied', { version: migration.version, name: migration.name });
   }
-
-  logger.info('migrations up to date', {
-    applied: applied.length,
-    alreadyApplied: alreadyApplied.length,
-    head: migrations.at(-1)?.version ?? 0,
-  });
 
   return { applied, alreadyApplied };
 }

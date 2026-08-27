@@ -8,7 +8,6 @@ import {
   sessionCookie,
   sessionCookieName,
   verifyPassword,
-  type Logger,
   type RateLimiter,
   type RpcContext,
 } from '@template/shared';
@@ -24,7 +23,6 @@ import { toIdentity } from '../repository.js';
 export interface PublicContext extends RpcContext {
   repo: AuthRepository;
   notifier: Notifier;
-  logger: Logger;
   /**
    * The part of `AuthEnv` these procedures need. Narrowed rather than passed whole: the connection
    * string beside it is this module's own, and no procedure has any use for it.

@@ -1,12 +1,10 @@
 import type { Identity } from '@template/auth/contract';
-import { createLogger } from '@template/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { authorize, canOpenDatabase, visibleServices, type AuthCaller } from './authorization.js';
 import { authorizationResultSchema } from './schemas.js';
 import type { AdministratorRow, AdminRepository } from './repository.js';
 
-const logger = createLogger('admin-test');
 
 function identity(id: string, email: string): Identity {
   return {
@@ -88,7 +86,7 @@ beforeEach(() => {
 });
 
 function deps(auth: AuthCaller) {
-  return { repo: repo as unknown as AdminRepository, auth, logger };
+  return { repo: repo as unknown as AdminRepository, auth };
 }
 
 describe('session requirement', () => {

@@ -1,4 +1,5 @@
-import type { Logger, Pool } from '@template/shared';
+
+import type { Pool } from '@template/shared';
 
 import { renderMessage } from '../render.js';
 import { EmailRepository } from '../repository.js';
@@ -13,13 +14,12 @@ import { EmailRepository } from '../repository.js';
  * Costs a render of every template through `@maily-to/render` — once per fresh database, paid by the
  * first request that reaches this module.
  */
-export async function seedTemplates(deps: { pool: Pool; logger: Logger }): Promise<number> {
+export async function seedTemplates(deps: { pool: Pool }): Promise<number> {
   const repo = new EmailRepository(deps.pool);
 
   const seeded = await repo.ensureSeedTemplates((editorDocument, subject) =>
     renderMessage(editorDocument, subject).then(({ html, text }) => ({ html, text })),
   );
-  if (seeded > 0) deps.logger.info('seed templates created', { created: seeded });
 
   return seeded;
 }

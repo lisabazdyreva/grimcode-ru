@@ -1,6 +1,6 @@
 import type { AdminInternalCaller } from '@template/admin/contract';
 import type { AdminContext, AdminTarget } from '@template/shared/vocabulary';
-import { ServiceUnavailableError, type Logger } from '@template/shared';
+import { ServiceUnavailableError } from '@template/shared';
 
 import { authorizeAdminRequest } from './authorize.js';
 import { proxyRequest } from './proxy.js';
@@ -32,7 +32,6 @@ import {
 export async function routeRequest(
   request: Request,
   requestId: string,
-  logger: Logger,
   targets: GatewayTargets,
   callAdmin: (call: { requestId: string }) => AdminInternalCaller,
 ): Promise<Response> {
@@ -54,13 +53,8 @@ export async function routeRequest(
     return await proxyRequest(request, { target: targets.site, requestId });
   } catch (error) {
     if (error instanceof ServiceUnavailableError) {
-      logger.error('authorization dependency unavailable', {
-        dependency: error.service,
-        reason: error.reason,
-      });
       return serviceUnavailable(request);
     }
-    logger.error('upstream request failed', { path: pathname, error });
     return badGateway(request);
   }
 }

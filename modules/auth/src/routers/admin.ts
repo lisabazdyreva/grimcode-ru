@@ -6,7 +6,6 @@ import {
   requireCsrf,
   verifiedAdmin,
   type AdminAwareContext,
-  type Logger,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
@@ -17,7 +16,6 @@ import { adminIdentitySchema, authAuditEntrySchema } from '../schemas.js';
 export interface AdminRpcContext extends AdminAwareContext {
   repo: AuthRepository;
   notifier: Notifier;
-  logger: Logger;
 }
 
 const RESET_TTL_SECONDS = 60 * 60;

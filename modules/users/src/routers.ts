@@ -5,7 +5,6 @@ import { idSchema, pageOf, paginationInputSchema } from '@template/shared/vocabu
 import {
   verifiedAdmin,
   type AdminAwareContext,
-  type Logger,
   type RpcContext,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
@@ -22,7 +21,7 @@ import { toProfile, type ProfileRow, type UsersRepository } from './repository.j
  * does not know stays `null`, which is how a profile left by a deleted account is visible as one.
  * The `catch` below is why the deadline Auth puts on its own caller matters.
  */
-async function withEmails(rows: ProfileRow[], ctx: Pick<AdminRpcContext, 'auth' | 'logger'>) {
+async function withEmails(rows: ProfileRow[], ctx: Pick<AdminRpcContext, 'auth'>) {
   const profiles = rows.map((row) => ({ ...toProfile(row), email: null as string | null }));
   if (profiles.length === 0) return profiles;
 
@@ -33,10 +32,9 @@ async function withEmails(rows: ProfileRow[], ctx: Pick<AdminRpcContext, 'auth' 
 
     const byId = new Map(identities.map((identity) => [identity.id, identity.email]));
     for (const profile of profiles) profile.email = byId.get(profile.identityId) ?? null;
-  } catch (error) {
-    // The page is still worth showing without addresses, but a direct call fails where no mount
-    // writes it down, so the line is what keeps the refusal from being silent.
-    ctx.logger.warn('sign-in addresses could not be read from auth', { error });
+  } catch {
+    // The page is worth showing without addresses. Auth's refusal is swallowed here and reported
+    // nowhere — the cost of having no logging at all, and it is paid knowingly.
   }
 
   return profiles;
@@ -52,7 +50,6 @@ export interface AdminRpcContext extends AdminAwareContext {
   repo: UsersRepository;
   /** Auth's internal surface, built for this request; the profile list needs the address from it. */
   auth: AuthInternalCaller;
-  logger: Logger;
 }
 
 // --- public surface ---------------------------------------------------------------------------

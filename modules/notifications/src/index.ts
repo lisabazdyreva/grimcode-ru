@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url';
 
 import type { EmailInternalCaller } from '@template/email/contract';
 import {
-  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
@@ -31,10 +30,9 @@ export interface NotificationsDeps {
  * the environment as well as the request: a direct call has no `c.env` to read.
  */
 export function createModule(deps: NotificationsDeps) {
-  const logger = createLogger('notifications');
 
   // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
-  const database = createDatabase(logger);
+  const database = createDatabase();
   const repository = async (env: NotificationsEnv) =>
     new NotificationsRepository(await database(env));
 
@@ -42,14 +40,13 @@ export function createModule(deps: NotificationsDeps) {
     withDeadlineOn(
       createInternalCallerFactory(async () => ({
         repo: await repository(env),
-        logger: logger.child({ requestId: call.requestId }),
         email: deps.callEmail(call),
       })),
       'notifications',
       RPC_TIMEOUT_MS,
     );
 
-  const app = createServiceApp<NotificationsEnv>('notifications', logger);
+  const app = createServiceApp<NotificationsEnv>('notifications');
 
   mountTrpc(
     app,

@@ -51,17 +51,16 @@ export function mountTrpc<TContext extends RpcContext, TEnv extends ServiceEnv =
           hono: c as HonoContext<{ Bindings: TEnv; Variables: ServiceAppVariables }>,
         }),
       /*
-       * Without this a procedure that throws answers 500 and leaves nothing but the access line: the
-       * reason stays inside the adapter. `input` is never logged — `register` and `login` carry
-       * passwords through here.
+       * Without this a procedure that throws answers 500 and the reason stays inside the adapter —
+       * in a deployment the response carries no stack either, so it would be lost entirely. The one
+       * line left of the logging this project used to do, and deliberately: `input` never appears in
+       * it, because `register` and `login` carry passwords through here.
        */
       onError: ({ error, path, type }) => {
-        c.get('logger').error('procedure failed', {
-          procedure: path ?? 'unknown',
-          type,
-          code: error.code,
-          error: error.cause ?? error,
-        });
+        console.error(
+          `procedure failed: ${path ?? 'unknown'} (${type}, ${error.code})`,
+          error.cause ?? error,
+        );
       },
     });
 

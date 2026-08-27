@@ -17,7 +17,6 @@ import {
   sessionCookieName,
   verifiedAdmin,
   type AdminAwareContext,
-  type Logger,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
@@ -31,7 +30,6 @@ import { administratorSchema, adminAuditEntrySchema, authorizationResultSchema }
 export interface InternalContext {
   repo: AdminRepository;
   auth: AuthCaller;
-  logger: Logger;
 }
 
 export interface AdminRpcContext extends AdminAwareContext {

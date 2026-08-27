@@ -2,7 +2,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createLogger,
   createRateLimiter,
   createServiceApp,
   mountCsrfEndpoint,
@@ -11,7 +10,6 @@ import {
   readAdminContext,
   RPC_TIMEOUT_MS,
   withDeadlineOn,
-  type Logger,
 } from '@template/shared';
 
 import type { NotificationsInternalCaller } from '@template/notifications/contract';
@@ -42,12 +40,11 @@ const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
  * path at all — a neighbour reaches them through the caller.
  */
 export function createModule(deps: AuthDeps) {
-  const logger = createLogger('auth');
-  const app = createServiceApp<AuthEnv>('auth', logger);
+  const app = createServiceApp<AuthEnv>('auth');
 
   // Lazy because `c.env` exists inside a request and nowhere else; the repository over it is a field
   // assignment, so building one per request costs nothing.
-  const database = createDatabase(logger);
+  const database = createDatabase();
   const repository = async (env: AuthEnv) => new AuthRepository(await database(env));
 
   // One per application: the windows live in memory, and a second limiter would count in its own.
@@ -57,9 +54,9 @@ export function createModule(deps: AuthDeps) {
   });
 
   /*
-   * The request the call belongs to is taken and not used: these procedures write no line of their
-   * own, so there is no logger here for the id to reach. The environment is, though — a direct call
-   * has no `c.env`, so the composer hands it over.
+   * The request the call belongs to is taken and not used: nothing on this surface reports anything
+   * of its own, so the id has nowhere to travel. The environment is used — a direct call has no
+   * `c.env`, so the composer hands it over.
    */
   const internalCaller = (env: AuthEnv, _call: { requestId: string }): AuthInternalCaller =>
     withDeadlineOn(
@@ -68,13 +65,11 @@ export function createModule(deps: AuthDeps) {
       RPC_TIMEOUT_MS,
     );
 
-  const notifier = (logger: Logger, requestIdOf: () => string) =>
-    new Notifier(logger, requestIdOf, deps.callNotifications);
+  const notifier = (requestIdOf: () => string) => new Notifier(requestIdOf, deps.callNotifications);
 
   mountTrpc(app, '/service/auth/rpc', publicRouter, async ({ request, resHeaders, hono }) => ({
     repo: await repository(hono.env),
-    notifier: notifier(hono.get('logger'), () => hono.get('requestId')),
-    logger: hono.get('logger'),
+    notifier: notifier(() => hono.get('requestId')),
     request,
     resHeaders,
     env: hono.env,
@@ -87,8 +82,7 @@ export function createModule(deps: AuthDeps) {
     adminRouter,
     async ({ request, resHeaders, hono }) => ({
       repo: await repository(hono.env),
-      notifier: notifier(hono.get('logger'), () => hono.get('requestId')),
-      logger: hono.get('logger'),
+      notifier: notifier(() => hono.get('requestId')),
       request,
       resHeaders,
       // Written by Gateway only after Admin allowed the request; a client can never forge it.

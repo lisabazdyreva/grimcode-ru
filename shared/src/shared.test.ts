@@ -19,7 +19,6 @@ import {
 import { createRateLimiter } from './rate-limit.js';
 import { CSRF_HEADER, isCsrfValid } from './http/csrf.js';
 import { createServiceApp } from './http/service-app.js';
-import type { Logger } from './logger.js';
 import { applyTheme, normalizeServicePath } from './theme.js';
 import { RPC_TIMEOUT_MS, withDeadlineOn } from './rpc.js';
 import type { RpcContext } from './trpc/builders.js';
@@ -237,14 +236,6 @@ describe('rate limiting', () => {
  * signal, and nothing above would notice until something hung.
  */
 describe('calling a neighbour in this process over tRPC', () => {
-  const silent: Logger = {
-    debug: () => undefined,
-    info: () => undefined,
-    warn: () => undefined,
-    error: () => undefined,
-    child: () => silent,
-  };
-
   const t = initTRPC.context<RpcContext>().create();
 
   /** A module with one procedure and the caller a neighbour is handed, deadline and all. */
@@ -260,18 +251,15 @@ describe('calling a neighbour in this process over tRPC', () => {
   }
 
   /**
-   * A procedure that throws used to answer 500 and write nothing at all: the reason stayed inside the
-   * adapter, and the only line left was the access log with its status. `onError` is what makes the
-   * failure visible, and this is the test that keeps it there.
+   * A procedure that throws answers 500 and says nothing of its own: the reason stays inside the
+   * adapter, and in a deployment the response carries no stack either. `onError` is the one thing
+   * that keeps the reason visible, and this is the test that keeps it there.
    */
   it('writes the reason when a procedure throws, naming the procedure', async () => {
-    const lines: { message: string; fields?: Record<string, unknown> }[] = [];
-    const capturing: Logger = {
-      debug: () => undefined,
-      info: () => undefined,
-      warn: () => undefined,
-      error: (message, fields) => lines.push({ message, fields }),
-      child: () => capturing,
+    const lines: unknown[][] = [];
+    const written = console.error;
+    console.error = (...args: unknown[]) => {
+      lines.push(args);
     };
 
     const router = t.router({
@@ -283,18 +271,25 @@ describe('calling a neighbour in this process over tRPC', () => {
         }),
     });
 
-    const app = createServiceApp('email', capturing);
+    const app = createServiceApp('email');
     mountTrpc(app, '/internal/rpc', router, ({ request, resHeaders }) => ({ request, resHeaders }));
 
-    // Driven by a request rather than a caller: `onError` belongs to the mount, not to the router.
-    const response = await app.fetch(
-      new Request(`http://module/internal/rpc/boom?input=${encodeURIComponent('{}')}`),
-    );
-    expect(response.status).toBe(500);
+    try {
+      // Driven by a request rather than a caller: `onError` belongs to the mount, not to the router.
+      const response = await app.fetch(
+        new Request(`http://module/internal/rpc/boom?input=${encodeURIComponent('{}')}`),
+      );
+      expect(response.status).toBe(500);
+    } finally {
+      console.error = written;
+    }
 
-    const failure = lines.find((line) => line.message === 'procedure failed');
-    expect(failure?.fields).toMatchObject({ procedure: 'boom', code: 'INTERNAL_SERVER_ERROR' });
-    expect((failure?.fields?.error as Error).message).toBe('соединение с базой не открылось');
+    const failure = lines.find(
+      (line) => typeof line[0] === 'string' && line[0].startsWith('procedure failed'),
+    );
+    expect(failure?.[0]).toContain('boom');
+    expect(failure?.[0]).toContain('INTERNAL_SERVER_ERROR');
+    expect((failure?.[1] as Error).message).toBe('соединение с базой не открылось');
   });
 
   it('reaches it without a request and answers through the contract', async () => {

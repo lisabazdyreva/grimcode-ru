@@ -4,7 +4,6 @@ import {
   type AdminTarget,
   type AdminServiceId,
 } from '@template/shared/vocabulary';
-import type { Logger } from '@template/shared';
 
 import type { AdminRepository } from './repository.js';
 import type { AuthorizationResult } from './schemas.js';
@@ -14,7 +13,6 @@ export type AuthCaller = AuthInternalCaller;
 export interface AuthorizeDeps {
   repo: AdminRepository;
   auth: AuthCaller;
-  logger: Logger;
 }
 
 
@@ -106,8 +104,8 @@ async function bootstrapFirstOwner(deps: AuthorizeDeps): Promise<void> {
   const { identity: first } = await deps.auth.getFirstIdentity({});
   if (!first) return;
 
-  const { created } = await deps.repo.bootstrapOwner(first.id, first.email);
-  if (created) deps.logger.info('first owner bootstrapped', { userId: first.id });
+  // The result says whether this call created the owner or found one; nothing reports it any more.
+  await deps.repo.bootstrapOwner(first.id, first.email);
 }
 
 /** Admin services this administrator may open, used to build the shell's sidebar. */

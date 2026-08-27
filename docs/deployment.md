@@ -16,7 +16,7 @@ deployment usually expects to configure are not among them either:
 | The port | `PORT` if the platform sets one, `GATEWAY_PORT` from the environment file otherwise, 8080 if neither. |
 | PostgreSQL | A managed resource, or a server on the same machine. Either way, reached through `DATABASE_URL`. |
 | Per-module databases | `<PROJECT_SLUG>_<module>`, created by each module itself on its first request. |
-| Restarts, environment, logs | One systemd unit — [`deploy/app.service`](../deploy/app.service). |
+| Restarts and environment | One systemd unit — [`deploy/app.service`](../deploy/app.service). |
 
 ## What a deployment supplies
 
@@ -36,7 +36,6 @@ program throws on a missing one and names it, before the port is open.
 | `EMAIL_PROVIDER` | `log` records messages without sending them, which is the default. `unisender` sends through UniSender Go. |
 | `EMAIL_FROM_NAME`, `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | The transport's own settings. |
 | `AUTH_SESSION_TTL_SECONDS` | How long a session lasts. Thirty days by default. |
-| `LOG_LEVEL` | `debug`, `info`, `warn` or `error`. `info` by default; anything below the level is not written at all. |
 | `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. A full override, taken exactly as written, and the module creates its database on **that** server. One condition: the database has to be named `<PROJECT_SLUG>_<module>`, because the module refuses a pool that opened anything else (`Pool opened database …, expected …`). |
 
 ## Deploying
@@ -52,8 +51,9 @@ sudo systemctl restart grimcode
 
 The unit file is [`deploy/app.service`](../deploy/app.service); it is copied to
 `/etc/systemd/system/` once, with its paths and its user edited. What it takes over from the
-container is written down there: restarting the process, handing it the environment file, and
-collecting the logs — `journalctl -u grimcode -f`.
+container is written down there: restarting the process and handing it the environment file. Whatever
+the process does print — a failed procedure says so on stderr, and nothing else does — journald keeps:
+`journalctl -u grimcode -f`.
 
 Node is the machine's now, not the image's. `engines` in the manifest says what the project expects
 (22 or newer); nothing enforces it at runtime.
@@ -83,10 +83,10 @@ One process.
    seed templates that are missing at the same moment, leaving edited ones alone.
 
 **What that trade means for a deploy.** There is no step that can stop it any more: a broken migration
-is not a failed deployment, it is a 500 to the first person through the door, with the reason in the
-logs of the module that refused (`module database unavailable`). Watch the logs of the first minutes,
-not the exit code of a job. In return there is nothing to keep in step: one process, one restart, and
-no ordering between steps to get wrong.
+is not a failed deployment, it is a 500 to the first person through the door. The process reports
+nothing of its own — it has no logging — so what to watch after a deploy is the first requests
+themselves. In return there is nothing to keep in step: one process, one restart, and no ordering
+between steps to get wrong.
 
 Then the first person to register becomes the owner of the admin panel — see
 [administrator access](admin-access.md).
@@ -95,7 +95,7 @@ Then the first person to register becomes the owner of the admin panel — see
 port as everything else, with no session needed. It checks nothing itself, and says less than it used
 to: a module opens its database on the first request that needs it, so an answer here means the
 process is up and Gateway is listening, not that PostgreSQL can be reached. The first request to a
-module is what finds that out — and answers 500 with the reason in the log if it cannot.
+module is what finds that out, and answers 500 if it cannot.
 
 ## Email will not send until it is told to
 

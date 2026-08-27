@@ -2,7 +2,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
@@ -27,11 +26,10 @@ export interface UsersDeps {
 }
 
 export function createApp(deps: UsersDeps): ServiceApp<UsersEnv> {
-  const logger = createLogger('users');
-  const app = createServiceApp<UsersEnv>('users', logger);
+  const app = createServiceApp<UsersEnv>('users');
 
   // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
-  const database = createDatabase(logger);
+  const database = createDatabase();
   const repository = async (env: UsersEnv) => new UsersRepository(await database(env));
 
   mountTrpc(app, '/service/users/rpc', publicRouter, async ({ request, resHeaders, hono }) => ({
@@ -50,7 +48,6 @@ export function createApp(deps: UsersDeps): ServiceApp<UsersEnv> {
       request,
       resHeaders,
       auth: deps.callAuth({ requestId: hono.get('requestId') }),
-      logger: hono.get('logger'),
       admin: readAdminContext(request.headers),
     }),
   );

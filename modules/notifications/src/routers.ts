@@ -1,6 +1,6 @@
 import { idSchema, notificationEventTypeSchema, pageOf, paginationInputSchema } from '@template/shared/vocabulary';
 import type { EmailInternalCaller } from '@template/email/contract';
-import { verifiedAdmin, type AdminAwareContext, type Logger } from '@template/shared';
+import { verifiedAdmin, type AdminAwareContext } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
 import { z } from 'zod';
@@ -16,7 +16,6 @@ import {
 /** No `request` and no `resHeaders`: this surface is reached by a caller, never by a request. */
 export interface InternalContext {
   repo: NotificationsRepository;
-  logger: Logger;
   /** Email's internal surface, built for this request by whoever assembled the context. */
   email: EmailInternalCaller;
 }
@@ -78,7 +77,6 @@ export const internalRouter = internalT.router({
       );
 
       if (!created) {
-        ctx.logger.info('event already accepted, not routed again', { dedupeKey });
         return { ok: true as const, eventId: row.id, deduplicated: true };
       }
 
@@ -110,7 +108,6 @@ export const internalRouter = internalT.router({
         // The event stays stored as `failed`, so the failure is visible in the service admin
         // instead of disappearing.
         await ctx.repo.markFailed(row.id, error instanceof Error ? error.message : String(error));
-        ctx.logger.error('event could not be routed to email', { type: event.type, error });
       }
 
       return { ok: true as const, eventId: row.id, deduplicated: false };

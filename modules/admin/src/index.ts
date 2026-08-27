@@ -2,7 +2,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
@@ -35,11 +34,10 @@ export interface AdminDeps {
  * the environment as well as the request: a direct call has no `c.env` to read.
  */
 export function createModule(deps: AdminDeps) {
-  const logger = createLogger('admin');
-  const app = createServiceApp<AdminEnv>('admin', logger);
+  const app = createServiceApp<AdminEnv>('admin');
 
   // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
-  const database = createDatabase(logger);
+  const database = createDatabase();
   const repository = async (env: AdminEnv) => new AdminRepository(await database(env));
 
   const internalCaller = (env: AdminEnv, call: { requestId: string }): AdminInternalCaller =>
@@ -47,7 +45,6 @@ export function createModule(deps: AdminDeps) {
       createInternalCallerFactory(async () => ({
         repo: await repository(env),
         auth: deps.callAuth(call),
-        logger: logger.child({ requestId: call.requestId }),
       })),
       'admin',
       RPC_TIMEOUT_MS,

@@ -2,7 +2,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createLogger,
   createServiceApp,
   mountCsrfEndpoint,
   mountSpa,
@@ -30,29 +29,27 @@ export type { MailSettings } from './transport.js';
  * request to read it from.
  */
 export function createModule() {
-  const logger = createLogger('email');
 
   // The pool on the first request that needs it: `c.env` exists inside a request and nowhere else.
-  const database = createDatabase(logger);
+  const database = createDatabase();
   const repository = async (env: EmailEnv) => new EmailRepository(await database(env));
 
   // The transport likewise, from `c.env` on the first request and kept: which provider sends the mail
   // is not a per-message decision. Synchronous, so one line remembers it.
   let built: Transport | undefined;
-  const transport = (env: EmailEnv) => (built ??= createTransport(env.mail, logger));
+  const transport = (env: EmailEnv) => (built ??= createTransport(env.mail));
 
-  const internalCaller = (env: EmailEnv, call: { requestId: string }): EmailInternalCaller =>
+  const internalCaller = (env: EmailEnv, _call: { requestId: string }): EmailInternalCaller =>
     withDeadlineOn(
       createInternalCallerFactory(async () => ({
         repo: await repository(env),
         transport: transport(env),
-        logger: logger.child({ requestId: call.requestId }),
       })),
       'email',
       RPC_TIMEOUT_MS,
     );
 
-  const app = createServiceApp<EmailEnv>('email', logger);
+  const app = createServiceApp<EmailEnv>('email');
 
   mountTrpc(
     app,
@@ -61,7 +58,6 @@ export function createModule() {
     async ({ request, resHeaders, hono }) => ({
       repo: await repository(hono.env),
       transport: transport(hono.env),
-      logger: hono.get('logger'),
       request,
       resHeaders,
       admin: readAdminContext(request.headers),

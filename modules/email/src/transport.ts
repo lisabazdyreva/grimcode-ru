@@ -1,4 +1,4 @@
-import { RPC_TIMEOUT_MS, type Logger } from '@template/shared';
+import { RPC_TIMEOUT_MS } from '@template/shared';
 
 /**
  * Deadline on the one outbound call this module makes.
@@ -58,22 +58,16 @@ export interface Transport {
 }
 
 /**
- * Local transport: messages are written to the delivery log and never leave the machine.
+ * Local transport: the message goes nowhere and never leaves the machine.
  *
- * The full HTML and text are already stored as an immutable snapshot by the caller, so nothing is
- * lost by not sending.
+ * It does not need to do anything, and that is the point — the caller has already stored the full
+ * HTML and text as an immutable snapshot in the delivery journal, which is where a local message is
+ * read from. The name stays `log` because the journal is what `EMAIL_PROVIDER=log` selects.
  */
-export function createLogTransport(logger: Logger): Transport {
+export function createLogTransport(): Transport {
   return {
     name: 'log',
-    async send(message) {
-      logger.info('email captured by the local log transport', {
-        to: message.to,
-        subject: message.subject,
-        dedupeKey: message.dedupeKey,
-        htmlBytes: message.html.length,
-        textBytes: message.text.length,
-      });
+    async send(_message) {
       return { providerMessageId: null, providerStatus: 'logged' };
     },
   };
@@ -156,14 +150,10 @@ export function createUniSenderTransport(
 }
 
 /** Which transport the settings ask for. The choice stays here; the values come from outside. */
-export function createTransport(
-  settings: MailSettings,
-  logger: Logger,
-  fetchFn: typeof fetch = fetch,
-): Transport {
+export function createTransport(settings: MailSettings, fetchFn: typeof fetch = fetch): Transport {
   return settings.provider === 'unisender'
     ? createUniSenderTransport(settings, fetchFn)
-    : createLogTransport(logger);
+    : createLogTransport();
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {

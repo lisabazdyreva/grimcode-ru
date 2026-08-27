@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createLogger, createServiceApp, mountSpa, type ServiceApp } from '@template/shared';
+import { createServiceApp, mountSpa, type ServiceApp } from '@template/shared';
 
 /**
  * The user-facing application.
@@ -10,12 +10,11 @@ import { createLogger, createServiceApp, mountSpa, type ServiceApp } from '@temp
  * Users, and every protected call is checked by the module that owns the data. The build directory
  * is resolved from this file rather than the working directory, which the composer chooses.
  *
- * It takes nothing: it needs no state, no neighbour and no settings, and its logger is its own like
- * every module's. The composer calls it with no arguments at all.
+ * It takes nothing: no state, no neighbour and no settings, so the composer calls it with no
+ * arguments at all.
  */
 export function createApp(): ServiceApp {
-  const logger = createLogger('app');
-  const app = createServiceApp('app', logger);
+  const app = createServiceApp('app');
 
   mountSpa(app, {
     basePath: '/app',

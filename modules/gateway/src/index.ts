@@ -1,5 +1,5 @@
 import type { AdminInternalCaller } from '@template/admin/contract';
-import { createLogger, createServiceApp, type ServiceApp } from '@template/shared';
+import { createServiceApp, type ServiceApp } from '@template/shared';
 
 import { routeRequest } from './router.js';
 import type { GatewayTargets } from './registry.js';
@@ -22,11 +22,10 @@ export interface GatewayDeps {
  * the repository handed to the narrowest job.
  */
 export function createApp(deps: GatewayDeps): ServiceApp {
-  const logger = createLogger('gateway');
-  const app = createServiceApp('gateway', logger);
+  const app = createServiceApp('gateway');
 
   app.all('*', (c) =>
-    routeRequest(c.req.raw, c.get('requestId'), c.get('logger'), deps.targets, deps.callAdmin),
+    routeRequest(c.req.raw, c.get('requestId'), deps.targets, deps.callAdmin),
   );
 
   return app;

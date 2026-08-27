@@ -20,7 +20,6 @@ import {
   requireCsrf,
   verifiedAdmin,
   type AdminAwareContext,
-  type Logger,
 } from '@template/shared';
 import { initTRPC, TRPCError } from '@trpc/server';
 
@@ -39,13 +38,11 @@ import type { Transport } from './transport.js';
 export interface InternalContext {
   repo: EmailRepository;
   transport: Transport;
-  logger: Logger;
 }
 
 export interface AdminRpcContext extends AdminAwareContext {
   repo: EmailRepository;
   transport: Transport;
-  logger: Logger;
 }
 
 function toTemplate(row: TemplateRow) {

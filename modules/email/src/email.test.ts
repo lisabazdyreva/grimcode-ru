@@ -30,14 +30,6 @@ const configured: MailSettings = {
   fromName: '',
 };
 
-const logger = {
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-  child: () => logger,
-};
-
 describe('variable collection', () => {
   it('finds variables in text and in a button url', () => {
     const document: EditorDocument = {
@@ -222,8 +214,8 @@ describe('seed templates', () => {
 });
 
 describe('transports', () => {
-  it('keeps local messages inside the delivery log', async () => {
-    const result = await createLogTransport(logger).send({
+  it('keeps a local message inside the delivery journal, sending nothing', async () => {
+    const result = await createLogTransport().send({
       dedupeKey: 'k',
       to: 'a@example.com',
       subject: 's',

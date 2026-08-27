@@ -1,5 +1,5 @@
 import type { AuthorizationResult } from '@template/admin/contract';
-import { ADMIN_CONTEXT_HEADERS, createLogger, ServiceUnavailableError } from '@template/shared';
+import { ADMIN_CONTEXT_HEADERS, ServiceUnavailableError } from '@template/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isAdminService, isPublicService, type GatewayTargets } from './registry.js';
@@ -30,7 +30,6 @@ interface Forwarded {
 }
 
 const forwarded: Forwarded[] = [];
-const logger = createLogger('gateway-test');
 
 let upstreamResponse: () => Response;
 
@@ -89,13 +88,12 @@ beforeEach(() => {
 });
 
 /** Admin's caller, unused: the module that reads it is mocked above. */
-const callAdmin = (() => ({})) as Parameters<typeof routeRequest>[4];
+const callAdmin = (() => ({})) as Parameters<typeof routeRequest>[3];
 
 async function route(path: string, init?: RequestInit): Promise<Response> {
   return routeRequest(
     new Request(`http://gateway.test${path}`, init),
     'req-test',
-    logger,
     targets,
     callAdmin,
   );
