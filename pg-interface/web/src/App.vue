@@ -1137,11 +1137,20 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 
+/*
+ * Указатель на всей области действий, а не только на самих кнопках.
+ *
+ * Между ними четырнадцать пикселей — два своих и двенадцать от `.el-button + .el-button` библиотеки, —
+ * и на этой полосе курсор становился обычной стрелкой: ведя мышь от «открыть» к «удалить», человек
+ * видел, как он моргает. Измерено `elementFromPoint`: в промежутке под курсором `div.actions`, а не
+ * кнопка. Проще сказать «здесь всё нажимаемо», чем двигать кнопки.
+ */
 .actions {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  cursor: pointer;
 }
 
 /*
@@ -1154,7 +1163,34 @@ onMounted(async () => {
   font-size: 15px;
 }
 
+/*
+ * Наведение видно на самой кнопке, а не только по курсору.
+ *
+ * Кнопки `text` у element-plus подсвечиваются едва заметно, а здесь это две иконки без подписей,
+ * стоящие в двух пикселях друг от друга: понять, на какой из них курсор, до нажатия было нельзя, и
+ * промах между «открыть» и «удалить» стоит по-разному. Подсвечивается своим цветом каждая — синим
+ * открытие, красным удаление, — так что видно не только «курсор на кнопке», но и на какой именно.
+ */
+.actions .el-button {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.actions .el-button:hover,
+.actions .el-button:focus-visible {
+  /* На тон темнее, чем `light-9`: строка под курсором уже светло-серая, и на ней тот тон пропадал. */
+  background-color: var(--el-color-primary-light-8);
+  color: var(--el-color-primary);
+}
+
 .actions-delete {
+  color: var(--el-color-danger);
+}
+
+.actions .actions-delete:hover,
+.actions .actions-delete:focus-visible {
+  background-color: var(--el-color-danger-light-8);
   color: var(--el-color-danger);
 }
 </style>

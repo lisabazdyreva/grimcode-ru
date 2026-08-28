@@ -322,6 +322,37 @@ test.describe('the database section', () => {
     const actions = frame.locator('.el-table__row').first().locator('.actions button');
     await expect(actions).toHaveCount(2);
 
+    /*
+     * Both actions are icons without labels, two pixels apart, and a misclick between them costs very
+     * different things. So the one under the pointer is lit in its own colour — red for deleting.
+     *
+     * Measured rather than eyeballed, and measured as a *tint*: element-plus lights a text button by
+     * itself, but with `rgb(245, 247, 250)`, which on a row that is already grey under the pointer is
+     * invisible — and, worse, says nothing about which of the two buttons it is. So the claim is not
+     * "a background appears" (that passes without any of our styling) but "the background is red".
+     */
+    /*
+     * The pointer stays a pointer across the whole cell. The buttons are fourteen pixels apart — two of
+     * ours and twelve from the library's own `.el-button + .el-button` — and on that strip the cursor
+     * used to fall back to an arrow, so moving between the two icons made it flicker.
+     */
+    const actionsCell = frame.locator('.el-table__row').first().locator('.actions');
+    expect(await actionsCell.evaluate((node) => getComputedStyle(node).cursor)).toBe('pointer');
+
+    const remove = frame.locator('.el-table__row').first().locator('.actions-delete');
+    const redness = () =>
+      remove.evaluate((node) => {
+        const [red = 0, green = 0, blue = 0] = (getComputedStyle(node).backgroundColor.match(/\d+/g) ?? [])
+          .slice(0, 3)
+          .map(Number);
+        return red - Math.max(green, blue);
+      });
+
+    expect(await redness()).toBe(0);
+
+    await remove.hover();
+    await expect.poll(async () => await redness(), { timeout: 5_000 }).toBeGreaterThan(10);
+
     await frame.locator('.el-table__row').first().locator('.actions-delete').click();
     await expect(frame.locator('.el-message-box__message')).toContainText('нельзя отменить');
 
