@@ -30,8 +30,10 @@ const emit = defineEmits<{
 const draft = ref<Record<string, string>>({});
 
 watch(
-  () => props.row,
-  (row) => {
+  // `open` as well as the row: the dialog for a new row stays mounted with `row` always null, so
+  // without it a form opened a second time would still hold what was typed into the one before.
+  [() => props.row, () => props.open],
+  ([row]) => {
     draft.value = Object.fromEntries(
       props.columns.map((column) => [column.name, cellText(row?.[column.name])]),
     );
@@ -40,6 +42,45 @@ watch(
 );
 
 const inserting = computed(() => props.mode === 'insert');
+
+/**
+ * The one field offered a value of this screen's making, and the button that offers it.
+ *
+ * Tables here declare their key as `uuid PRIMARY KEY` with no default: the modules generate it
+ * themselves when they insert a row. Nothing fills it in for a row added through this screen, so the
+ * field sat empty, went to the server as an empty string, and the answer was `invalid input syntax for
+ * type uuid`. A button rather than a value put there on opening: the row is the person's, and a form
+ * that fills part of itself in unasked is a form nobody reads.
+ *
+ * The whole key and nothing else. A uuid that is *not* the key is a reference to a row somewhere —
+ * `profiles.identity_id`, `sessions.identity_id`, `administrator_grants.administrator_id` — and a made
+ * up one is worse there than an empty field: where the reference crosses a module boundary there is no
+ * foreign key to catch it, so the row would be saved pointing at nothing. A key of two columns is left
+ * alone for the same reason: at least one half of it is such a reference.
+ */
+function generatedKey(column: Column): boolean {
+  return (
+    inserting.value &&
+    props.primaryKey.length === 1 &&
+    props.primaryKey[0] === column.name &&
+    /^uuid$/i.test(column.type) &&
+    !column.nullable &&
+    column.hasDefault !== true &&
+    column.generated !== true
+  );
+}
+
+/** `randomUUID` is only there in a secure context (https, or localhost), so there is a way without it. */
+function newUuid(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 /**
  * Which columns a new row may carry: everything the database does not fill in by itself.
@@ -185,6 +226,13 @@ const changed = computed(() =>
           placeholder="выберите дату"
         />
 
+        <div v-else-if="generatedKey(column)" class="field-with-button">
+          <el-input v-model="draft[column.name]" size="small" />
+          <el-button class="field-generate" size="small" @click="draft[column.name] = newUuid()">
+            Сгенерировать
+          </el-button>
+        </div>
+
         <el-input
           v-else
           v-model="draft[column.name]"
@@ -283,5 +331,19 @@ const changed = computed(() =>
 
 .field-hint {
   margin-left: auto;
+}
+
+/* The field keeps the width of every other one; the button sits beside it rather than under it. */
+.field-with-button {
+  display: flex;
+  gap: 8px;
+}
+
+.field-with-button .el-input {
+  flex: 1;
+}
+
+.field-generate {
+  flex: none;
 }
 </style>
