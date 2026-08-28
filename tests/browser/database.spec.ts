@@ -195,6 +195,62 @@ test.describe('the database section', () => {
   });
 
   /**
+   * Dropping every condition at once, which is how people stop filtering.
+   *
+   * Removing them one by one asks the server for a page after each, and the count on the button has to
+   * follow. The button appears only when there is something to clear: one that is always there and
+   * does nothing reads as broken.
+   */
+  test('clears every filter at once', async ({ page }) => {
+    const problems = collectPageErrors(page);
+    const frame = await openDatabaseSection(page);
+
+    await chooseDatabase(page, frame, /_auth$/);
+    await frame.locator('.shell-table-name').filter({ hasText: 'identities' }).click();
+    await expect(frame.locator('.el-table__row').first()).toBeVisible({ timeout: 20_000 });
+
+    await frame.locator('.filters-button').click();
+    await expect(frame.locator('.filters-clear')).toHaveCount(0);
+
+    await frame.locator('.filters-add').click();
+    await frame.locator('.filters-column').click();
+    await frame.locator('.el-select-dropdown__item:visible').filter({ hasText: 'email' }).first().click();
+    await frame.locator('.filters-value input').fill('probe');
+    await expect(frame.locator('.filters-button')).toHaveText('Фильтры 1');
+
+    await frame.locator('.filters-add').click();
+    await expect(frame.locator('.filters-row')).toHaveCount(2);
+
+    // Outlined in the colour of deleting: it throws away conditions somebody assembled.
+    await expect(frame.locator('.filters-clear')).toHaveClass(/el-button--danger/);
+
+    /*
+     * And kept at the far edge rather than next to "Добавить условие". Two buttons side by side make
+     * one a misclick away from the other, and here that misclick costs every condition. The right
+     * edges of the button and of a filter row are the same line, which is what "at the far edge" means.
+     */
+    const clearBox = await frame.locator('.filters-clear').boundingBox();
+    const rowBox = await frame.locator('.filters-row').first().boundingBox();
+    expect(clearBox).not.toBeNull();
+    expect(rowBox).not.toBeNull();
+    if (clearBox && rowBox) {
+      expect(Math.abs(clearBox.x + clearBox.width - (rowBox.x + rowBox.width))).toBeLessThan(4);
+    }
+
+    await frame.locator('.filters-clear').click();
+
+    await expect(frame.locator('.filters-row')).toHaveCount(0);
+    await expect(frame.locator('.filters-button')).toHaveText('Фильтры');
+    await expect(frame.locator('.filters-clear')).toHaveCount(0);
+    // The panel stays open, and the rows came back rather than an error.
+    await expect(frame.locator('.filters-add')).toBeVisible();
+    await expect(frame.locator('.el-table__row').first()).toBeVisible({ timeout: 20_000 });
+    await expect(frame.locator('.el-message--error')).toHaveCount(0);
+
+    expectNoPageErrors(problems);
+  });
+
+  /**
    * The conditions a column is offered, and the panel staying open while one is chosen.
    *
    * Both are checks against the same class of fault. The condition list is built from the rows answer,

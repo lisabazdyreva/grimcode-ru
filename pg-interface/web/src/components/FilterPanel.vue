@@ -42,6 +42,16 @@ function remove(index: number): void {
   );
 }
 
+/**
+ * Every condition at once, for the way people actually stop filtering: they narrowed a page down
+ * four conditions deep and want the whole table back, and removing them one by one asks the server
+ * for a page after each. The combination is kept — with nothing left to combine it is not shown, and
+ * it is the answer to a question that has not changed.
+ */
+function clear(): void {
+  emit('update', [], props.combine);
+}
+
 function change(index: number, patch: Partial<Filter>): void {
   const next = props.filters.map((filter, at) => (at === index ? { ...filter, ...patch } : filter));
 
@@ -190,7 +200,24 @@ function listOf(entry: Filter): unknown[] {
       <el-button size="small" text @click="remove(index)">убрать</el-button>
     </div>
 
-    <el-button size="small" class="filters-add" @click="add">Добавить условие</el-button>
+    <div class="filters-actions">
+      <el-button size="small" class="filters-add" @click="add">Добавить условие</el-button>
+      <!--
+        Only with something to clear: an always-there button that does nothing reads as broken. Outlined
+        in the colour the screen already uses for deleting, because it throws away work — several
+        conditions someone assembled — even though nothing in the database is touched.
+      -->
+      <el-button
+        v-if="filters.length > 0"
+        size="small"
+        type="danger"
+        plain
+        class="filters-clear"
+        @click="clear"
+      >
+        Очистить всё
+      </el-button>
+    </div>
   </div>
 </template>
 
@@ -236,5 +263,20 @@ function listOf(entry: Filter): unknown[] {
 /* Список значений растёт вниз, а не в ширину — иначе строка фильтра расползается. */
 .filters-list {
   max-width: 12rem;
+}
+
+/* Добавить и очистить стоят в одной строке: обе про набор условий целиком. */
+.filters-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * Очистка уходит к правому краю, подальше от «Добавить условие»: соседние кнопки — это промах мимо
+ * одной по дороге к другой, а здесь промах стоит всех собранных условий.
+ */
+.filters-clear {
+  margin-left: auto;
 }
 </style>
