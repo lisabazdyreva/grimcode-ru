@@ -1,8 +1,6 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
-import { createDatabaseInterface, type SchemaWriter } from '@grimcode/pg-interface';
+import { createDatabaseInterface } from '@grimcode/pg-interface';
 import { serve } from '@hono/node-server';
 import { createModule as createAdminModule, type AdminEnv } from '@template/admin';
 import { createApp as createAppApp } from '@template/app';
@@ -18,15 +16,13 @@ import {
   type NotificationsEnv,
 } from '@template/notifications';
 import {
-  canWriteMigrations,
+  createMigrationWriter,
+  findProjectRoot,
   intEnv,
-  migrationChecksum,
-  highestMigrationVersion,
   optionalEnv,
   projectSlug,
   publicSiteUrl,
   requireEnv,
-  writeMigration,
   type FetchLike,
   type ServiceApp,
 } from '@template/shared';
@@ -100,7 +96,16 @@ export async function compose(): Promise<Composition> {
    * The path is Gateway's to route; it is repeated here because the interface has to know where it is
    * mounted to tell its own paths from the rest of the URL.
    */
-  const writer = schemaWriter();
+  /*
+   * Where a change of shape made in the database section is written: the migrations of the module whose
+   * database it is. `SCHEMA_SOURCE_ROOT` names another project — a copy started for the browser checks,
+   * which really do add and drop columns. Whether writing is possible at all is decided in `shared`,
+   * beside the code that writes; nothing here chooses anything.
+   */
+  const writer = createMigrationWriter(
+    optionalEnv('SCHEMA_SOURCE_ROOT', '') || findProjectRoot(),
+    new Map(DATABASE_MODULES.map((module) => [serviceDatabaseName(module), module])),
+  );
 
   const databaseInterface = createDatabaseInterface({
     basePath: '/admin/embed/database',
@@ -174,66 +179,6 @@ function assertDistinctDatabases(): void {
     }
     seen.set(database, module);
   }
-}
-
-/**
- * The project this program was built in, or nothing when it is running away from its sources.
- *
- * Found by walking up from this file to the workspace it belongs to, which answers the same whether
- * the program runs from `dist/` or a test runs from the source beside it. A deployed copy carries no
- * workspace file, and that is the honest answer there: there is no project here to write into.
- *
- * `SCHEMA_SOURCE_ROOT` overrides it, and exists for one case: a copy started for the browser suite,
- * which really does add and drop columns. Without somewhere else to write, every run of that suite
- * would leave migrations in the repository it was testing.
- */
-function projectRoot(): string | null {
-  const given = optionalEnv('SCHEMA_SOURCE_ROOT', '');
-  if (given !== '') return given;
-
-  let folder = dirname(fileURLToPath(import.meta.url));
-
-  for (;;) {
-    if (existsSync(join(folder, 'pnpm-workspace.yaml'))) return folder;
-    const above = dirname(folder);
-    if (above === folder) return null;
-    folder = above;
-  }
-}
-
-/**
- * How the database section writes a change of shape into the project.
- *
- * A column added from that screen has to reach every other copy of this project, and the only thing
- * that reaches them is the repository — so the change is written as one more migration of the module
- * whose database it is, applied and recorded in the same breath. Where the sources are not there to
- * write into, this is `undefined`, and the screen offers no way to change a shape at all.
- */
-function schemaWriter(): SchemaWriter | undefined {
-  const root = projectRoot();
-  if (root === null) return undefined;
-
-  const folders = new Map(
-    DATABASE_MODULES.map((module) => [
-      serviceDatabaseName(module),
-      join(root, 'modules', module, 'src/db/migrations'),
-    ]),
-  );
-
-  if (![...folders.values()].every(canWriteMigrations)) return undefined;
-
-  const folderOf = (database: string): string => {
-    const folder = folders.get(database);
-    if (folder === undefined) throw new Error(`No module of this project owns "${database}".`);
-    return folder;
-  };
-
-  return {
-    root,
-    highest: (database) => highestMigrationVersion(folderOf(database)),
-    write: (database, migration) => writeMigration(folderOf(database), migration),
-    checksum: migrationChecksum,
-  };
 }
 
 /**

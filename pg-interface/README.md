@@ -227,7 +227,7 @@ The tests run without a database: `connect` is an option so a test can hand in a
 is also their limit — a fake pool answers what it was taught, so it cannot tell a valid query from one
 PostgreSQL would refuse.
 
-What a real server checks instead: thirteen browser checks drive this screen against a live database
+What a real server checks instead: seventeen browser checks drive this screen against a live database
 (`tests/browser/database.spec.ts`), and two acceptance checks confirm that only the owner reaches the
 section and that a changing request without the header is refused. Neither covers the SQL of a filter
 condition against every type — that was measured by hand, condition by condition, against the same

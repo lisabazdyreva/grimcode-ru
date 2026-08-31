@@ -6,17 +6,35 @@
  * migrations in it. So the change is written here as one more migration file, and from then on it
  * travels the way every other statement in this project travels — by git, applied by `runMigrations`.
  *
- * This file knows what a migration file looks like; it does not decide when one is written. That is
- * the entry's business, and it hands a folder in.
+ * This file knows what a migration file looks like, where a module keeps them, and whether they can be
+ * written at all. The entry only says which database belongs to which module — deciding anything is
+ * exactly what that file is not allowed to do.
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { migrationChecksum } from './migrator.js';
 
 /** A migration as it is about to be written: what it does, and what it will be called. */
 export interface MigrationText {
   version: number;
   name: string;
   sql: string;
+}
+
+/**
+ * What the database section needs to write a change of shape into the project.
+ *
+ * Named here rather than imported from the package that consumes it: that package depends on nothing
+ * of this repository, and this side must not be the exception that breaks it. The shapes have to
+ * match, and nothing but the compiler checks that they do.
+ */
+export interface MigrationWriter {
+  root: string;
+  highest(database: string): number;
+  write(database: string, migration: MigrationText): void;
+  checksum(sql: string): string;
 }
 
 const INDEX = 'index.ts';
@@ -35,6 +53,62 @@ export function migrationFileName(version: number, name: string): string {
  */
 export function canWriteMigrations(folder: string): boolean {
   return existsSync(join(folder, INDEX));
+}
+
+/** Where a module keeps its migrations, given the project they all live in. */
+export function migrationsFolder(root: string, module: string): string {
+  return join(root, 'modules', module, 'src/db/migrations');
+}
+
+/**
+ * The project this program was built in, or nothing when it runs away from its sources.
+ *
+ * Found by walking up to the workspace file, which answers the same whether the caller was compiled
+ * into `dist/` or is running from source beside it. A deployed copy carries no workspace file, and that
+ * is the honest answer there: there is no project here to write into.
+ */
+export function findProjectRoot(): string | null {
+  let folder = dirname(fileURLToPath(import.meta.url));
+
+  for (;;) {
+    if (existsSync(join(folder, 'pnpm-workspace.yaml'))) return folder;
+    const above = dirname(folder);
+    if (above === folder) return null;
+    folder = above;
+  }
+}
+
+/**
+ * A writer for the databases it is given, or nothing when this project cannot be written into.
+ *
+ * `modules` maps a database name to the module that owns it — the one thing only the entry knows. The
+ * decision itself is here: every folder has to be present, because a section that could reshape four
+ * databases out of five would be worse than one that reshapes none.
+ */
+export function createMigrationWriter(
+  root: string | null,
+  modules: ReadonlyMap<string, string>,
+): MigrationWriter | undefined {
+  if (root === null) return undefined;
+
+  const folders = new Map(
+    [...modules].map(([database, module]) => [database, migrationsFolder(root, module)]),
+  );
+
+  if (![...folders.values()].every(canWriteMigrations)) return undefined;
+
+  const folderOf = (database: string): string => {
+    const folder = folders.get(database);
+    if (folder === undefined) throw new Error(`No module of this project owns "${database}".`);
+    return folder;
+  };
+
+  return {
+    root,
+    highest: (database) => highestMigrationVersion(folderOf(database)),
+    write: (database, migration) => writeMigration(folderOf(database), migration),
+    checksum: migrationChecksum,
+  };
 }
 
 /**

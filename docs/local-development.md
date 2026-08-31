@@ -195,6 +195,7 @@ telling them apart.
 | `check-dependencies.mjs` | A manifest — the root's included, because its `node_modules` is on every package's lookup path — declaring a neighbouring service, or a package that opens a door out of the process: the database driver belongs to the five modules that own a database, to `shared` and to `tests`; the server that opens a port belongs to the entry. Also an `.npmrc` setting that would hoist every package into reach |
 | `check-boundaries.mjs` | A module importing another module, type-only imports included; a database pool built anywhere but the one file a module is allowed to build it in, or that file not asking which database it actually opened; **an import of `@hono/node-server`, which opens a port, anywhere but the entry**; a module reading the environment; a door that would carry code, in its source and in what it emits; a browser-facing file of `shared` importing anything but `zod` |
 | `check-procedures.mjs` | A procedure that declares no `.output()`; an admin procedure that changes something without asking for a CSRF token — the builder is followed to its definition rather than trusted by its name; a router that is neither mounted nor handed to a caller factory |
+| `check-migrations.mjs` | A migration file that is in a module's folder but in no list, so it would never be applied and nothing at runtime would notice; a file whose name disagrees with the version and name inside it; a version used twice or out of order; a migration written by the database section under a name that cannot be read back, which is ownership of a column lost in silence |
 | `check-service-ids.mjs` | A service known to Gateway but invisible in the Admin shell, or the reverse; a grantable service that is not an admin service; the database section being public or grantable |
 | `check-scripts.mjs` | A script named after a pnpm command — `pnpm up` would run pnpm's dependency update instead of starting the project |
 
@@ -208,7 +209,7 @@ They exist because each protects a rule that is easy to break by accident and ha
    **and** the caller, if a neighbour has to reach its internal procedures. If it stores anything, it
    also carries its own `src/db/database.ts` — creating its database, applying its migrations, opening
    the pool — and its `src/db/migrations/`, one file per version listed in that folder's `index.ts` — and its name goes into the composer's `DATABASE_MODULES`, which is what gets it a
-   connection string on `c.env`. That file is a copy of a neighbour's, 126 lines of it, differing only
+   connection string on `c.env`. That file is a copy of a neighbour's, 106 lines of it, differing only
    in the module's name — measured, not estimated. Its pool is `max: 5`, so a module with a database
    also adds five connections to what this process takes from the server's hundred.
 3. Its id in `ADMIN_SERVICE_IDS` and, unless only the owner should reach it, in
