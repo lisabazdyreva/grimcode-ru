@@ -38,23 +38,17 @@ interface KeyRow {
 }
 
 /**
- * Reads the catalogue of one database.
+ * The catalogue of one database: columns and primary keys, no joins between them. Only `BASE TABLE` —
+ * a view has no key to address a row by, and this interface changes rows.
  *
- * Two queries and no joins between them: the columns of every table, and the primary key columns of
- * every table that has one. Tables are what `information_schema` calls `BASE TABLE` — a view has no
- * key to address a row by, and this interface changes rows.
- *
- * Read on every request that needs it, not remembered: a migration runs on the first request to a
- * module, so a catalogue cached at start-up would describe the database as it was before the modules
- * woke up.
+ * Read on every request, not remembered: a migration runs on the first request to a module, so a
+ * catalogue cached at start-up would describe the database as it was before the modules woke up.
  */
 export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
   /*
-   * Both halves in one round. Neither query needs the other, and this is the expensive read of the
-   * package: measured on a live database, the keys cost 1.6 ms beside 5.2 ms for the columns on a
-   * module's own database, and 72 ms beside 160 ms on a database of two hundred tables. Awaited one
-   * after another that time was added up, on every request — the catalogue is read for the table
-   * list, for a page of rows, and for every change.
+   * Both halves in one round: neither needs the other, and this is the expensive read of the package.
+   * Measured on a live database — keys 1.6 ms beside 5.2 ms for columns, and 72 ms beside 160 ms on a
+   * database of two hundred tables. Awaited one after another that cost was added on every request.
    */
   const [{ rows: columnRows }, { rows: keyRows }] = await Promise.all([
     pool.query<ColumnRow>(
@@ -122,13 +116,9 @@ export async function readCatalogue(pool: Queryable): Promise<Catalogue> {
 }
 
 /**
- * Whether a column records the order rows arrived in.
- *
- * Which is what a person expects a table to open in — not the order the key happens to sort in, and a
- * uuid key sorts in no order a person can see. Two marks say "this counts upwards as rows are added":
- * an identity or `serial` column, and a timestamp that defaults to the current time. Both are schema
- * facts rather than guesses about a name; a column called `created_at` with no default is somebody's
- * data and could hold anything.
+ * Whether a column records the order rows arrived in — what a person expects a table to open in, since
+ * a uuid key sorts in no order anyone can see. Two schema facts count: an identity or `serial` column,
+ * and a timestamp defaulting to now. Not the name: a `created_at` without a default is somebody's data.
  */
 function arrivalOrder(row: ColumnRow): boolean {
   if (row.is_identity === 'YES') return true;
@@ -153,16 +143,11 @@ export interface RowCount {
 }
 
 /**
- * How many rows a table holds.
- *
- * The exact number, unless the table is too large to count — `count(*)` reads all of it, and a list of
- * tables must not cost that. So the planner's `reltuples` is read first, and only to answer one
- * question: is counting cheap? Above `COUNT_LIMIT` the estimate is what comes back, marked as such;
- * at or below it, and when the planner has no estimate at all (`-1`, which is every table nothing has
- * analysed yet), the rows are counted for real.
- *
- * The estimate is never shown for a small table, and that is deliberate: `~3` beside a plain `5` reads
- * as a fault, and the difference between them was only whether autovacuum had been past.
+ * How many rows a table holds: the exact number, unless counting is expensive. `reltuples` is read
+ * first and answers one question — is it cheap? Above `COUNT_LIMIT` the estimate comes back marked as
+ * such; at or below, and when there is no estimate (`-1`, every table nothing has analysed), the rows
+ * are counted. An estimate is never shown for a small table: `~3` beside a plain `5` reads as a fault,
+ * and the only difference between them was whether autovacuum had been past.
  */
 export async function countRows(pool: Queryable, table: Table): Promise<RowCount> {
   const { rows } = await pool.query<{ estimate: string }>(

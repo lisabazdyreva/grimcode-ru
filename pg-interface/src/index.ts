@@ -23,18 +23,12 @@ export type { DatabaseSource } from './pools.js';
 export { MAX_PAGE } from './statements.js';
 
 /**
- * A database interface for the databases it is handed, and nothing else.
+ * A database interface for the databases it is handed, and nothing else. Who may reach it is decided
+ * by whoever mounts it — here Gateway, which lets only the owner through.
  *
- * It answers requests and knows nothing about who is asking: whoever mounts it decides that. In this
- * template that is Gateway, which lets only the owner of the admin panel through — the same check
- * the third-party console behind this section used to sit behind.
- *
- * One rule the package keeps for itself, because nothing outside it can: **identifiers are looked up,
- * values are parameters.** See `identifiers.ts`.
- *
- * It reports nothing anywhere, and that is the second rule, now kept by there being nothing to report
- * with: these databases hold password hashes and session identifiers, and anything written down is
- * something kept and forwarded.
+ * Two rules the package keeps for itself, because nothing outside it can: **identifiers are looked up,
+ * values are parameters** (see `identifiers.ts`), and nothing is ever written to a log — these
+ * databases hold password hashes and session identifiers.
  */
 export interface DatabaseInterfaceOptions {
   databases: DatabaseSource[];
@@ -52,15 +46,12 @@ export interface DatabaseInterface {
 }
 
 /**
- * The header a changing request has to carry.
+ * The header a changing request has to carry — this package's own protection against a request sent by
+ * another site: a cross-site `<form>` cannot add a header, and a cross-site `fetch` that does is
+ * stopped by a preflight this package never answers, since it sends no CORS headers at all.
  *
- * This is the package's own protection against a request sent by another site: a cross-site `<form>`
- * cannot add a header, and a cross-site `fetch` that adds one is stopped by the preflight this
- * package never answers — it sends no CORS headers at all, so no other origin is allowed anything.
- *
- * It is written down here rather than borrowed from the application on purpose. The repository's
- * mechanical check for CSRF reads tRPC procedures; this package is not one, so it would not be
- * covered by it whatever it did — which is exactly why the guard is its own and has its own test.
+ * Its own rather than the application's on purpose: the repository's CSRF check reads tRPC procedures,
+ * and this package is not one, so it would be covered by nothing whatever it did.
  */
 export const REQUEST_HEADER = 'x-pg-interface';
 export const REQUEST_HEADER_VALUE = '1';
@@ -71,21 +62,15 @@ const JSON_HEADERS = {
 } as const;
 
 /**
- * The two classes of PostgreSQL error code that mean "your value", not "our database".
- *
- * `22` is a data exception — `invalid input syntax for type uuid`, a number out of range, a bad date.
- * `23` is a constraint the row would break — not-null, unique, a foreign key. Both are answers to what
- * the request carried, so they belong in a 4xx; everything else is this side failing and stays a 500.
+ * The two classes that mean "your value", not "our database": `22` a data exception (bad uuid, number
+ * out of range), `23` a constraint the row would break. Both belong in a 4xx; the rest stays a 500.
  */
 const INPUT_CLASSES = new Set(['22', '23']);
 
 /**
- * `invalid_catalog_name`: there is no database of that name on the server.
- *
- * It means that and nothing else, which is why it can be told apart from this side failing. A server
- * that is down answers without a PostgreSQL code at all (`ECONNREFUSED`), and exhausted connections
- * are `53300`. Worth its own answer because a module creates its own database on the first request
- * that needs it, so a database this interface was handed may legitimately not exist yet.
+ * `invalid_catalog_name`: no database of that name on the server, and nothing else — a server that is
+ * down answers without a PostgreSQL code at all, exhausted connections are `53300`. Worth its own
+ * answer: a module creates its database on first use, so one handed here may legitimately not exist.
  */
 const ABSENT_DATABASE = '3D000';
 

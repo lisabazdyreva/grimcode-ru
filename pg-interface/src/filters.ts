@@ -1,13 +1,10 @@
 import { findColumn, quote, RequestError, type Parameters, type Table } from './identifiers.js';
 
 /**
- * The conditions a person can put on a column, and nothing beyond them.
- *
- * A closed list on purpose: the alternative is accepting a fragment of SQL from the browser, and
- * then every other guard in this package is decoration. Text conditions and comparison conditions
- * are separate because "contains" on a number and "greater than" on a name are both nonsense, and
- * the interface should offer neither.
- */
+  * The conditions a person can put on a column, and nothing beyond them: a closed list, because the
+  * alternative is accepting a fragment of SQL from the browser, and then every other guard here is
+  * decoration.
+  */
 export const TEXT_CONDITIONS = [
   'is',
   'is-not',
@@ -129,10 +126,7 @@ function isBoolean(type: string): boolean {
 /** Conditions that ask about presence or truth rather than content, so they carry no value. */
 const WITHOUT_VALUE = new Set<Condition>(['is-empty', 'is-not-empty', 'is-true', 'is-false']);
 
-/** Conditions whose value is a list of values rather than one. */
 const WITH_LIST = new Set<Condition>(['one-of', 'not-one-of']);
-
-/** Conditions whose value is a pair: the two ends of a range. */
 const WITH_RANGE = new Set<Condition>(['between']);
 
 export interface Filter {
@@ -143,13 +137,7 @@ export interface Filter {
 
 export type Combine = 'and' | 'or';
 
-/**
- * Turns the filters of a request into one SQL fragment.
- *
- * Every column is looked up in the table, every condition is one of the two lists above, and every
- * value becomes a parameter. What comes back is a fragment for `WHERE`, or null when there is
- * nothing to filter by.
- */
+/** Every column is looked up, every condition is from the lists above, every value is a parameter. */
 export function whereClause(
   table: Table,
   filters: unknown,
@@ -197,13 +185,9 @@ function fragmentOf(table: Table, filter: unknown, parameters: Parameters): stri
     if (condition === 'is-false') return `${target} IS FALSE`;
 
     /*
-     * Empty means "nothing there": null, and for text the empty string as well, because a person
-     * filtering an empty cell does not care which of the two the column happens to hold.
-     *
-     * Only for text, though — and that is the fix for a real refusal. `uuid` and `jsonb` were counted as
-     * textual here (`isTextual` reads their names), so "is empty" on an id column asked
-     * `id = ''` and PostgreSQL answered `invalid input syntax for type uuid: ""`. A type that cannot
-     * hold an empty string can only be null.
+     * Empty is null, and for text the empty string too — a person filtering an empty cell does not care
+     * which. Only for text: `uuid` and `jsonb` counted as textual here once, so "is empty" on an id
+     * column asked `id = ''` and PostgreSQL answered `invalid input syntax for type uuid: ""`.
      */
     const empty = holdsEmptyString(column.type)
       ? `(${target} IS NULL OR ${target} = '')`

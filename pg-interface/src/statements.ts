@@ -42,10 +42,9 @@ function whole(value: unknown, fallback: number, name: string): number {
 /**
  * The order a page is read in when nobody asked for one.
  *
- * There is always an order, and that is the point: without `ORDER BY` PostgreSQL returns rows however
- * it read them, and an updated row is written to the end of the table — so editing the first row moved
- * it to the bottom of the list, which is what this fixes. The same absence also makes paging unsound,
- * since `LIMIT`/`OFFSET` over an undefined order can show one row twice and another not at all.
+ * There is always an order, and that is the point: without `ORDER BY` an updated row is written to the
+ * end of the table, so editing the first row moved it to the bottom. Paging is unsound for the same
+ * reason — `LIMIT`/`OFFSET` over an undefined order can show one row twice and another not at all.
  *
  * The primary key is the natural choice: it is unique, so the order is total, and it is indexed, so it
  * costs nothing. A table without a key cannot be edited through this interface at all, and for reading
@@ -111,15 +110,11 @@ export function selectRows(
 }
 
 /**
- * The word `null`, typed into a field that cannot hold it.
- *
- * A person reads `null` in a cell — which is how this screen shows an empty value — and writes the same
- * word back. PostgreSQL then answers `invalid input syntax for type uuid: "null"`, which explains the
- * type system rather than the mistake. A uuid, a number, a date, a boolean or a json document has no
- * value spelled `null`, so there is nothing else the word could mean: it is read as empty.
- *
- * Text is the exception and stays untouched: `null` is a perfectly ordinary string, and a column that
- * holds words must be able to hold that one.
+ * The word `null`, typed into a field that cannot hold it. The screen shows an empty value as `null`,
+ * a person writes the same word back, and PostgreSQL answers `invalid input syntax for type uuid:
+ * "null"` — the type system explained instead of the mistake. No uuid, number, date, boolean or json
+ * document has a value spelled `null`, so the word is read as empty. Text is the exception: there
+ * `null` is an ordinary string, and a column that holds words must hold that one too.
  */
 const HOLDS_THE_WORD = /char|text|name/i;
 
@@ -138,15 +133,10 @@ function valueOf(column: Column, value: unknown): unknown {
 }
 
 /**
- * A new row.
- *
- * What a person may leave out and what they may not, decided from the catalogue rather than from the
- * form: a column the database fills in itself is left out of the statement entirely, so `DEFAULT`
- * applies; a `not null` column with nothing to fall back on is refused here rather than by PostgreSQL,
- * because the answer names the column and the reason.
- *
- * The row comes back with the statement — `RETURNING` the columns the catalogue knows — so the screen
- * shows what the database actually stored, including every value it filled in.
+ * A new row. What may be left out is decided from the catalogue, not from the form: a column the
+ * database fills in itself is left out of the statement so `DEFAULT` applies, and a `not null` column
+ * with nothing to fall back on is refused here, where the answer can name the column and the reason.
+ * `RETURNING` brings the stored row back, so the screen shows what the database actually wrote.
  */
 export function insertRow(table: Table, body: { values?: unknown }): Statement {
   if (typeof body.values !== 'object' || body.values === null || Array.isArray(body.values)) {

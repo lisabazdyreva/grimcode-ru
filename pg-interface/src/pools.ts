@@ -10,15 +10,10 @@ export interface DatabaseSource {
 }
 
 /**
- * Connections of this interface's own, never the application's.
- *
- * This is the decision the whole package rests on. Borrowing a module's pool would be cheaper by a
- * handful of connections and would tie the console to the site: a heavy query typed in here would
- * hold connections a request needs, a transaction left open would hold a lock on a live table, and
- * session state — a `SET`, a temporary table — would go back into the pool and reach the next
- * request that borrowed that connection.
- *
- * So: separate pools, small, and opened only when someone actually looks at a database.
+ * Connections of this interface's own, never the application's — the decision the package rests on.
+ * A borrowed pool would tie the console to the site: a heavy query typed here would hold connections
+ * the site needs, an open transaction would hold a lock on a live table, and session state left
+ * behind would reach the next request. So: separate pools, small, opened on first use.
  */
 const MAX_CONNECTIONS = 2;
 
@@ -82,15 +77,10 @@ function closeable(pool: Queryable): pool is Queryable & { end(): Promise<void> 
 }
 
 /**
- * PostgreSQL types this package reads as written rather than as moments in time.
- *
- * The driver turns `date` and `timestamp` into a JavaScript `Date`, which is a point on the timeline —
- * and neither of those types is one. On a machine three hours east of UTC the date `2026-08-27` came
- * back as `2026-08-26T21:00:00.000Z`: the screen showed the day before the one stored. A `timestamp`
- * without a zone was read as local and shifted by the same offset, so 10:00 became 07:00Z.
- *
- * Both are handed over as the text PostgreSQL sent. `timestamptz` is left alone: that one really is a
- * moment, and a `Date` is the right shape for it.
+ * Types read as written rather than as moments in time. The driver turns `date` and `timestamp` into a
+ * `Date`, which is a point on the timeline, and neither of them is one: measured three hours east of
+ * UTC, the stored date `2026-08-27` came back as `2026-08-26T21:00:00.000Z`, and 10:00 became 07:00Z.
+ * Both are handed over as text. `timestamptz` is left alone — that one really is a moment.
  */
 const READ_AS_WRITTEN = new Set([
   1082, // date

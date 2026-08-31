@@ -15,11 +15,8 @@
 import { quote, qualify, RequestError, type Table } from './identifiers.js';
 
 /**
- * Types a column may be given.
- *
- * A closed list rather than whatever `information_schema` might report: this is what a person can pick
- * from, and every one of them is a type the screen already knows how to show and filter. Keys are what
- * a request sends; values are what PostgreSQL is told.
+ * Types a column may be given: a closed list, every one of which the screen knows how to show and
+ * filter. Keys are what a request sends, values are what PostgreSQL is told.
  */
 export const COLUMN_TYPES: Record<string, string> = {
   text: 'text',
@@ -34,21 +31,15 @@ export const COLUMN_TYPES: Record<string, string> = {
 };
 
 /**
- * Tables this interface never reshapes.
- *
- * `schema_migrations` is how a module knows what it has applied, and `pg_interface_changes` is this
- * package's own journal. A column added to either would be read as a record of something that never
- * happened.
+ * Tables this interface never reshapes: a column added to a module's migration record or to this
+ * package's own journal would be read as a record of something that never happened.
  */
 export const PROTECTED_TABLES = new Set(['schema_migrations', 'pg_interface_changes']);
 
 /**
- * A column name, checked before it can reach a statement.
- *
- * Deliberately narrower than what PostgreSQL accepts inside quotes: a name with a space, a dot or
- * cyrillic in it is legal SQL and a nuisance in every URL, filter and column menu afterwards. 63 bytes
- * is where PostgreSQL truncates an identifier — silently, which is how this project once ended up with
- * five databases named after a truncated slug.
+ * A column name, narrower than what PostgreSQL accepts inside quotes: a space, a dot or cyrillic is
+ * legal SQL and a nuisance in every URL and menu afterwards. 63 bytes is where PostgreSQL truncates an
+ * identifier — silently, which is how this project once had five databases named after a cut slug.
  */
 const NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const NAME_LIMIT = 63;
