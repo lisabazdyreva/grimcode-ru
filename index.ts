@@ -38,20 +38,14 @@ export type DatabaseModule = (typeof DATABASE_MODULES)[number];
 /** Every module that answers requests, by the name Gateway routes under. */
 export type ModuleName = DatabaseModule | 'app' | 'gateway';
 
-/**
- * A module's application with its `Bindings` type forgotten: each declares its own, so a uniform
- * map can promise only `fetch`.
- */
+/** Each module declares its own `Bindings`, so a uniform map can promise only `fetch`. */
 export type MountedApp = Pick<ServiceApp, 'fetch'>;
 
 export interface Composition {
   apps: Record<ModuleName, MountedApp>;
 }
 
-/**
- * Builds the whole program: read the environment, hand each module its own, wire them together.
- * The only place allowed to know every module, and the only thing it knows is the order of calls.
- */
+/** The only place allowed to know every module, and all it knows is the order of calls. */
 export async function compose(): Promise<Composition> {
   const mail = mailSettings();
   const auth = authSettings();
@@ -232,17 +226,11 @@ export function serviceDatabaseUrl(module: string): string {
 
 /**
  * The server itself, for the one `CREATE DATABASE` a module runs: a database cannot be created from
- * inside itself.
- *
- * Derived from the module's own string, not from `DATABASE_URL`, so a module handed
- * `DATABASE_URL_<MODULE>` on another server creates its database **there**. Taken from `DATABASE_URL`
- * it created the database on the default server and then failed to connect to the one it was given —
- * measured on two live servers, and the log said `module database created` just before
- * `database "…_auth" does not exist`.
- *
- * Which database to connect to meanwhile comes from `DATABASE_URL`, because that is where the person
- * deploying wrote the name of the server's maintenance database — `postgres` on a stock installation,
- * something else on a managed one.
+ * inside itself. Derived from the module's own string, so a module handed `DATABASE_URL_<MODULE>` on
+ * another server creates its database **there** — taken from `DATABASE_URL` it created the database on
+ * the default server and then failed to connect to the one it was given, measured on two live servers.
+ * The maintenance database to connect to meanwhile comes from `DATABASE_URL`: that is where the person
+ * deploying wrote it.
  */
 export function maintenanceDatabaseUrl(module: string): string {
   const url = new URL(serviceDatabaseUrl(module));

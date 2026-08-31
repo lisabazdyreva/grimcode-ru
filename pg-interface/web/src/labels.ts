@@ -23,13 +23,9 @@ export const CONDITION_LABELS: Record<string, string> = {
   'is-not-empty': 'не пусто',
 };
 
-/** Conditions that ask about presence or truth, so the value field is hidden for them. */
+// Что за поле значения рисовать: никакого, список или два конца диапазона.
 export const WITHOUT_VALUE = new Set(['is-empty', 'is-not-empty', 'is-true', 'is-false']);
-
-/** Conditions whose value is a list: the field is a list of values a person can add to. */
 export const WITH_LIST = new Set(['one-of', 'not-one-of']);
-
-/** Conditions whose value is the two ends of a range, so the field is two fields. */
 export const WITH_RANGE = new Set(['between']);
 
 /**

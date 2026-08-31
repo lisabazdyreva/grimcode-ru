@@ -166,7 +166,6 @@ export function renderSubject(subject: string, variables: Record<string, Variabl
   return fill(subject, variables, (value) => value);
 }
 
-/** Values are data, not markup — they are escaped before they enter the published HTML. */
 export function fillHtml(html: string, variables: Record<string, VariableValue>): string {
   return fill(html, variables, escapeHtml);
 }

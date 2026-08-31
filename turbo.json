@@ -12,10 +12,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      // `web/dist` is the screen of `pg-interface`, built by vite. Without it here a cache hit skips
-      // `vite build` and leaves the previous bundle on disk: the source has the change, the served
-      // screen does not, and every check is green. Anything a package builds outside `dist` needs a
-      // line here for the same reason.
+      // Anything a package builds outside `dist` belongs here: without `web/dist` a cache hit skipped
+      // `vite build`, leaving yesterday's screen on disk while every check stayed green.
       "outputs": ["dist/**", ".output/**", "web/dist/**"]
     },
     "typecheck": {
@@ -23,8 +21,8 @@
       "outputs": []
     },
     "test": {
-      // `build`, not `^build`: a package's tests read what its own build produced — the screen in
-      // `web/dist`, the entry's `dist`. With only the dependencies built, a clean checkout fails.
+      // `build`, not `^build`: tests read what their own package built, so a clean checkout fails
+      // when only the dependencies are built.
       "dependsOn": ["build"],
       "outputs": []
     },

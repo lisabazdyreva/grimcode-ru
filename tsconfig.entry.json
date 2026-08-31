@@ -1,10 +1,7 @@
 {
-  // The program's entry, built on its own.
-  //
-  // Not a workspace package: `composition` was one until 21 August, and being a package bought
-  // nothing once the image that used its dependency closure was gone. It is not a turbo task either —
-  // a root task named `build` would run the root's own `build` script, which is the turbo wrapper,
-  // and turbo would call itself. `pnpm build` runs this compiler after turbo instead.
+  // The program's entry, built on its own. Not a workspace package, and not a turbo task either: a
+  // root task named `build` would run the root's `build` script, which is the turbo wrapper, so turbo
+  // would call itself. `pnpm build` runs this compiler after turbo instead.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
