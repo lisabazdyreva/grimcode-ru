@@ -23,12 +23,7 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/**
- * Every variable a document actually references.
- *
- * Maily stores variables as nodes, so they can be collected from the document rather than guessed
- * from the rendered text.
- */
+/** Maily stores variables as nodes, so they are collected rather than guessed from rendered text. */
 export function collectVariables(document: EditorDocument): string[] {
   const found = new Set<string>();
 
@@ -64,10 +59,8 @@ export function collectVariables(document: EditorDocument): string[] {
 }
 
 /**
- * Refuses a document that uses a variable the template does not declare.
- *
- * Publishing is the moment to catch this: a runtime delivery must never discover that a value has
- * no source and silently send an empty placeholder.
+ * Publishing is the moment to catch an undeclared variable: a delivery must never discover that a
+ * value has no source and send an empty placeholder instead.
  */
 export function assertDeclaredVariables(document: EditorDocument, declared: readonly string[]): void {
   const allowed = new Set(declared);
@@ -80,10 +73,8 @@ export function assertDeclaredVariables(document: EditorDocument, declared: read
 }
 
 /**
- * Removes anything an email client must never execute.
- *
- * The document itself is structured, so this mostly guards against values and pasted content;
- * it runs on every published and previewed result rather than being trusted away.
+ * Removes anything an email client must never execute. The document is structured, so this mostly
+ * guards values and pasted content — and it runs on every published and previewed result.
  */
 export function sanitizeHtml(html: string): string {
   return html

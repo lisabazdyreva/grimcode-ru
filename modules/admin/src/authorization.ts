@@ -17,11 +17,9 @@ export interface AuthorizeDeps {
 
 
 /**
- * The single decision Gateway asks for on every `/admin/**` request.
- *
- * Gateway computes nothing itself and caches nothing, so a changed role or grant takes effect on
- * the very next request. Everything this function needs about the current user comes from Auth
- * through its contract; Admin never reads the Auth database.
+ * The single decision Gateway asks for on every `/admin/**` request. Nothing is cached, so a changed
+ * role or grant takes effect on the next one; what is known about the user comes from Auth through
+ * its contract, never from its database.
  */
 export async function authorize(
   input: { sessionToken: string | null; target: AdminTarget },
@@ -75,12 +73,9 @@ export async function authorize(
 }
 
 /**
- * A fresh installation, and the one case where a request without a session is answered with
- * something other than a refusal: the panel says it is waiting for the first user instead of
- * pretending the rights are merely missing.
- *
- * Asked in this order because the cheap question comes first — only an empty registry is worth a
- * call into Auth, and a running installation answers `false` on the first line.
+ * A fresh installation: the one case where a request without a session gets something other than a
+ * refusal — the panel says it is waiting for the first user. The cheap question comes first, so a
+ * running installation answers `false` before anything is asked of Auth.
  */
 async function nobodyHasRegistered(deps: AuthorizeDeps): Promise<boolean> {
   if (!(await deps.repo.isRegistryEmpty())) return false;
@@ -90,11 +85,9 @@ async function nobodyHasRegistered(deps: AuthorizeDeps): Promise<boolean> {
 }
 
 /**
- * Promotes the earliest registered Auth identity to owner.
- *
- * Idempotent and safe under concurrency: the insert is conditional and only the request that
- * really created the row writes the audit entry. Once any administrator exists the bootstrap stops
- * being attempted at all.
+ * Promotes the earliest registered Auth identity to owner. Idempotent and safe under concurrency: the
+ * insert is conditional, only the request that created the row writes the audit entry, and once any
+ * administrator exists this stops being attempted at all.
  *
  * A caller that got here holds a resolved session, so Auth has at least one identity and the empty
  * answer below cannot happen; it leaves the registry empty, and the request is refused as any

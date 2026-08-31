@@ -56,11 +56,9 @@ const adding = ref<{ column: string; type: string; required: boolean; default: s
 const reshaping = ref(false);
 
 /**
- * What a required column of each type is filled with, as the server would fill it.
- *
- * Kept here as well so the field shows the value before it is sent — a person deciding whether a column
- * should be required needs to see what the existing rows will get. `uuid` has none: an identifier has no
- * neutral value, and the server refuses a required one.
+ * What a required column of each type is filled with, kept here as well so the field shows it before
+ * sending: deciding whether a column is required means seeing what the existing rows will get. `uuid`
+ * has none — an identifier has no neutral value, and the server refuses a required one.
  */
 const TYPE_DEFAULTS: Record<string, string> = {
   text: '',
@@ -97,12 +95,7 @@ function retype(): void {
   request.default = request.required ? (TYPE_DEFAULTS[request.type] ?? '') : '';
 }
 
-/**
- * The cell the pointer is on, shown in full beside it. Null when nothing is shown.
- *
- * The element is kept along with the value: the popover points at the cell, so it has to know which
- * cell — one popover serves the whole table rather than one per cell.
- */
+/** One popover serves the whole table, so it keeps the cell it points at along with the value. */
 const peeking = ref<{ column: Column; value: unknown; anchor: HTMLElement } | null>(null);
 
 /**
@@ -130,15 +123,11 @@ function unpeek(): void {
 }
 
 /**
- * Clicking a cell copies its whole value.
+ * Clicking a cell copies the value as the database holds it — a json document on one line, the way it
+ * is stored, because it usually goes somewhere that wants the value rather than its formatting.
  *
- * The value as the database holds it, not as the popover shows it: a json document is copied on one line,
- * the way it is stored, because what is copied is usually going somewhere that wants the value rather
- * than its formatting.
- *
- * Two ways of copying, because this screen runs inside a frame: the clipboard API is not always allowed
- * there, and when it is refused the old `execCommand` on a hidden textarea still works. Without the
- * second one, clicking a cell in the panel did nothing at all.
+ * Two ways of copying: inside a frame the clipboard API is often refused, and without the old
+ * `execCommand` fallback clicking a cell in the panel did nothing at all.
  */
 async function copyCell(column: Column, row: Record<string, unknown>): Promise<void> {
   const value = row[column.name];
@@ -349,10 +338,8 @@ async function save(values: Record<string, unknown>): Promise<void> {
 }
 
 /**
- * Adding a row.
- *
- * Offered on every table the server will insert into, key or no key: a table without one can be read
- * and added to, just not edited afterwards. What the database fills in itself never appears in the
+ * Adding a row: offered on every table the server will insert into, key or no key — a table without one
+ * can be read and added to, just not edited. What the database fills in itself never appears in the
  * form, and a field left empty on a column with a default is omitted so that default applies.
  */
 async function create(values: Record<string, unknown>): Promise<void> {
