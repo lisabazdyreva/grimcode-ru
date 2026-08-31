@@ -192,8 +192,8 @@ recorded" cannot happen, and a statement that fails leaves nothing behind. `appl
 row that was recorded but not run here, which is what a journal carried from another installation looks
 like before it is applied.
 
-**The schema now has two sources of truth, and that is the accepted price.** A column added here is not
-in any module's `migrations.ts`, so a fresh installation will not have it, and `pnpm check` cannot see
+**The schema now has two sources of truth, and that is the accepted price.** A column added here is in
+no module's `src/db/migrations/`, so a fresh installation will not have it, and `pnpm check` cannot see
 it. Within one installation the two agree; between installations the journal is what carries the
 difference.
 

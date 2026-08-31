@@ -102,7 +102,7 @@ error rather than as a clean sign-out.
 ## Data
 
 Database `<PROJECT_SLUG>_admin`, created and opened by this module itself and touched by no other
-module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by this module
+module. Migrations are in [`src/db/migrations/`](src/db/migrations) and are applied by this module
 itself, on the first request that opens its pool — as is creating the database if it is missing.
 
 `administrators.user_id` refers to an Auth identity and carries **no foreign key**: identities live

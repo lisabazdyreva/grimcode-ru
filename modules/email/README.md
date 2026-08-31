@@ -123,7 +123,7 @@ surface is not allowed to hold.
 ## Data
 
 Database `<PROJECT_SLUG>_email`, created and opened by this module itself and touched by no other
-module. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
+module. Migrations are in [`src/db/migrations/`](src/db/migrations) and are applied by the
 module itself on the first request that opens its pool, which is also when the seed templates appear.
 
 `email_audit` records who changed what — a template created or updated, a draft made, a version

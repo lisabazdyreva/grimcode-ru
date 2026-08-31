@@ -1,16 +1,16 @@
 import type { Migration } from '@template/shared';
 
 /**
- * Versioned migrations of the Notifications database.
+ * The schema this module starts from.
  *
- * The template starts at one migration: this is the schema a new project inherits, not a record of
- * how it was arrived at. Every change after the first clone is a new version.
+ * The statement is stored as it was applied, indentation included: the migrator remembers a version by
+ * the checksum of this text, so re-indenting it — by one space — makes the module refuse to start
+ * against a database that has already run it. Nothing here is reformatted, ever.
  */
-export const migrations: readonly Migration[] = [
-  {
-    version: 1,
-    name: 'events',
-    sql: `
+export const migration: Migration = {
+  version: 1,
+  name: 'events',
+  sql: `
       CREATE TABLE events (
         id              uuid PRIMARY KEY,
         type            text NOT NULL,
@@ -31,5 +31,4 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX events_created_idx ON events (created_at DESC);
       CREATE INDEX events_type_status_idx ON events (type, status);
     `,
-  },
-];
+};

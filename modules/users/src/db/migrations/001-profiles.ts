@@ -1,19 +1,16 @@
 import type { Migration } from '@template/shared';
 
 /**
- * Versioned migrations of the Users database.
+ * The schema this module starts from.
  *
- * `identity_id` has no foreign key on purpose: the identity lives in the Auth database, which Users
- * may never read or reference. The link is a contract, not a join.
- *
- * The template starts at one migration: this is the schema a new project inherits, not a record of
- * how it was arrived at. Every change after the first clone is a new version.
+ * The statement is stored as it was applied, indentation included: the migrator remembers a version by
+ * the checksum of this text, so re-indenting it — by one space — makes the module refuse to start
+ * against a database that has already run it. Nothing here is reformatted, ever.
  */
-export const migrations: readonly Migration[] = [
-  {
-    version: 1,
-    name: 'profiles',
-    sql: `
+export const migration: Migration = {
+  version: 1,
+  name: 'profiles',
+  sql: `
       -- The profile is a display name. A theme, a time zone or an email preference would be three
       -- things every project deletes before adding its own shape.
       CREATE TABLE profiles (
@@ -27,5 +24,4 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX profiles_created_idx ON profiles (created_at DESC);
       CREATE INDEX profiles_display_name_lower_idx ON profiles (lower(display_name));
     `,
-  },
-];
+};

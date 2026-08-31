@@ -1,19 +1,16 @@
 import type { Migration } from '@template/shared';
 
 /**
- * Versioned migrations of the Admin database.
+ * The schema this module starts from.
  *
- * `user_id` references an Auth identity and deliberately carries no foreign key: identities live
- * in the Auth database, which Admin may never read or reference.
- *
- * The template starts at one migration: this is the schema a new project inherits, not a record of
- * how it was arrived at. Every change after the first clone is a new version.
+ * The statement is stored as it was applied, indentation included: the migrator remembers a version by
+ * the checksum of this text, so re-indenting it — by one space — makes the module refuse to start
+ * against a database that has already run it. Nothing here is reformatted, ever.
  */
-export const migrations: readonly Migration[] = [
-  {
-    version: 1,
-    name: 'administrators-grants-audit',
-    sql: `
+export const migration: Migration = {
+  version: 1,
+  name: 'administrators-grants-audit',
+  sql: `
       CREATE TABLE administrators (
         id         uuid PRIMARY KEY,
         user_id    uuid NOT NULL UNIQUE,
@@ -52,5 +49,4 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX administrators_role_enabled_idx ON administrators (role, enabled);
       CREATE INDEX administrators_email_lower_idx ON administrators (lower(email));
     `,
-  },
-];
+};

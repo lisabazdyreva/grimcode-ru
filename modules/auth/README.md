@@ -10,7 +10,7 @@ Even though its main table is called `identities`, these are identity users, not
 
 Auth owns the database `<PROJECT_SLUG>_auth` and no other: it creates that one, opens that one, and
 names no other anywhere in its code. Versioned migrations live in
-[`src/db/migrations.ts`](src/db/migrations.ts) and are applied by this module itself, on the first
+[`src/db/migrations/`](src/db/migrations) and are applied by this module itself, on the first
 request that opens its pool — as is creating the database if it is missing.
 
 | Table | Contents |

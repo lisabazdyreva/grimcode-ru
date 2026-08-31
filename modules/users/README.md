@@ -8,7 +8,7 @@ profile to an Auth identity and nothing more.
 ## Data
 
 Users owns the database `<PROJECT_SLUG>_users`, which it creates and opens itself. Migrations are
-in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by this module itself, on the first
+in [`src/db/migrations/`](src/db/migrations) and are applied by this module itself, on the first
 request that opens its pool — as is creating the database if it is missing.
 
 `profiles.identity_id` deliberately has **no foreign key**: the identity lives in the Auth

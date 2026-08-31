@@ -44,6 +44,12 @@ service treats a missing or malformed context as a denial.
 version 1 upwards, an existing database only receives missing versions, and running the same set
 again changes nothing. Editing an already released migration is an error — add a new version.
 
+A module keeps them in `src/db/migrations/`, one file per version, listed in that folder's `index.ts`.
+The checksum is taken from the text of the statement, indentation included, so a released file is left
+alone entirely — reindenting one is enough to stop the module against a database that has already run
+it. One file each is what keeps that promise easy to keep, and `check-migrations` refuses a file that
+no list mentions.
+
 ## Adding a procedure
 
 Two places in the same file, and the second is the one that is easy to skip.

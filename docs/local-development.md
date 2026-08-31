@@ -205,7 +205,7 @@ They exist because each protects a rule that is easy to break by accident and ha
 2. The same package exporting `createApp(deps)` — or `createModule(deps)`, returning the application
    **and** the caller, if a neighbour has to reach its internal procedures. If it stores anything, it
    also carries its own `src/db/database.ts` — creating its database, applying its migrations, opening
-   the pool — and its name goes into the composer's `DATABASE_MODULES`, which is what gets it a
+   the pool — and its `src/db/migrations/`, one file per version listed in that folder's `index.ts` — and its name goes into the composer's `DATABASE_MODULES`, which is what gets it a
    connection string on `c.env`. That file is a copy of a neighbour's, 126 lines of it, differing only
    in the module's name — measured, not estimated. Its pool is `max: 5`, so a module with a database
    also adds five connections to what this process takes from the server's hundred.

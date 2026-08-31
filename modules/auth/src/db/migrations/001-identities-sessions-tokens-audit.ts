@@ -1,20 +1,16 @@
 import type { Migration } from '@template/shared';
 
 /**
- * Versioned migrations of the Auth database.
+ * The schema this module starts from.
  *
- * Versions are immutable once released: a fresh database is built from version 1 upwards and an
- * existing one only receives what it is missing. Changing a released statement is an error — add a
- * new version instead.
- *
- * The template starts at one, which is the schema a new project inherits rather than a record of
- * how it was arrived at.
+ * The statement is stored as it was applied, indentation included: the migrator remembers a version by
+ * the checksum of this text, so re-indenting it — by one space — makes the module refuse to start
+ * against a database that has already run it. Nothing here is reformatted, ever.
  */
-export const migrations: readonly Migration[] = [
-  {
-    version: 1,
-    name: 'identities-sessions-tokens-audit',
-    sql: `
+export const migration: Migration = {
+  version: 1,
+  name: 'identities-sessions-tokens-audit',
+  sql: `
       CREATE TABLE identities (
         id                 uuid PRIMARY KEY,
         -- Registration order, used to determine the very first user deterministically.
@@ -72,5 +68,4 @@ export const migrations: readonly Migration[] = [
 
       CREATE INDEX auth_audit_created_idx ON auth_audit (created_at DESC);
     `,
-  },
-];
+};

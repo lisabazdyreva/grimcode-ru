@@ -1,17 +1,16 @@
 import type { Migration } from '@template/shared';
 
 /**
- * Versioned migrations of the Email database.
+ * The schema this module starts from.
  *
- * The template starts at one migration on purpose: this is the schema a new project inherits, not a
- * record of how it was arrived at. Every change after the first clone is a new version, and a
- * released version is never edited — the migrator refuses a changed checksum.
+ * The statement is stored as it was applied, indentation included: the migrator remembers a version by
+ * the checksum of this text, so re-indenting it — by one space — makes the module refuse to start
+ * against a database that has already run it. Nothing here is reformatted, ever.
  */
-export const migrations: readonly Migration[] = [
-  {
-    version: 1,
-    name: 'templates-versions-deliveries',
-    sql: `
+export const migration: Migration = {
+  version: 1,
+  name: 'templates-versions-deliveries',
+  sql: `
       CREATE TABLE templates (
         id          uuid PRIMARY KEY,
         key         text NOT NULL UNIQUE,
@@ -92,5 +91,4 @@ export const migrations: readonly Migration[] = [
 
       CREATE INDEX email_audit_created_idx ON email_audit (created_at DESC);
     `,
-  },
-];
+};

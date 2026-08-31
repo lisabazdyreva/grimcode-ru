@@ -16,9 +16,10 @@
     "check:dependencies": "node scripts/check-dependencies.mjs",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:procedures": "node scripts/check-procedures.mjs",
+    "check:migrations": "node scripts/check-migrations.mjs",
     "check:service-ids": "node scripts/check-service-ids.mjs",
     "check:scripts": "node scripts/check-scripts.mjs",
-    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dependencies && pnpm run check:boundaries && pnpm run check:procedures && pnpm run check:service-ids && pnpm run check:scripts",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dependencies && pnpm run check:boundaries && pnpm run check:procedures && pnpm run check:migrations && pnpm run check:service-ids && pnpm run check:scripts",
     "dev": "pnpm run build && node --env-file=.env dist/index.js",
     "test:acceptance": "pnpm --filter @template/tests acceptance",
     "test:browser": "pnpm --filter @template/tests browser"

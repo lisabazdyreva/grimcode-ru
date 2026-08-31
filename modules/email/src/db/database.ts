@@ -3,7 +3,7 @@ import pg from 'pg';
 import { runMigrations, waitForDatabase } from '@template/shared';
 
 import type { EmailEnv } from '../env.js';
-import { migrations } from './migrations.js';
+import { migrations } from './migrations/index.js';
 import { seedTemplates } from './seeding.js';
 
 export type Pool = pg.Pool;

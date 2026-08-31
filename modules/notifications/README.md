@@ -82,7 +82,7 @@ forgotten, which is why it is written down.
 ## Data
 
 Database `<PROJECT_SLUG>_notifications`, single `events` table, created and opened by this module
-itself. Migrations are in [`src/db/migrations.ts`](src/db/migrations.ts) and are applied by the
+itself. Migrations are in [`src/db/migrations/`](src/db/migrations) and are applied by the
 module itself, on the first request that opens its pool.
 
 ## Environment
