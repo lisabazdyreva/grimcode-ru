@@ -23,7 +23,6 @@ export interface ServiceFrameOptions {
 
 export interface ServiceFrameState {
   loading: boolean
-  /** Last path the iframe reported; `null` until it reports one. */
   childPath: string | null
 }
 

@@ -44,7 +44,6 @@ const csrfProblems = [];
 const unmountedRouters = [];
 const unreadable = [];
 
-/** Source files of one module, minus its browser bundle and its tests. */
 function moduleSources(dir) {
   const found = [];
   const walk = (current) => {

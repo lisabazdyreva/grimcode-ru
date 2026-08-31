@@ -60,13 +60,11 @@ export const AREA_RULES = [
  */
 export const NEIGHBOUR_SUBPATH = 'contract';
 
-/** Whether a rule allows reaching for a workspace package, by the specifier as written. */
 export function allows(rule, packageName, specifier = packageName) {
   if (rule.mayUse === EVERY_PACKAGE || rule.mayUse.includes(packageName)) return true;
   return rule.neighbourSubpath === true && specifier === `${packageName}/${NEIGHBOUR_SUBPATH}`;
 }
 
-/** How to name a rule's allowance when reporting a violation. */
 export function describeAllowance(rule) {
   if (rule.mayUse === EVERY_PACKAGE) return 'every workspace package';
   const named = rule.mayUse.length > 0 ? rule.mayUse.join(', ') : 'no workspace package';

@@ -21,7 +21,6 @@ export function safeReturnPath(value: string | undefined | null): string | null 
   return value;
 }
 
-/** The path to return to after signing in, defaulting to the application's own home. */
 export function returnPathOrHome(value: string | undefined | null): string {
   return safeReturnPath(value) ?? '/app/';
 }

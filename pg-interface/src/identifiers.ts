@@ -10,7 +10,6 @@
  * else may be interpolated into SQL anywhere in this package.
  */
 
-/** A column as the catalogue describes it. */
 export interface Column {
   name: string;
   /** `data_type` from `information_schema`, for the interface to render by. */

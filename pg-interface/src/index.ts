@@ -184,7 +184,6 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     return json({ tables: described });
   }
 
-  /** One page of rows, and how many rows the same filters match. */
   async function rows(request: Request, database: string): Promise<Response> {
     const body = await readBody(request);
     const pool = await pools.of(database);

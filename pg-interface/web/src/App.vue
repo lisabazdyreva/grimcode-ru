@@ -73,23 +73,20 @@ const TYPE_DEFAULTS: Record<string, string> = {
   jsonb: '{}',
 };
 
-/** A new column, ready for the dialog. */
 function newColumn(): { column: string; type: string; required: boolean; default: string } {
   return { column: '', type: 'text', required: false, default: '' };
 }
 
-/**
- * The default follows the type, until somebody types their own.
- *
- * Only filled in for a required column, and only when the field still holds what this function last put
- * there: a value a person typed is theirs, and changing the type must not quietly discard it.
- */
 /** «Сейчас» вместо выбранной даты, и обратно: пустое поле ждёт выбора в календаре. */
 function useNow(on: boolean | string | number): void {
   if (!adding.value) return;
   adding.value.default = on === true ? 'now' : '';
 }
 
+/**
+ * The default follows the type, until somebody types their own: only for a required column, and only
+ * while the field still holds what this function last put there. A value a person typed is theirs.
+ */
 function retype(): void {
   const request = adding.value;
   if (!request) return;

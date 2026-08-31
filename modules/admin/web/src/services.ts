@@ -2,7 +2,6 @@ import type { AdminServiceId } from '@template/shared/vocabulary';
 
 export interface AdminServiceEntry {
   id: AdminServiceId;
-  /** Label shown in the sidebar. */
   label: string;
   /** Protected URL the iframe is pointed at. Gateway performs the same check on it directly. */
   embedHref: string;

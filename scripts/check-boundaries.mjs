@@ -134,7 +134,6 @@ function sourceOf(relative) {
   return relative;
 }
 
-/** The workspace package a bare specifier names, or null for a third-party or node: import. */
 function workspacePackageOf(specifier) {
   const scoped = /^(@[^/]+\/[^/]+)/.exec(specifier);
   const name = scoped ? scoped[1] : specifier.split('/')[0];

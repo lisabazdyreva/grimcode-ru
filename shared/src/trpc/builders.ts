@@ -14,7 +14,6 @@ export interface RpcContext {
   resHeaders: Headers;
 }
 
-/** A context for an admin surface: the verified administrator, or nothing. */
 export interface AdminAwareContext extends RpcContext {
   admin: AdminContext | null;
 }

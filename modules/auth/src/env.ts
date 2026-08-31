@@ -9,6 +9,5 @@ export interface AuthEnv {
   databaseName: string;
   /** The server itself, for the one `CREATE DATABASE`. */
   maintenanceUrl: string;
-  /** How long a session lives. */
   sessionTtlSeconds: number;
 }

@@ -20,14 +20,12 @@ function read(relative) {
   return readFileSync(join(repoRoot, relative), 'utf8');
 }
 
-/** Extracts the string literals of a named `as const` array declaration. */
 function constArray(source, name) {
   const match = new RegExp(`${name}\\s*=\\s*\\[([^\\]]*)\\]`, 's').exec(source);
   if (!match) throw new Error(`Could not find the declaration of ${name}`);
   return [...match[1].matchAll(/'([^']+)'/g)].map((entry) => entry[1]);
 }
 
-/** Extracts the keys of an object literal assigned to a named constant. */
 function objectKeys(source, name) {
   const match = new RegExp(`${name}\\s*=\\s*\\{(.*?)\\n\\}`, 's').exec(source);
   if (!match) throw new Error(`Could not find the declaration of ${name}`);
