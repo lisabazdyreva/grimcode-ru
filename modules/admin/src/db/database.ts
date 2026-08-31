@@ -11,9 +11,8 @@ export type Pool = pg.Pool;
 const MAX_CONNECTIONS = 5;
 
 /**
- * This module's database, prepared on the first request that needs it: created if missing, migrated,
- * checked, kept. There is no deployment step behind it — the cost is that a broken migration answers
- * 500 to the first person through the door instead of failing a deploy.
+ * This module's database, prepared on the first request that needs it. No deployment step stands
+ * behind it, and the cost of that is a broken migration answering 500 instead of failing a deploy.
  */
 export function createDatabase(): (env: AdminEnv) => Promise<Pool> {
   const open = async (env: AdminEnv): Promise<Pool> => {
@@ -27,11 +26,8 @@ export function createDatabase(): (env: AdminEnv) => Promise<Pool> {
       application_name: 'admin-service',
     });
 
-    /*
-     * Registered and empty on purpose: without a listener a broken idle connection takes the process
-     * down, with every module in it. Nothing is reported here — the request that needs the pool fails
-     * on its own, and that is what is visible.
-     */
+    // Empty on purpose: without a listener a broken idle connection takes the whole process down.
+    // Nothing is reported — the request that needed the pool fails on its own, and that is visible.
     pool.on('error', () => undefined);
 
     try {
@@ -50,12 +46,8 @@ export function createDatabase(): (env: AdminEnv) => Promise<Pool> {
 }
 
 /**
- * Remembers the first successful call: the promise, not the value, so two requests arriving together
- * share one attempt. A failure is forgotten, so a server that was not up yet is retried by the next
- * request instead of refusing until restart.
- *
- * Exported because those two sentences are what can go wrong here, and the rest of this file needs a
- * live PostgreSQL to say anything.
+ * Remembers the promise, not the value: two requests arriving together share one attempt. A failure
+ * is forgotten, so a server that was not up yet is retried instead of refusing until restart.
  */
 export function openOnce<TArg, TValue>(
   open: (arg: TArg) => Promise<TValue>,
@@ -69,11 +61,7 @@ export function openOnce<TArg, TValue>(
     }));
 }
 
-/**
- * Creates this module's database unless it is already there. A database cannot be created from inside
- * itself, hence the second connection, closed again straight away; `waitForDatabase` is what makes a
- * cold start work.
- */
+/** A database cannot be created from inside itself, hence the second connection, closed straight away. */
 async function ensureDatabase(env: AdminEnv): Promise<void> {
   const server = new pg.Pool({
     connectionString: env.maintenanceUrl,
@@ -106,9 +94,8 @@ async function ensureDatabase(env: AdminEnv): Promise<void> {
 }
 
 /**
- * Refuses a pool that landed on another database. One account opens every database on the server, so
- * this is the whole of what stands between a mistyped `DATABASE_URL_<MODULE>` and this module's tables
- * appearing in a neighbour's database. It runs before the migrations for that reason.
+ * One account opens every database on the server, so this check is the whole of what stands between a
+ * mistyped `DATABASE_URL_<MODULE>` and this module's tables appearing in a neighbour's database.
  */
 export async function assertOpenedDatabase(pool: Pool, expected: string): Promise<void> {
   const { rows } = await pool.query<{ current_database: string }>('SELECT current_database()');

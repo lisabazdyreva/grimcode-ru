@@ -3,18 +3,12 @@ import { createTRPCClient, httpLink } from '@trpc/client';
 import type { AdminPanelRouter } from '@template/admin/contract';
 
 /**
- * Client for the shell's own API.
+ * Client for the shell's own API. The session cookie is HttpOnly, so the browser attaches it and
+ * this code never sees it; changing calls carry a CSRF token as well.
  *
- * The session cookie is HttpOnly, so the browser attaches it and this code never sees it. Mutating
- * calls additionally carry a CSRF token the server issued.
- *
- * The token goes with exactly what changes something, because the link knows the operation's type.
- * The list of names it replaces held `logout` while the handler never checked the token — sent and
- * ignored looks like protection and is not, and no test could see it, because the call succeeded
- * either way.
- *
- * The type comes through the module's own `./contract` export rather than a relative path into
- * `../../src`, so the registry of who may do what cannot follow it into the browser bundle.
+ * Which calls carry it is decided by the operation's type. The list of names it replaced held
+ * `logout` while the handler never checked the token — sent and ignored looks like protection and
+ * is not, and no test could see it, because the call succeeded either way.
  */
 const link = httpLink({
   url: `${window.location.origin}/admin/rpc`,

@@ -3,13 +3,8 @@ import { createTRPCClient, httpLink } from '@trpc/client';
 import type { UsersAdminRouter } from '@template/users/contract';
 
 /**
- * Client for this module's own admin API.
- *
- * The call goes through Gateway, which has already checked the session, the admin role and the
- * grant on Users. Operations that change something also carry a CSRF token this module issued.
- *
- * The type comes through this module's own `./contract` export, which resolves to declarations and
- * nothing else, so the server's code cannot follow it into the browser bundle.
+ * Client for this module's own admin API. Gateway has already checked the session, the role and the
+ * grant; changing calls carry a CSRF token this module issued, under its own scope.
  */
 const BASE = '/admin/embed/service/users';
 

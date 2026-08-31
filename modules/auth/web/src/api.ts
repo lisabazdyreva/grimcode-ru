@@ -3,13 +3,9 @@ import { createTRPCClient, httpLink } from '@trpc/client';
 import type { AuthAdminRouter } from '@template/auth/contract';
 
 /**
- * Client for this module's own admin API.
- *
- * The call goes through Gateway, which has already checked the session, the admin role and the
- * grant on Auth. Operations that change something also carry a CSRF token this module issued —
- * under its own scope, so a token minted for the shell is refused here.
- *
- * The token goes with exactly what changes something, because the link knows the operation's type.
+ * Client for this module's own admin API. Gateway has already checked the session, the role and the
+ * grant; changing calls carry a CSRF token of this module's own scope, so one minted for the shell
+ * is refused here. Which calls carry it is decided by the operation's type, not by a list of names.
  */
 const BASE = '/admin/embed/service/auth';
 

@@ -4,21 +4,17 @@ import * as React from "react"
 /**
  * Owns the theme for one admin surface.
  *
- * `system` is resolved here rather than left to CSS, because Tailwind's `dark:` variant needs a
- * concrete state on the document. The resolved theme is written to `data-theme` — the same
- * attribute the non-React admin kit reads, and the one anything the panel embeds has to honour —
- * and mirrored to the `dark` class that the shadcn components expect.
- *
- * A service admin runs inside the shell's iframe and does not own the choice: it applies whatever
- * the shell sends and hides its own switch. `controlled` expresses that.
+ * `system` is resolved here rather than left to CSS: Tailwind's `dark:` needs a concrete state on the
+ * document. The result goes to `data-theme` — what the non-React admin kit and every embedded frame
+ * read — and to the `dark` class the shadcn components expect. A service admin inside the shell's
+ * frame owns nothing: it applies what the shell sends and hides its switch, which is `controlled`.
  */
 interface ThemeContextValue {
-  /** What the user picked, including `system`. */
+  /** What the person picked, `system` included — unlike `applied`, which is what is on screen. */
   preference: ThemePreference
-  /** What is actually on screen. */
   applied: "light" | "dark"
   setPreference: (preference: ThemePreference) => void
-  /** True when an outer surface owns the theme, so this one must not offer a switch. */
+  /** An outer surface owns the theme, so this one must not offer a switch. */
   controlled: boolean
 }
 
@@ -32,12 +28,9 @@ export function useTheme(): ThemeContextValue {
 
 export interface AdminThemeProviderProps {
   children: React.ReactNode
-  /** Where the choice is remembered. Each admin surface uses its own key. */
+  /** Each admin surface remembers its choice under its own key. */
   storageKey?: string
-  /**
-   * Set when an outer surface owns the theme. The provider then applies `theme` as given and
-   * remembers nothing.
-   */
+  /** Set by an outer surface: the provider then applies it as given and remembers nothing. */
   controlledTheme?: ThemePreference | null
 }
 

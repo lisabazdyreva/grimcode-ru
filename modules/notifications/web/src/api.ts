@@ -3,20 +3,13 @@ import { createTRPCClient, httpLink } from '@trpc/client';
 import type { NotificationsAdminRouter } from '@template/notifications/contract';
 
 /**
- * Client for this module's own admin API.
- *
- * The call goes through Gateway, which has already checked the session, the admin role and the
+ * Client for this module's own admin API. Gateway has already checked the session, the role and the
  * grant on Notifications.
  *
- * There is no CSRF token here and no code to fetch one, because this surface changes nothing: an
- * event is a record of what happened, and a log that can be edited is not a record.
- *
- * Adding a mutation here means adding both halves by hand — `requireCsrf` on the procedure and a
- * `headers` option here that sends the token on mutations; `modules/email/web/src/api.ts` is the
- * working pattern. Neither arrives on its own, and nothing fails if they are missed.
- *
- * The type comes through this module's own `./contract` export, which resolves to declarations and
- * nothing else, so the server's code cannot follow it into the browser bundle.
+ * No CSRF token here and no code to fetch one, because this surface changes nothing: an event is a
+ * record of what happened, and a log that can be edited is not a record. Adding a mutation means
+ * adding both halves by hand — `requireCsrf` on the procedure and a `headers` option here;
+ * `modules/email/web/src/api.ts` is the working pattern.
  */
 const BASE = '/admin/embed/service/notifications';
 
