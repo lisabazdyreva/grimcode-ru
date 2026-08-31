@@ -19,7 +19,8 @@ Everything arrives as an argument:
 const database = createDatabaseInterface({
   basePath: '/admin/embed/database',
   databases: [{ name: 'app_auth', connectionString: 'postgres://…/app_auth' }],
-  log: (event) => logger[event.level](event.message, { database: event.database }),
+  // Optional: without it the shape of a table cannot be changed from the screen at all.
+  writer: schemaWriter,
 });
 
 const response = await database.fetch(request);
@@ -43,7 +44,7 @@ in `pg_stat_activity`.
 ## What keeps it from being a hole
 
 The console it replaced was safe in a way this one cannot be: there, a person wrote the SQL and owned
-it. Here the query is assembled from a request body, so four rules do that work instead.
+it. Here the query is assembled from a request body, so five rules do that work instead.
 
 **Identifiers are looked up, values are parameters.** Every table and column named by a request is
 found in `information_schema` first; nothing else is ever interpolated. A value carrying `'; DROP
@@ -65,8 +66,9 @@ adds one is stopped by a preflight this package never answers — it sends no CO
 is deliberately its own guard rather than the host application's: a mechanical check that reads tRPC
 procedures cannot see this package, whatever it does.
 
-**Row values never reach the log.** These databases hold password hashes and session identifiers. The
-log gets table names and counts.
+**Nothing is written anywhere.** These databases hold password hashes and session identifiers, and this
+package has nowhere to leak them to: it takes no logger and writes no line of its own. A request that
+fails fails for the person who sent it, which is what they see.
 
 ## How many rows a table has
 

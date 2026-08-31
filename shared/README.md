@@ -15,7 +15,6 @@ port belongs to the program's entry, and the import that opens one may be writte
 | --- | --- |
 | `env.ts` | Typed environment access, project slug, the public origin, cookie names |
 | `service-names.ts` | The module-name union `createServiceApp` takes. Names only: there is no address anywhere in the process |
-| `logger.ts` | JSON-line logger with request-scoped child loggers |
 | `crypto.ts` | Ids, single-use tokens, scrypt password hashing, constant-time comparison |
 | `rate-limit.ts` | Fixed-window attempt counter, in memory on purpose — one account's password, not volumetric limits |
 | `http/cookies.ts` | Cookie parsing and serialization, including the expired logout cookie |
