@@ -74,6 +74,17 @@ html.dark .el-button--primary {
   --el-button-active-text-color: oklch(0.205 0 0);
   --el-button-disabled-text-color: oklch(0.205 0 0 / 60%);
 }
+
+/*
+ * The same white-on-white, in the other component that paints itself with the accent: the chosen half
+ * of «и / или». element-plus fills it with `--el-color-primary` and writes `--el-color-white` on top,
+ * which in dark is white on near-white — the panel showed which one was chosen only by a faint edge.
+ * Kept beside the button fix because it is the same mistake, and the next component that uses the
+ * accent as a background will need the same line.
+ */
+html.dark .el-radio-button {
+  --el-radio-button-checked-text-color: oklch(0.205 0 0);
+}
 html,
 body,
 #app {

@@ -44,11 +44,17 @@ async function refuseToWriteIntoTheRepository(page: Page): Promise<void> {
   const response = await page.request.get('/admin/embed/database/api/databases');
   const { writesInto } = (await response.json()) as { writesInto: string | null };
 
+  const advice =
+    'Start it with SCHEMA_SOURCE_ROOT pointing at a scratch copy of modules/*/src/db/migrations.';
+
+  // Nowhere to write at all: the screen offers no column button, and waiting for one is a timeout
+  // that says nothing. Better to fail here, naming what is missing.
+  expect(writesInto, `This copy cannot change the shape of a table. ${advice}`).not.toBeNull();
+
   const repository = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
   expect(
     writesInto,
-    'This copy would write migrations into the repository under test. Start it with ' +
-      'SCHEMA_SOURCE_ROOT pointing at a scratch copy of modules/*/src/db/migrations.',
+    `This copy would write migrations into the repository under test. ${advice}`,
   ).not.toBe(repository);
 }
 
@@ -640,6 +646,7 @@ test.describe('the database section', () => {
   test('offers a calendar for a date instead of a field to type in', async ({ page }) => {
     const problems = collectPageErrors(page);
     const frame = await openDatabaseSection(page);
+    await refuseToWriteIntoTheRepository(page);
 
     await chooseDatabase(page, frame, /_auth$/);
     await frame.locator('.shell-table-name').filter({ hasText: /^auth_audit$/ }).click();
