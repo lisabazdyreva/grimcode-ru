@@ -74,6 +74,7 @@ healthy while answering on a port nothing routes to.
 | `EMAIL_PROVIDER` | `log` records messages in the delivery journal without sending them, which is the default. `unisender` sends through UniSender Go |
 | `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`, `UNISENDER_GO_API_KEY`, `UNISENDER_GO_API_URL` | The transport's own settings. The address is required by the UniSender transport, and it says so when it refuses |
 | `PORT_RANGE_START`, `PORT_RANGE_END` | Read by `bootstrap:worktree` alone, to pick a free port for a new branch. The application never looks at them |
+| `SCHEMA_SOURCE_ROOT` | Where the database section writes a change of shape, when that is not the project this program was built in. Set for a copy started to run the browser checks, which really do add and drop columns — otherwise every run would leave migrations in the repository under test |
 | `DATABASE_URL_ADMIN`, `_AUTH`, `_USERS`, `_NOTIFICATIONS`, `_EMAIL` | One module's database elsewhere — another server, or an account with other rights. Taken exactly as written, and the module creates its database on **that** server. One condition: the database has to be named `<PROJECT_SLUG>_<module>`, because the module refuses a pool that opened anything else (`Pool opened database …, expected …`) |
 
 Nothing else is read: a module is handed what it needs and reaches for the environment through nothing
@@ -85,7 +86,7 @@ at all, which a lint rule and a boundary check both refuse.
 | --- | --- |
 | `pnpm dev` | Build what changed and run the application |
 | — | The databases and their migrations need no command: each module creates and migrates its own on its first request |
-| `pnpm check` | Lint, types, unit tests, production build, then the five scripts below: dependencies, boundaries, procedures, service ids, script names |
+| `pnpm check` | Lint, types, unit tests, production build, then the six scripts below: dependencies, boundaries, procedures, migrations, service ids, script names |
 | `pnpm test:acceptance` | The HTTP checks, against a running application |
 | `pnpm test:browser` | The Chromium checks, against a running application |
 
@@ -159,10 +160,11 @@ The panel's database section is at `/admin/database`, owner-only, through Gatewa
 [`pg-interface`](../pg-interface/README.md), this template's own interface: the tables of every
 module's database, a page of rows, and adding, changing or removing one row.
 
-It can also **add a column, and rename or drop a column it added itself** — each change recorded in
-`pg_interface_changes` in the same database. A column that came from a module's migration it will not
-touch: the module's code names that column, and a rename would break it with the next request. Tables
-it does not create at all.
+It can also **add a column, and rename or drop a column it added itself** — each change written into
+the project as one more migration of that module, ready to commit, so a colleague who pulls the code
+gets the column with it. A column that came from a module's migration it will not touch: the module's
+code names that column, and a rename would break it with the next request. Tables it does not create at
+all.
 
 `psql` is the other way in, and the one that can do what the interface will not:
 

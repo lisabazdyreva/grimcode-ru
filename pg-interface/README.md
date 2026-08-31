@@ -118,8 +118,7 @@ identity, or one computed from others — is absent from the form, because a new
 refused. A column with a default may be left empty, and then it is **left out of the statement**, so
 the default applies rather than an empty value. A `not null` column with nothing to fall back on is
 refused here, naming the column: `email has no default in public.identities, so a new row has to carry
-a value`. The two tables that record what has been applied — `schema_migrations` and the journal — take
-no new row at all.
+a value`. The table that records what has been applied, `schema_migrations`, takes no new row at all.
 
 **A date is picked, not typed.** `date` gets a calendar, `timestamptz` a calendar with a clock, and the
 value carries the browser's own offset so a moment does not shift into the server's zone. Beside a
@@ -175,27 +174,45 @@ makes PostgreSQL rewrite the whole table and its indexes.
 
 Renaming and dropping are allowed **only on a column this interface added**. The rest come from a
 module's migrations and its code reads them by name — renaming `email` would take Auth down with the next
-request. Nothing in `information_schema` says who created a column, which is why the journal below is
+request. Nothing in `information_schema` says who created a column, which is why the naming below is
 load-bearing rather than a nicety.
 
-`schema_migrations` and `pg_interface_changes` are not reshaped at all: they record what has been
-applied, and a column added to either would describe something that never happened.
+`schema_migrations` is not reshaped at all: it records what has been applied, and a column added to it
+would describe something that never happened. This interface writes into that record itself, so it
+would also be reshaping the ground it stands on.
 
-## The journal
+## A change of shape is a migration
 
-Every change is written to `pg_interface_changes` in the same database it changed: what was done, where,
-the exact statement, and when it was applied. A dump carries it with the data, so a database restored
-elsewhere arrives with its history.
+Every change made here is written into the project as one more migration of the module whose database
+it is — applied, recorded and written in a single transaction. From then on it travels the way every
+other statement in this project travels: by git, applied by `runMigrations` on any database that has
+not run it. A colleague who pulls the code gets the column without ever opening this screen.
 
-Applying and recording are one transaction — PostgreSQL runs DDL inside one — so "applied but not
-recorded" cannot happen, and a statement that fails leaves nothing behind. `applied_at` is null for a
-row that was recorded but not run here, which is what a journal carried from another installation looks
-like before it is applied.
+That is what the whole path is for. A change kept only in the database it changed reaches nobody, and
+there would be nothing to commit — the schema would have two sources of truth, and only one of them
+would arrive at a fresh installation.
 
-**The schema now has two sources of truth, and that is the accepted price.** A column added here is in
-no module's `src/db/migrations/`, so a fresh installation will not have it, and `pnpm check` cannot see
-it. Within one installation the two agree; between installations the journal is what carries the
-difference.
+**Where the project cannot be written to, a shape cannot be changed.** A built copy running away from
+its sources has nowhere to put the migration, so the screen offers no way to add, rename or drop a
+column, and the server refuses if asked anyway. The alternative — writing into that one database — is
+the thing being avoided.
+
+**The order inside the transaction is the design.** The statement runs, the row goes into
+`schema_migrations`, the file is written, and only then does it commit. Of the ways this can end
+badly, the one left is a commit that fails after the file was written: a migration in the project that
+this database has not run yet — which is exactly what a colleague's copy looks like, and is applied on
+the next start.
+
+**Who owns a column is read back from the names.** A change is recorded as
+`interface-add-public-profiles-notes`, a rename as `interface-rename-public-profiles-notes-remarks`,
+a drop as `interface-drop-public-profiles-remarks`; replaying those names over `schema_migrations`
+gives the set of columns this interface may rename or drop. No table of its own is kept: the record
+travels with the migration that carries the change, so ownership arrives with the column.
+
+**The next version is the higher of two answers.** The project's files say what it holds, the database
+says what it has actually run, and they are not always the same — a database keeps what was applied to
+it after the branch under it changes. Taking the files' word alone answered `duplicate key value
+violates unique constraint "schema_migrations_pkey"`; measured, and the reason both are asked.
 
 ## Commands
 

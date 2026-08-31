@@ -53,8 +53,9 @@ row.
 It can also add a column, and rename or drop one **it added itself**. Columns that came from a module's
 migration are read and filled, never renamed or dropped: the module's code names them, and a rename
 would break it with the next request. Tables are not created here at all. Every change of shape is
-recorded in `pg_interface_changes` in the same database, so what the interface did to a schema is
-visible beside the schema.
+written into the project as a migration of that module, so it is committed like any other change and
+arrives at every other copy through git — and so a copy running away from its sources offers no change
+of shape at all.
 
 It opens connections of its own rather than borrowing the modules' — two per database, on the first
 request that looks at one — so a heavy query typed into the console cannot hold a connection the site

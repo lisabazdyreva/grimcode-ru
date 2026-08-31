@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { COUNT_LIMIT, readCatalogue, type Queryable, type RowCount } from './catalog.js';
-import { JOURNAL_TABLE } from './changes.js';
+import { changeName, MIGRATIONS_TABLE, ownColumns, parseChangeName } from './ownership.js';
 import { conditionsFor } from './filters.js';
 import { RequestError, type Table } from './identifiers.js';
 import {
@@ -320,30 +320,37 @@ describe('a row is addressed by its whole key', () => {
   });
 });
 
-interface JournalEntry {
+/** A row of `schema_migrations` as the migrator writes it, which is all this package reads. */
+interface MigrationRow {
   version: number;
-  kind: string;
-  schema: string;
-  table: string;
-  column: string;
-  details: Record<string, unknown>;
-  sql: string;
-  applied_at: string | null;
+  name: string;
+  checksum: string;
 }
 
 /**
- * A pool that answers the catalogue, keeps a journal, and applies `ALTER TABLE` to its own tables.
+ * The migration every one of these databases starts with: a module's own, and nothing this interface
+ * may touch. Ownership is replayed from names, so the name is the whole of what matters here.
+ */
+const MODULE_MIGRATION: MigrationRow = {
+  version: 1,
+  name: 'identities-sessions-tokens-audit',
+  checksum: 'module',
+};
+
+/**
+ * A pool that answers the catalogue, records applied migrations, and applies `ALTER TABLE` to its own
+ * tables.
  *
  * It has to do that last part: a test that only checked the statement text would not notice that the
- * journal and the catalogue disagree about what a column is called after a rename.
+ * recorded name and the catalogue disagree about what a column is called after a rename.
  */
 type FakePool = Queryable & {
   asked: { text: string; values: unknown[] }[];
-  journal: JournalEntry[];
+  migrations: MigrationRow[];
   connect(): Promise<Queryable & { release(): void }>;
   failOnAlter?: boolean;
-  /** A database this interface has never changed: the journal table is not there at all. */
-  journalMissing?: boolean;
+  /** A database no migration has ever been applied to: the record is not there at all. */
+  migrationsMissing?: boolean;
   /** The most queries this pool ever had in flight at once — how many rounds a request took. */
   mostAtOnce: number;
   /**
@@ -360,7 +367,7 @@ type FakePool = Queryable & {
 
 function fakePool(tables: Table[]): FakePool {
   const asked: { text: string; values: unknown[] }[] = [];
-  const journal: JournalEntry[] = [];
+  const migrations: MigrationRow[] = [{ ...MODULE_MIGRATION }];
 
   /** `ALTER TABLE` as this fake understands it — the three shapes `ddl.ts` can produce. */
   function reshape(text: string): void {
@@ -397,11 +404,12 @@ function fakePool(tables: Table[]): FakePool {
   }
 
   let inFlight = 0;
+  let undo: { tables: Table[]; migrations: MigrationRow[] } | null = null;
   const flow: string[] = [];
 
   const pool: FakePool = {
     asked,
-    journal,
+    migrations,
     mostAtOnce: 0,
     flow,
     async connect() {
@@ -429,44 +437,52 @@ function fakePool(tables: Table[]): FakePool {
       }
     },
     answer<Row>(text: string, values: unknown[] = []) {
-      if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+      /*
+       * A transaction this fake really undoes.
+       *
+       * Without it `ROLLBACK` was a word in a list of queries, and a test could only check that the
+       * word had been said. PostgreSQL runs DDL inside a transaction, so both halves — the shape of
+       * the tables and the record of applied migrations — come back on a rollback, and that is what
+       * the failing paths are about.
+       */
+      if (text === 'BEGIN') {
+        undo = { tables: structuredClone(tables), migrations: structuredClone(migrations) };
+        return { rows: [] as Row[], rowCount: 0 };
+      }
+      if (text === 'ROLLBACK') {
+        if (undo) {
+          tables.splice(0, tables.length, ...undo.tables);
+          migrations.splice(0, migrations.length, ...undo.migrations);
+        }
+        undo = null;
+        return { rows: [] as Row[], rowCount: 0 };
+      }
+      if (text === 'COMMIT') {
+        undo = null;
         return { rows: [] as Row[], rowCount: 0 };
       }
       if (text.includes('pg_advisory_xact_lock')) return { rows: [] as Row[], rowCount: 0 };
 
-      if (text.includes(`CREATE TABLE IF NOT EXISTS ${JOURNAL_TABLE}`)) {
-        pool.journalMissing = false;
-        return { rows: [] as Row[], rowCount: 0 };
-      }
-      if (text.includes('MAX(version)')) {
-        return { rows: [{ next: journal.length + 1 }] as Row[], rowCount: 1 };
-      }
-      if (text.includes(`FROM ${JOURNAL_TABLE}`)) {
-        // What a database with no journal answers, whatever the query.
-        if (pool.journalMissing) {
-          throw Object.assign(
-            new Error(`relation "${JOURNAL_TABLE}" does not exist`),
-            { code: '42P01' },
-          );
+      if (text.includes(`FROM ${MIGRATIONS_TABLE}`)) {
+        // What a database no migration has reached answers, whatever the query.
+        if (pool.migrationsMissing) {
+          throw Object.assign(new Error(`relation "${MIGRATIONS_TABLE}" does not exist`), {
+            code: '42P01',
+          });
         }
-        return { rows: journal as Row[], rowCount: journal.length };
+        // The highest version applied here, which is half of what decides the next one.
+        if (text.includes('MAX(version)')) {
+          const highest = Math.max(0, ...migrations.map((row) => row.version));
+          return { rows: [{ highest }] as Row[], rowCount: 1 };
+        }
+        return { rows: migrations as Row[], rowCount: migrations.length };
       }
-      if (text.includes(`INSERT INTO ${JOURNAL_TABLE}`)) {
-        journal.push({
+      if (text.includes(`INSERT INTO ${MIGRATIONS_TABLE}`)) {
+        migrations.push({
           version: Number(values[0]),
-          kind: String(values[1]),
-          schema: String(values[2]),
-          table: String(values[3]),
-          column: String(values[4]),
-          details: JSON.parse(String(values[5])) as Record<string, unknown>,
-          sql: String(values[6]),
-          applied_at: null,
+          name: String(values[1]),
+          checksum: String(values[2]),
         });
-        return { rows: [] as Row[], rowCount: 1 };
-      }
-      if (text.includes(`UPDATE ${JOURNAL_TABLE}`)) {
-        const entry = journal.find((row) => row.version === Number(values[0]));
-        if (entry) entry.applied_at = '2026-08-24T00:00:00.000Z';
         return { rows: [] as Row[], rowCount: 1 };
       }
 
@@ -548,18 +564,46 @@ function fakePool(tables: Table[]): FakePool {
   return pool;
 }
 
-function build(tables: Table[] = [rows, grants, sessions, audit]) {
+/**
+ * The project side of a shape change, as a test can watch it.
+ *
+ * The real one writes a file into a module's migrations folder; this one remembers what it was asked
+ * to write. `refuses` is how a test makes that half fail — the half that is not a database, and so the
+ * one whose failure has to undo the other.
+ */
+function fakeWriter() {
+  const written: { database: string; version: number; name: string; sql: string }[] = [];
+  const state = { refuses: false };
+
+  return {
+    written,
+    state,
+    writer: {
+      root: 'nowhere in particular',
+      highest: () => Math.max(0, ...written.map((entry) => entry.version)),
+      write(database: string, migration: { version: number; name: string; sql: string }) {
+        if (state.refuses) throw new Error('nowhere to write this migration');
+        written.push({ database, ...migration });
+      },
+      checksum: (sql: string) => `sha:${sql.length}`,
+    },
+  };
+}
+
+function build(tables: Table[] = [rows, grants, sessions, audit], { writes = true } = {}) {
   // Cloned: the fake applies `ALTER TABLE` to these objects, and a column added by one test would
   // otherwise still be there in the next one.
   const pool = fakePool(structuredClone(tables));
+  const project = fakeWriter();
 
   const api = createDatabaseInterface({
     databases: [{ name: 'demo_auth', connectionString: 'postgres://unused/demo_auth' }],
     basePath: '/admin/embed/database',
     connect: async () => pool,
+    ...(writes ? { writer: project.writer } : {}),
   });
 
-  return { api, pool };
+  return { api, pool, written: project.written, project };
 }
 
 const at = (path: string, init?: RequestInit) =>
@@ -580,7 +624,11 @@ describe('the API', () => {
     const response = await api.fetch(at('/api/databases'));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ databases: [{ name: 'demo_auth' }] });
+    // Beside them, where a change of shape would be written — null when there is nowhere to write it.
+    expect(await response.json()).toEqual({
+      databases: [{ name: 'demo_auth' }],
+      writesInto: 'nowhere in particular',
+    });
   });
 
   it('refuses a database it was not handed', async () => {
@@ -796,27 +844,63 @@ describe('the API', () => {
  *
  * The rule the whole group is about: **adding is open, renaming and dropping are not.** A nullable
  * column nobody reads cannot break a module; a renamed column its code reads breaks it with the next
- * request. Which columns are which is not in `information_schema` — it is in this package's journal.
+ * request. Which columns are which is not in `information_schema` — it is in the names of the
+ * migrations the database has applied.
  */
 describe('the shape of a table', () => {
   const addColumnAt = (column: string, type: string, table = 'identities') =>
     post('/api/databases/demo_auth/columns', { schema: 'public', table, column, type }, marked);
 
-  it('adds a nullable column and remembers that it added it', async () => {
-    const { api, pool } = build();
+  it('adds a nullable column, writes it as a migration and records it as applied', async () => {
+    const { api, pool, written } = build();
     const response = await api.fetch(addColumnAt('nickname', 'text'));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ added: 'nickname', version: 1 });
+    // Version 2: the module's own migration is version 1, and this one follows it like any other.
+    expect(await response.json()).toMatchObject({ added: 'nickname', version: 2 });
 
     // The statement, once, and always nullable: `NOT NULL` would break the module's own INSERT.
     const altered = pool.asked.filter((query) => query.text.startsWith('ALTER TABLE'));
     expect(altered).toHaveLength(1);
     expect(altered[0]?.text).toBe('ALTER TABLE "public"."identities" ADD COLUMN "nickname" text');
 
-    // Recorded as applied, with the statement kept beside it.
-    expect(pool.journal).toHaveLength(1);
-    expect(pool.journal[0]).toMatchObject({ kind: 'add', column: 'nickname', applied_at: expect.any(String) });
+    // Written into the project — the whole point: the same statement, under a name that says what it did.
+    expect(written).toEqual([
+      {
+        database: 'demo_auth',
+        version: 2,
+        name: 'interface-add-public-identities-nickname',
+        sql: 'ALTER TABLE "public"."identities" ADD COLUMN "nickname" text',
+      },
+    ]);
+
+    // And recorded as applied, by the same rule the project's migrator uses, so it never runs twice.
+    expect(pool.migrations.at(-1)).toEqual({
+      version: 2,
+      name: 'interface-add-public-identities-nickname',
+      checksum: `sha:${written[0]?.sql.length}`,
+    });
+  });
+
+  /**
+   * Where the shape cannot be written, it cannot be changed.
+   *
+   * A built copy of the program has no sources beside it, so a column added there would live in that
+   * database alone — exactly what this design exists to prevent. The screen is told, and offers
+   * nothing; the server refuses anyway, because a screen is not a guard.
+   */
+  it('changes no shape at all where there is no project to write into', async () => {
+    const { api, written } = build(undefined, { writes: false });
+
+    const response = await api.fetch(addColumnAt('nickname', 'text'));
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('no project to write a migration into');
+    expect(written).toEqual([]);
+
+    const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
+      tables: { name: string; reshapable: boolean }[];
+    };
+    expect(body.tables.every((table) => table.reshapable === false)).toBe(true);
   });
 
   it('marks its own columns as its own, and the rest as not', async () => {
@@ -856,7 +940,7 @@ describe('the shape of a table', () => {
     expect(dropped.status).toBe(400);
   });
 
-  it('renames and drops a column it added, and the journal follows the new name', async () => {
+  it('renames and drops a column it added, and the record follows the new name', async () => {
     const { api, pool } = build();
     await api.fetch(addColumnAt('nickname', 'text'));
 
@@ -886,7 +970,12 @@ describe('the shape of a table', () => {
       ),
     );
     expect(dropped.status).toBe(200);
-    expect(pool.journal.map((entry) => entry.kind)).toEqual(['add', 'rename', 'drop']);
+    expect(pool.migrations.map((row) => row.name)).toEqual([
+      MODULE_MIGRATION.name,
+      'interface-add-public-identities-nickname',
+      'interface-rename-public-identities-nickname-handle',
+      'interface-drop-public-identities-handle',
+    ]);
   });
 
   it('refuses a name that would be a nuisance, and a type it does not offer', async () => {
@@ -900,11 +989,10 @@ describe('the shape of a table', () => {
     expect((await api.fetch(addColumnAt('email', 'text'))).status).toBe(400);
   });
 
-  it('will not reshape the tables that record what has been applied', async () => {
-    const { api } = build([{ ...rows, name: JOURNAL_TABLE }, { ...rows, name: 'schema_migrations' }]);
+  it('will not reshape the table that records what has been applied', async () => {
+    const { api } = build([{ ...rows, name: MIGRATIONS_TABLE }]);
 
-    expect((await api.fetch(addColumnAt('note', 'text', JOURNAL_TABLE))).status).toBe(400);
-    expect((await api.fetch(addColumnAt('note', 'text', 'schema_migrations'))).status).toBe(400);
+    expect((await api.fetch(addColumnAt('note', 'text', MIGRATIONS_TABLE))).status).toBe(400);
   });
 
   it('needs the header for a change of shape, like any other change', async () => {
@@ -923,46 +1011,59 @@ describe('the shape of a table', () => {
 
   /** Applied and recorded are one transaction, so a statement that fails leaves no record behind. */
   it('rolls back the record when the statement fails', async () => {
-    const { api, pool } = build();
+    const { api, pool, written } = build();
     pool.failOnAlter = true;
 
     const response = await api.fetch(addColumnAt('nickname', 'text'));
 
     expect(response.status).toBe(500);
     expect(pool.asked.map((query) => query.text)).toContain('ROLLBACK');
-    expect(pool.journal.every((entry) => entry.applied_at === null)).toBe(true);
+    expect(pool.migrations).toEqual([MODULE_MIGRATION]);
+    expect(written).toEqual([]);
   });
 
   /**
-   * Looking at a table does not change the schema.
+   * The file is written inside the transaction, and this is the test that says why.
    *
-   * Reading used to start with `CREATE TABLE IF NOT EXISTS`, so every list of tables and every page of
-   * rows sent DDL — and asked the account for `CREATE` on the schema, which a reader is refused
-   * (`42501`) even when the table is already there. The journal is started by the writing path only.
+   * A column in a database that is in no file is the one outcome this design cannot allow — it is what
+   * the old journal did, and what nobody else ever received. So the write goes in before the commit:
+   * if the project cannot be written to, the database is left as it was.
    */
+  it('undoes the change when the migration cannot be written', async () => {
+    const { api, pool, project } = build();
+    project.state.refuses = true;
+
+    const response = await api.fetch(addColumnAt('nickname', 'text'));
+
+    expect(response.status).toBe(500);
+    expect(pool.asked.map((query) => query.text)).toContain('ROLLBACK');
+    expect(pool.asked.map((query) => query.text)).not.toContain('COMMIT');
+    expect(pool.migrations).toEqual([MODULE_MIGRATION]);
+  });
+
   /**
-   * The journal depends on nothing the other reads produce, so it goes out with them.
+   * The applied migrations depend on nothing the other reads produce, so they go out with them.
    *
-   * Measured on a live database before the change: reading it after the page and the count cost the
+   * Measured on a live database before the change: reading them after the page and the count cost the
    * price of the query itself, a tenth of a millisecond over a socket — but a whole round trip once
    * the database is on another machine, on every page a person opens.
    */
-  it('reads the journal in the same round as the rows and the count', async () => {
+  it('reads the applied migrations in the same round as the rows and the count', async () => {
     const { api, pool } = build();
     await api.fetch(post('/api/databases/demo_auth/rows', { schema: 'public', table: 'identities' }, marked));
 
     expect(pool.mostAtOnce).toBe(3);
   });
 
-  it('asks for the journal without waiting for the catalogue', async () => {
+  it('asks for the applied migrations without waiting for the catalogue', async () => {
     const { api, pool } = build();
     await api.fetch(at('/api/databases/demo_auth/tables'));
 
     // Asked before anything at all came back, which is what "in the same round" means here.
-    const askedJournal = pool.flow.findIndex((step) => step.includes(`ask SELECT version`));
+    const askedRecord = pool.flow.findIndex((step) => step.includes(`ask SELECT name`));
     const firstAnswer = pool.flow.findIndex((step) => step.startsWith('answer'));
-    expect(askedJournal).toBeGreaterThanOrEqual(0);
-    expect(askedJournal).toBeLessThan(firstAnswer);
+    expect(askedRecord).toBeGreaterThanOrEqual(0);
+    expect(askedRecord).toBeLessThan(firstAnswer);
   });
 
   it('adds a row through the API and answers with what was stored', async () => {
@@ -982,30 +1083,28 @@ describe('the shape of a table', () => {
   });
 
   it('tells the screen which tables take a new row', async () => {
-    const { api } = build([rows, { ...rows, name: JOURNAL_TABLE }]);
+    const { api } = build([rows, { ...rows, name: MIGRATIONS_TABLE }]);
     const body = (await (await api.fetch(at('/api/databases/demo_auth/tables'))).json()) as {
       tables: { name: string; insertable: boolean }[];
     };
 
     expect(body.tables.find((table) => table.name === 'identities')?.insertable).toBe(true);
-    expect(body.tables.find((table) => table.name === JOURNAL_TABLE)?.insertable).toBe(false);
+    expect(body.tables.find((table) => table.name === MIGRATIONS_TABLE)?.insertable).toBe(false);
   });
 
-  it('refuses a new row in the tables that record what has been applied', async () => {
-    const { api } = build([{ ...rows, name: JOURNAL_TABLE }, { ...rows, name: 'schema_migrations' }]);
+  it('refuses a new row in the table that records what has been applied', async () => {
+    const { api } = build([{ ...rows, name: MIGRATIONS_TABLE }]);
 
-    for (const table of [JOURNAL_TABLE, 'schema_migrations']) {
-      const response = await api.fetch(
-        post(
-          '/api/databases/demo_auth/rows/insert',
-          { schema: 'public', table, values: { id: 'u-9', email: 'a@b.c' } },
-          marked,
-        ),
-      );
+    const response = await api.fetch(
+      post(
+        '/api/databases/demo_auth/rows/insert',
+        { schema: 'public', table: MIGRATIONS_TABLE, values: { id: 'u-9', email: 'a@b.c' } },
+        marked,
+      ),
+    );
 
-      expect(response.status).toBe(400);
-      expect(await response.text()).toContain('already been applied');
-    }
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('already been applied');
   });
 
   it('needs the header to add a row, like any other change', async () => {
@@ -1029,17 +1128,19 @@ describe('the shape of a table', () => {
     expect(pool.asked.filter((query) => query.text.includes('CREATE TABLE'))).toEqual([]);
   });
 
-  it('reads a database whose journal was never started, and starts it only to write', async () => {
+  it('reads a database that has no record of applied migrations at all', async () => {
     const { api, pool } = build();
-    pool.journalMissing = true;
+    pool.migrationsMissing = true;
 
-    // No journal is an answer — "nothing here was changed by this interface" — and not a failure.
+    // Not a failure but an answer: nothing has been applied here, so nothing here is this one's.
     const listed = await api.fetch(at('/api/databases/demo_auth/tables'));
     const body = (await listed.json()) as {
       tables: { name: string; columns: { name: string; own: boolean }[] }[];
     };
     expect(listed.status).toBe(200);
-    expect(body.tables.find((table) => table.name === 'identities')?.columns.every((column) => !column.own)).toBe(true);
+    expect(
+      body.tables.find((table) => table.name === 'identities')?.columns.every((column) => !column.own),
+    ).toBe(true);
 
     // And with nothing recorded, nothing is ours to rename.
     const renamed = await api.fetch(
@@ -1050,10 +1151,53 @@ describe('the shape of a table', () => {
       ),
     );
     expect(renamed.status).toBe(400);
+  });
+});
 
-    // Writing is what creates it.
-    expect((await api.fetch(addColumnAt('nickname', 'text'))).status).toBe(200);
-    expect(pool.asked.some((query) => query.text.includes(`CREATE TABLE IF NOT EXISTS ${JOURNAL_TABLE}`))).toBe(true);
+/**
+ * The name of a migration is where ownership lives, so reading it back is not a detail.
+ *
+ * A name that cannot be read back is a column this interface would refuse to rename tomorrow, with no
+ * sign that anything went wrong today — which is why building one is refused rather than escaped.
+ */
+describe('a change, as a migration name', () => {
+  it('writes and reads back the three kinds', () => {
+    const add = { kind: 'add', schema: 'public', table: 'profiles', column: 'notes' } as const;
+    const rename = { ...add, kind: 'rename', to: 'remarks' } as const;
+    const drop = { ...add, kind: 'drop', column: 'remarks' } as const;
+
+    expect(changeName(add)).toBe('interface-add-public-profiles-notes');
+    expect(changeName(rename)).toBe('interface-rename-public-profiles-notes-remarks');
+    expect(changeName(drop)).toBe('interface-drop-public-profiles-remarks');
+
+    for (const change of [add, rename, drop]) {
+      expect(parseChangeName(changeName(change))).toEqual(change);
+    }
+  });
+
+  it('reads a migration of the module itself as nobody at all', () => {
+    expect(parseChangeName('identities-sessions-tokens-audit')).toBeNull();
+    expect(parseChangeName('interface-move-public-profiles-notes')).toBeNull();
+    expect(parseChangeName('interface-add-public-profiles')).toBeNull();
+    // A rename carries the new name; anything else that does is not one.
+    expect(parseChangeName('interface-drop-public-profiles-notes-remarks')).toBeNull();
+  });
+
+  it('refuses to name a change it could not read back', () => {
+    expect(() =>
+      changeName({ kind: 'add', schema: 'public', table: 'odd-table', column: 'notes' }),
+    ).toThrow(/hyphen/);
+  });
+
+  it('replays the names into the columns it owns', () => {
+    const changes = [
+      { kind: 'add', schema: 'public', table: 'profiles', column: 'notes' },
+      { kind: 'rename', schema: 'public', table: 'profiles', column: 'notes', to: 'remarks' },
+      { kind: 'add', schema: 'public', table: 'profiles', column: 'tag' },
+      { kind: 'drop', schema: 'public', table: 'profiles', column: 'tag' },
+    ] as const;
+
+    expect([...ownColumns([...changes])]).toEqual(['public.profiles.remarks']);
   });
 });
 
@@ -1383,12 +1527,19 @@ describe('a required column', () => {
     expect((await api.fetch(add({ column: 'e', type: 'uuid', default: 'не uuid' }))).status).toBe(400);
   });
 
-  it('writes what was asked for into the journal, beside what was done', async () => {
-    const { api, pool } = build();
+  /**
+   * What was done is what is written, and nothing beside it.
+   *
+   * The old journal kept the request as well as the statement, which was two records of one fact. A
+   * migration has room for one, and the statement is the one that is true: it is what ran here and
+   * what will run everywhere else.
+   */
+  it('writes the statement that ran, defaults and all', async () => {
+    const { api, written } = build();
     await api.fetch(add({ column: 'note', type: 'text', required: true, default: 'нет' }));
 
-    expect(pool.journal.at(-1)?.details).toEqual({ type: 'text', required: true, default: 'нет' });
-    expect(pool.journal.at(-1)?.sql).toContain(`DEFAULT 'нет' NOT NULL`);
+    expect(written.at(-1)?.sql).toContain(`DEFAULT 'нет' NOT NULL`);
+    expect(written.at(-1)?.name).toBe('interface-add-public-identities-note');
   });
 });
 

@@ -16,3 +16,4 @@ export * from './trpc/mount.js';
 
 export * from './db/pool.js';
 export * from './db/migrator.js';
+export * from './db/migration-file.js';

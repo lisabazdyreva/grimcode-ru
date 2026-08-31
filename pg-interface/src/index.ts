@@ -1,5 +1,11 @@
 import { countRows, readCatalogue } from './catalog.js';
-import { applyChange, ownColumns, readJournal, type ChangeKind } from './changes.js';
+import {
+  applyReshape,
+  changeName,
+  ownColumns,
+  readChanges,
+  type ChangeKind,
+} from './ownership.js';
 import {
   addColumn,
   checkName,
@@ -36,6 +42,40 @@ export interface DatabaseInterfaceOptions {
   basePath: string;
   /** How a database is opened. Real pools unless a test says otherwise. */
   connect?: Connect;
+  /**
+   * How a change of shape is written into the project. Without it a table's shape cannot be changed
+   * here at all — see `SchemaWriter`.
+   */
+  writer?: SchemaWriter;
+}
+
+/**
+ * The half of a shape change this package cannot do: putting it in the code.
+ *
+ * A column added here has to reach every other copy of the project, and the way anything reaches them
+ * is the repository. So the change is written as a migration — and where migrations live, what a
+ * migration file looks like and how versions are numbered is the project's business, not this
+ * package's. It is handed in, and where it is not handed in — a built copy with no sources beside it —
+ * the shape simply cannot be changed, and the screen is told so instead of offering a button that
+ * would explain itself afterwards.
+ */
+export interface SchemaWriter {
+  /**
+   * Where the migrations it writes end up, as a person would name the place.
+   *
+   * Reported to the screen, and worth reporting: a copy of this program run for a test writes into a
+   * scratch tree rather than into the repository, and the only way to know which is to be told.
+   */
+  root: string;
+  /** The highest version this database's module already holds in the project. */
+  highest(database: string): Promise<number> | number;
+  /** Writes the migration into the project. */
+  write(
+    database: string,
+    migration: { version: number; name: string; sql: string },
+  ): Promise<void> | void;
+  /** The rule the project's migrator uses to remember a version, so the row matches the file. */
+  checksum(sql: string): string;
 }
 
 export interface DatabaseInterface {
@@ -96,7 +136,11 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     }
 
     if (request.method === 'GET' && segments.length === 2 && segments[1] === 'databases') {
-      return json({ databases: pools.names().map((name) => ({ name })) });
+      return json({
+        databases: pools.names().map((name) => ({ name })),
+        // Null when a shape cannot be changed here at all; otherwise where the change would be written.
+        writesInto: options.writer?.root ?? null,
+      });
     }
 
     if (segments[1] === 'databases' && segments.length === 4 && segments[3] === 'tables') {
@@ -141,8 +185,8 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const pool = await pools.of(database);
 
     // Who added each column: `own` is what lets the screen offer rename and drop on some columns only.
-    // The journal does not depend on the catalogue, so it is read in the same round.
-    const [{ tables: found }, changes] = await Promise.all([readCatalogue(pool), readJournal(pool)]);
+    // The applied migrations do not depend on the catalogue, so they are read in the same round.
+    const [{ tables: found }, changes] = await Promise.all([readCatalogue(pool), readChanges(pool)]);
     const owned = ownColumns(changes);
 
     const described = await Promise.all(
@@ -151,7 +195,10 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         name: table.name,
         primaryKey: table.primaryKey,
         rows: await countRows(pool, table),
-        reshapable: !PROTECTED_TABLES.has(table.name),
+        // Not only "may this table be reshaped" but "may anything be": without a place to write the
+        // migration, a change of shape would live in this database alone, which is what this interface
+        // no longer does.
+        reshapable: options.writer !== undefined && !PROTECTED_TABLES.has(table.name),
         // The same two tables, and for the same reason: a row invented here would record something
         // that never happened. Sent apart from `reshapable` because adding a row and changing the
         // shape are different permissions, and one may outlive the other.
@@ -183,7 +230,7 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     const [page, counted, changes] = await Promise.all([
       pool.query<Record<string, unknown>>(rowsStatement.text, rowsStatement.values),
       pool.query<{ total: string }>(totalStatement.text, totalStatement.values),
-      readJournal(pool),
+      readChanges(pool),
     ]);
 
 
@@ -208,6 +255,12 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
       primaryKey: table.primaryKey,
       rows: page.rows,
       total: Number(counted.rows[0]?.total ?? 0),
+      /*
+       * The column menu is built from this answer, and its rename and drop are offered on an own
+       * column — but only where a change of shape can be written at all. Sent here rather than worked
+       * out on the client, which sees one answer at a time.
+       */
+      reshapable: options.writer !== undefined && !PROTECTED_TABLES.has(table.name),
     });
   }
 
@@ -268,7 +321,11 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
    * Adding is open: a nullable column nothing reads cannot break a module. Renaming and dropping are
    * allowed only on a column this interface added, because the rest belong to a module's migrations and
    * its code reads them by name — a rename would take the module down with the next request. Which is
-   * which comes from the journal; `information_schema` does not record who created a column.
+   * which comes from the names of the applied migrations; `information_schema` does not record who
+   * created a column.
+   *
+   * Every change here becomes a migration of the module whose database it is: applied now, written
+   * into the project, and from then on carried to every other copy the ordinary way.
    */
   async function reshape(
     request: Request,
@@ -276,10 +333,31 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
     action: ChangeKind,
   ): Promise<Response> {
     const body = await readBody(request);
+    const writer = options.writer;
+
+    if (!writer) {
+      throw new RequestError(
+        400,
+        'This copy of the program has no project to write a migration into, so the shape of a table ' +
+          'cannot be changed from here. A column is added where the code is.',
+      );
+    }
+
     const pool = await pools.of(database);
     const table = checkReshapable(
       findTable((await readCatalogue(pool)).tables, body.schema, body.table),
     );
+
+    /** The three of them differ in the statement and the name; everything after that is one path. */
+    const record = async (sql: string, change: Parameters<typeof changeName>[0]) =>
+      await applyReshape(pool, {
+        sql,
+        name: changeName(change),
+        highest: () => writer.highest(database),
+        write: async (version) =>
+          await writer.write(database, { version, name: changeName(change), sql }),
+        checksum: writer.checksum,
+      });
 
     if (action === 'add') {
       const column = checkName(body.column);
@@ -289,27 +367,18 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
         default: body.default,
       });
 
-      const version = await applyChange(pool, {
+      const version = await record(sql, {
         kind: 'add',
         schema: table.schema,
         table: table.name,
         column,
-        // The journal keeps what was asked for; `sql` beside it keeps what was done.
-        details: {
-          type: body.type,
-          ...(body.required === true ? { required: true } : {}),
-          ...(body.default === undefined || body.default === null || body.default === ''
-            ? {}
-            : { default: body.default }),
-        },
-        sql,
       });
 
       return json({ added: column, version });
     }
 
     const column = findColumn(table, body.column).name;
-    const owned = ownColumns(await readJournal(pool));
+    const owned = ownColumns(await readChanges(pool));
 
     if (!owned.has(`${table.schema}.${table.name}.${column}`)) {
       throw new RequestError(
@@ -321,28 +390,22 @@ export function createDatabaseInterface(options: DatabaseInterfaceOptions): Data
 
     if (action === 'rename') {
       const to = checkName(body.to);
-      const sql = renameColumn(table, column, to);
-
-      const version = await applyChange(pool, {
+      const version = await record(renameColumn(table, column, to), {
         kind: 'rename',
         schema: table.schema,
         table: table.name,
         column,
-        details: { to },
-        sql,
+        to,
       });
 
       return json({ renamed: to, version });
     }
 
-    const sql = dropColumn(table, column);
-    const version = await applyChange(pool, {
+    const version = await record(dropColumn(table, column), {
       kind: 'drop',
       schema: table.schema,
       table: table.name,
       column,
-      details: {},
-      sql,
     });
 
     return json({ dropped: column, version });

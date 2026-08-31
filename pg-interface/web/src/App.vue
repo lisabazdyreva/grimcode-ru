@@ -315,6 +315,15 @@ const changeable = computed(() => (page.value?.primaryKey.length ?? 0) > 0);
  */
 const insertable = computed(() => view.value.table !== '' && table.value?.insertable !== false);
 
+/**
+ * Whether a column of this table can be renamed or dropped at all.
+ *
+ * Owning a column is not enough: a change of shape is written into the project as a migration, and a
+ * copy of the program running away from its sources has nowhere to write it. The server says so per
+ * table, and the menu offers nothing rather than offering what would be refused.
+ */
+const reshapable = computed(() => page.value?.reshapable ?? table.value?.reshapable ?? false);
+
 async function save(values: Record<string, unknown>): Promise<void> {
   const row = editing.value;
   if (!row) return;
@@ -655,13 +664,22 @@ onMounted(async () => {
                     <el-dropdown-item divided @click="hide(column.name)">Скрыть колонку</el-dropdown-item>
                     <!--
                       Переименовать и удалить можно только колонку, которую добавил сам интерфейс:
-                      остальные принадлежат миграциям модуля, и его код читает их по имени. Сервер
-                      отказывает в любом случае, а меню просто не предлагает того, что будет отказано.
+                      остальные принадлежат миграциям модуля, и его код читает их по имени. И только
+                      там, где правку есть куда записать: изменение уходит миграцией в исходники, а
+                      у собранной копии их рядом нет. Сервер отказывает в обоих случаях, а меню
+                      просто не предлагает того, что будет отказано.
                     -->
-                    <el-dropdown-item v-if="column.own" divided @click="startRename(column.name)">
+                    <el-dropdown-item
+                      v-if="column.own && reshapable"
+                      divided
+                      @click="startRename(column.name)"
+                    >
                       Переименовать колонку
                     </el-dropdown-item>
-                    <el-dropdown-item v-if="column.own" @click="removeColumn(column.name)">
+                    <el-dropdown-item
+                      v-if="column.own && reshapable"
+                      @click="removeColumn(column.name)"
+                    >
                       Удалить колонку
                     </el-dropdown-item>
                   </el-dropdown-menu>

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { expect, test, type FrameLocator, type Page } from '@playwright/test';
 
 import { collectPageErrors, expectNoPageErrors, signIn } from './support.js';
@@ -25,6 +27,29 @@ async function openDatabaseSection(page: Page): Promise<FrameLocator> {
 async function chooseDatabase(page: Page, frame: FrameLocator, matching: RegExp): Promise<void> {
   await frame.locator('.shell-database').click();
   await frame.locator('.el-select-dropdown__item').filter({ hasText: matching }).first().click();
+}
+
+/**
+ * Refuses to change a shape against a copy that would write into this repository.
+ *
+ * A column added from the screen is written as a migration into a project's sources — that is the
+ * whole point of it — so a suite that adds and drops columns has to be pointed somewhere else, with
+ * `SCHEMA_SOURCE_ROOT`. Without this, every run would leave two migrations behind in the repository it
+ * was testing, and nothing would say so.
+ *
+ * Asked after signing in, not before: the section is the owner's, and an unauthenticated request is
+ * refused by Gateway — which answers no `writesInto` at all, and so passes this silently. Measured.
+ */
+async function refuseToWriteIntoTheRepository(page: Page): Promise<void> {
+  const response = await page.request.get('/admin/embed/database/api/databases');
+  const { writesInto } = (await response.json()) as { writesInto: string | null };
+
+  const repository = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '');
+  expect(
+    writesInto,
+    'This copy would write migrations into the repository under test. Start it with ' +
+      'SCHEMA_SOURCE_ROOT pointing at a scratch copy of modules/*/src/db/migrations.',
+  ).not.toBe(repository);
 }
 
 test.describe('the database section', () => {
@@ -511,6 +536,7 @@ test.describe('the database section', () => {
   }) => {
     const problems = collectPageErrors(page);
     const frame = await openDatabaseSection(page);
+    await refuseToWriteIntoTheRepository(page);
 
     await chooseDatabase(page, frame, /_admin$/);
     await frame.locator('.shell-table-name').filter({ hasText: /^administrators$/ }).click();
@@ -566,6 +592,7 @@ test.describe('the database section', () => {
   test('offers a default as soon as a new column is made required', async ({ page }) => {
     const problems = collectPageErrors(page);
     const frame = await openDatabaseSection(page);
+    await refuseToWriteIntoTheRepository(page);
 
     await chooseDatabase(page, frame, /_admin$/);
     await frame.locator('.shell-table-name').filter({ hasText: /^administrators$/ }).click();

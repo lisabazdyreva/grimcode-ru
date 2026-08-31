@@ -234,8 +234,10 @@ One database per module with state, named `<PROJECT_SLUG>_<module>`, and normall
 of them. Nothing
 migrates another module's schema, and nothing but a module touches its own — with one door, opened
 deliberately: the panel's database section can add a column, and rename or drop a column it added
-itself. It keeps a journal of that in the database it changed, and it will not touch a column a
-migration created. See [`pg-interface`](../pg-interface/README.md).
+itself. It writes each such change into the project as one more migration of that module — applied,
+recorded and written together — so the schema stays in the code and reaches every copy of the project
+the ordinary way. Where the sources are not there to write into, it changes no shape at all. It will
+not touch a column a migration created. See [`pg-interface`](../pg-interface/README.md).
 
 A module prepares its own storage, on the first request that needs it: create the database if it is
 missing, apply the migrations, check what was opened, keep the pool. There is no deployment step in

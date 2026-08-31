@@ -31,10 +31,11 @@ export const COLUMN_TYPES: Record<string, string> = {
 };
 
 /**
- * Tables this interface never reshapes: a column added to a module's migration record or to this
- * package's own journal would be read as a record of something that never happened.
+ * The table this interface never reshapes: a column added to the record of applied migrations would
+ * describe something that never happened — and this interface writes its own changes into that very
+ * record, so it would be reshaping the ground it stands on.
  */
-export const PROTECTED_TABLES = new Set(['schema_migrations', 'pg_interface_changes']);
+export const PROTECTED_TABLES = new Set(['schema_migrations']);
 
 /**
  * A column name, narrower than what PostgreSQL accepts inside quotes: a space, a dot or cyrillic is

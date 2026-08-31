@@ -28,6 +28,7 @@ port belongs to the program's entry, and the import that opens one may be writte
 | `trpc/builders.ts` | The context every procedure has, and the two guards admin surfaces are built from |
 | `db/pool.ts` | Transactions and the startup wait a module uses around the pool it opened itself; the pool is built in the module, not here |
 | `db/migrator.ts` | Versioned migrations with recorded versions, checksums and advisory locks |
+| `db/migration-file.ts` | Writing one into a module's folder, for the change of shape the admin panel makes |
 | `theme.ts` | The same-origin `postMessage` protocol between Admin shell and service iframes |
 | `vocabulary.ts` | The words the whole template shares: schema primitives, service ids, admin roles, the verified admin context |
 | `index.ts` | The barrel, and what it leaves out: `vocabulary.ts` and `theme.ts` have subpaths of their own — `./vocabulary` and `./browser` — so neither arrives by importing `@template/shared`, and a browser bundle reaching for the theme never pulls the server's toolbox with it |

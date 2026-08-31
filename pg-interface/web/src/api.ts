@@ -89,6 +89,8 @@ export interface RowsPage {
   primaryKey: string[];
   rows: Record<string, unknown>[];
   total: number;
+  /** Whether the shape of this table can be changed here — see the column menu. */
+  reshapable?: boolean;
 }
 
 /** The refusal the server sent, kept as it is: its wording is what tells a person what to fix. */

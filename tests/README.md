@@ -123,8 +123,13 @@ picked in a calendar rather than typed, and that every type in the list says wha
 
 Three checks are about the shape of a table rather than its rows: a column is added, offered what a
 migration's column is never offered and dropped again; a new column made required offers a default,
-because without one the module's next insert would fail; and the tables that record what has been
-applied — `schema_migrations` and `pg_interface_changes` — offer no new column at all.
+because without one the module's next insert would fail; and `schema_migrations`, which records what
+has been applied, offers no new column at all.
+
+The two that really add a column need somewhere to write it. A change of shape is written into a
+project as a migration, so a copy started for this suite has to be given a scratch tree with
+`SCHEMA_SOURCE_ROOT` — a copy of `modules/*/src/db/migrations` is enough. Both refuse to run against a
+copy that would write into the repository under test, and say so.
 
 **The email admin** — [`email-admin.spec.ts`](browser/email-admin.spec.ts). Templates list, the
 editor opens on its own route and runs, a delivery shows its stored message as a preview and as

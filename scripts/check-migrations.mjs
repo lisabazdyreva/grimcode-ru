@@ -17,6 +17,13 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
+/** `interface-<kind>-<schema>-<table>-<column>`, and a rename carries the new name after it. */
+const IDENTIFIER = '[A-Za-z_][A-Za-z0-9_]*';
+const INTERFACE_NAME = new RegExp(
+  `^interface-(add|drop)-${IDENTIFIER}-${IDENTIFIER}-${IDENTIFIER}$|` +
+    `^interface-rename-${IDENTIFIER}-${IDENTIFIER}-${IDENTIFIER}-${IDENTIFIER}$`,
+);
+
 const problems = [];
 let counted = 0;
 
@@ -94,6 +101,20 @@ for (const module of modules) {
     if (version <= previous) {
       problems.push(`${module}/${entry.file}: version ${version} does not follow ${previous}`);
     }
+
+    /*
+     * A migration written by the database section carries what it did in its name, and that name is
+     * the only record of which columns that section may rename or drop later. One written wrong is
+     * ownership lost in silence — the column stays, and the screen simply stops offering to touch it.
+     * The shape is repeated here rather than imported: a check reaches for nothing of the repository.
+     */
+    if (name.startsWith('interface-') && !INTERFACE_NAME.test(name)) {
+      problems.push(
+        `${module}/${entry.file}: "${name}" looks like a change made from the database section, ` +
+          'but does not read back as one (interface-add|rename|drop-schema-table-column[-to])',
+      );
+    }
+
     previous = version;
     counted += 1;
   }

@@ -42,7 +42,7 @@ export async function runMigrations(
   const alreadyApplied: number[] = [];
 
   for (const migration of migrations) {
-    const checksum = checksumOf(migration.sql);
+    const checksum = migrationChecksum(migration.sql);
     const existing = known.get(migration.version);
 
     if (existing) {
@@ -98,7 +98,14 @@ function assertOrdered(migrations: readonly Migration[]): void {
   }
 }
 
-function checksumOf(sql: string): string {
+/**
+ * How a version is remembered, and the only place the rule is written.
+ *
+ * Exported because something else now writes migrations too: the database section records the column
+ * it added as a migration of its own, and the row it writes has to match the file it wrote by the same
+ * rule. Two implementations of this would agree until the day one of them changed.
+ */
+export function migrationChecksum(sql: string): string {
   return createHash('sha256').update(sql.trim(), 'utf8').digest('hex');
 }
 
