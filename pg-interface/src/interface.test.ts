@@ -169,12 +169,8 @@ describe('values never become SQL', () => {
 });
 
 /**
- * A new row, and what the catalogue decides on the person's behalf.
- *
- * Insertion is the one operation where "left out" and "empty" are different things: a column the
- * database fills in itself has to be left out of the statement for `DEFAULT` to apply, and a `not
- * null` column with nothing to fall back on cannot be left out at all. Both answers come from the
- * catalogue rather than from the form, which is why they are refused here and not by PostgreSQL.
+ * Insertion is the one operation where "left out" and "empty" differ: a column the database fills in
+ * must be absent from the statement, and a `not null` column without a default may not be absent.
  */
 describe('adding a row', () => {
   it('names only the columns it was given, and returns the whole row', () => {
@@ -238,21 +234,8 @@ describe('adding a row', () => {
   });
 });
 
-/**
- * The word `null`, typed into a field that cannot hold it.
- *
- * This is what a person does after reading `null` in a cell — the screen's own way of showing an empty
- * value — and PostgreSQL answered `invalid input syntax for type uuid: "null"`, which explains its type
- * system rather than the mistake. A uuid has no value spelled `null`, so the word can only mean empty.
- */
-/**
- * A date is a date, not a moment.
- *
- * The driver's own parser turns `date` and `timestamp` into a JavaScript `Date`, and both then travel
- * as instants: on a machine at +03:00 the stored date `2026-08-27` reached the screen as
- * `2026-08-26T21:00:00.000Z`, a day earlier than what is in the table. This package reads those two as
- * the text PostgreSQL sent, and leaves `timestamptz` — which really is a moment — alone.
- */
+/** The word `null` typed into a field that cannot hold it: read as empty, except in text. */
+/** `date` and `timestamp` come back as text, `timestamptz` as a moment — the day must not shift. */
 describe('reading a date', () => {
   const parserFor = (oid: number) => typeParsers().getTypeParser(oid) as (value: string) => unknown;
 

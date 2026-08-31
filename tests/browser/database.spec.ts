@@ -195,11 +195,8 @@ test.describe('the database section', () => {
   });
 
   /**
-   * Dropping every condition at once, which is how people stop filtering.
-   *
-   * Removing them one by one asks the server for a page after each, and the count on the button has to
-   * follow. The button appears only when there is something to clear: one that is always there and
-   * does nothing reads as broken.
+   * Dropping every condition at once, which is how people stop filtering. The button appears only when
+   * there is something to clear: one that is always there and does nothing reads as broken.
    */
   test('clears every filter at once', async ({ page }) => {
     const problems = collectPageErrors(page);
@@ -305,11 +302,8 @@ test.describe('the database section', () => {
   });
 
   /**
-   * Deleting a row is a button, not a menu.
-   *
-   * It used to sit behind a "…" menu, alone — a menu whose only purpose was one extra click. What guards
-   * against a misclick is the question, not the hiding: the row is deleted only after it is confirmed.
-   * This checks the question and then answers no, so the stand keeps its rows.
+   * Deleting a row is a button, not a menu: what guards against a misclick is the question, not the
+   * hiding. This checks the question and answers no, so the stand keeps its rows.
    */
   test('asks before deleting a row, from a button in the row', async ({ page }) => {
     const frame = await openDatabaseSection(page);
