@@ -144,5 +144,5 @@ application, and answers an unknown address with a not-found page of its own.
 Chromium is installed once with:
 
 ```bash
-pnpm --filter @template/acceptance exec playwright install chromium
+pnpm --filter @template/tests exec playwright install chromium
 ```

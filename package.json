@@ -20,8 +20,8 @@
     "check:scripts": "node scripts/check-scripts.mjs",
     "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run check:dependencies && pnpm run check:boundaries && pnpm run check:procedures && pnpm run check:service-ids && pnpm run check:scripts",
     "dev": "pnpm run build && node --env-file=.env dist/index.js",
-    "test:acceptance": "pnpm --filter @template/acceptance acceptance",
-    "test:browser": "pnpm --filter @template/acceptance browser"
+    "test:acceptance": "pnpm --filter @template/tests acceptance",
+    "test:browser": "pnpm --filter @template/tests browser"
   },
   "dependencies": {
     "@grimcode/pg-interface": "workspace:*",
