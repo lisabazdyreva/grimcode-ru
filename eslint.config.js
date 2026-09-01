@@ -50,15 +50,16 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   /*
-   * A module does not read the environment; `DIRECTIVES.md` says so. It does open its own pool, from the
-   * connection string the composer put on `c.env` — which is a different thing from naming a variable.
+   * A module does not read the environment; the directives in `AGENTS.md` say so. It does open its
+   * own pool, from the connection string the composer put on `c.env` — which is a different thing
+   * from naming a variable.
    *
    * `check-boundaries` refuses the expression `process.env` here. What it cannot see is the way around
    * it — asking `shared` to read a name for you — because then the reading happens in `shared` and the
    * module only passes a string. Measured: `optionalEnv('DATABASE_URL', '')` inside a module passes that
    * check with exit code 0. Hence these two refusals.
    *
-   * The named readers stay allowed: `internalServiceUrl` and `publicSiteUrl` carry their variable inside
+   * The named readers stay allowed: `publicSiteUrl` and `sessionCookieName` carry their variable inside
    * them, so a module holding one cannot reach anything else with it. `pg` is not refused either — a
    * module calls the driver itself, and who may declare it is `check-dependencies`, by manifest.
    *
